@@ -6,42 +6,27 @@
 
 @inject IJSRuntime js;
 
+
 <div>
-    <button></button>
+    <select @onchange="changeBackground">
+        <option value="background1.jpg">White</option>
+        <option value="background2.jpg">White Room</option>
+        <option value="background3.jpg">Future Room</option>
+        <option value="background4.jpg">Neon</option>
+    </select>
 </div>
 
+<div>
     <div>
-        <select @onchange="changeBackground">
-            <option value="background0.jpg">Plain</option>
-            <option value="background1.jpg">Neon</option>
-            <option value="background2.jpg">XP</option>
-        </select>
+        <button @onclick="cinematicView">Admire</button>
     </div>
-    <div>
-        <div>
-            <button @onclick="cinematicView">Admire</button>
-        </div>
-        <div class="card">
-            <div class="card-header">
-                <button @onclick=@(()=>hidden=!hidden)>@(hidden ? "Play" : "Stop")</button>
+</div>
 
-            </div>
-            <div>
-                @if (!hidden)
-                {
-                    <audio style="display: none;" loop="loop" autoplay controls><source src="resources/sound/royaltyfreetrack1.mp3" /></audio>
-                }
-                else
-                {
-                    <audio style="display: none;" controls muted><source src="resources/sound/royaltyfreetrack1.mp3" /></audio>
-                }
-            </div>
-        </div>
-    </div>
 <div class="col">
     <input type="range" min="0" max="400" value="@userSetlayerSpacing" @oninput="sliderChanged" />
 </div>
-    <div id="container" style="width: 800px; height: 800px; border: 2px solid black;"></div>
+
+<div id="container" style="width: 800px; height: 800px; border: 2px solid black;"></div>
 
 @code {
     #region Vraiables ****************************************

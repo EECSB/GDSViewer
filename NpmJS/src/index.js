@@ -40,7 +40,7 @@ controls = new OrbitControls(camera, renderer.domElement);
 loader = new GLTFLoader();
 
 const loader2 = new THREE.TextureLoader();
-const texture = loader2.load(window.location.href + 'resources/Images/Background/background.jpg', () => {
+const texture = loader2.load(window.location.href + 'resources/Images/Background/background1.jpg', () => {
         const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
         rt.fromEquirectangularTexture(renderer, texture);
         scene.background = rt.texture;
