@@ -1,0 +1,106 @@
+﻿@using GDSViewer.Models;
+
+@inject IJSRuntime JSR;
+
+<div class="container">
+    <img style="width: 25px;" src="resources/images/icons/save.png" />
+    <textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>
+</div>
+
+
+@code {
+    #region Vraiables ****************************************
+
+    public string GdsAsText { get; set; }
+
+    [Parameter]
+    public GDS Gds { get; set; }
+
+    [Parameter]
+    public List<ToolBarItem> ToolBarItems { get; set; }
+
+    #endregion ***********************************************
+
+
+
+    #region Initialization ***********************************
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Render(Gds, null);
+
+        ToolBarItems.Clear();
+
+        //ToolBarItems.Add(new ToolBarItem("", ));
+    }
+
+    #endregion ***********************************************
+
+
+
+    #region Methods ******************************************
+
+    private async Task saveChanges()
+    {
+        /*foreach (var recordView in recordsView)
+            {
+            if (!recordView.changed)
+            continue;
+
+            recordView.changed = false;
+
+            record.Type = new GDS.Record.RecordType();
+        }*/
+    }
+
+
+    public async Task Render(GDS gds, List<CheckboxItem> showLayers)
+    {
+        //Save if needed for re-render.
+        if (gds is not null)
+            this.Gds = gds;
+
+
+        if (Gds is null)
+            return;
+
+
+        foreach (var record in gds.Records)
+        {
+            string data = "";
+            string dataColor = "";
+            @if (record.Data is not null)
+            {
+                switch (record.Data)
+                {
+                    case double[] da:
+                        foreach (var item in da)
+                        {
+                            data += item.ToString() + " ";
+                        }
+                        dataColor = "7ec002";
+                        break;
+                    case int[] ia:
+                        foreach (var item in ia)
+                        {
+                            data += item.ToString() + " ";
+                        }
+                        dataColor = "aaf224";
+                        break;
+                    case string s:
+                        dataColor = "ae53ef";
+                        break;
+                    default:
+                        data = record.Data.ToString();
+                        break;
+                }
+            }
+
+            GdsAsText += $"{record.Type.ToString()}: {data} \n";
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion ***********************************************
+}

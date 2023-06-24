@@ -1,0 +1,211 @@
+﻿@using GDSViewer.Models;
+
+@using Layer = GDSViewer.Models.Layer;
+@using Point = GDSViewer.Models.Element.Point;
+@using static GDSViewer.Models.GDS.Record;
+
+@inject IJSRuntime js;
+
+<div>
+    <button></button>
+</div>
+
+    <div>
+        <select @onchange="changeBackground">
+            <option value="background0.jpg">Plain</option>
+            <option value="background1.jpg">Neon</option>
+            <option value="background2.jpg">XP</option>
+        </select>
+    </div>
+    <div>
+        <div>
+            <button @onclick="cinematicView">Admire</button>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <button @onclick=@(()=>hidden=!hidden)>@(hidden ? "Play" : "Stop")</button>
+
+            </div>
+            <div>
+                @if (!hidden)
+                {
+                    <audio style="display: none;" loop="loop" autoplay controls><source src="resources/sound/royaltyfreetrack1.mp3" /></audio>
+                }
+                else
+                {
+                    <audio style="display: none;" controls muted><source src="resources/sound/royaltyfreetrack1.mp3" /></audio>
+                }
+            </div>
+        </div>
+    </div>
+<div class="col">
+    <input type="range" min="0" max="400" value="@userSetlayerSpacing" @oninput="sliderChanged" />
+</div>
+    <div id="container" style="width: 800px; height: 800px; border: 2px solid black;"></div>
+
+@code {
+    #region Vraiables ****************************************
+
+    private int userSetlayerSpacing = 10;
+    private bool cinematicViewToggle = false;
+    private bool hidden = true;
+
+    [Parameter]
+    public GDS Gds { get; set; }
+    [Parameter]
+    public List<CheckboxItem> ShowLayers { get; set; }
+
+    #endregion ***********************************************
+
+
+
+    #region Initialization ***********************************
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Render(Gds, ShowLayers);
+    }
+
+    protected override async void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await js.InvokeVoidAsync("registerThree");
+        }
+    }
+
+    #endregion ***********************************************
+
+
+
+    #region Methods ******************************************
+
+    int prevUserSetlayerSpacing = 0;
+    private async Task sliderChanged(ChangeEventArgs e)
+    {
+        userSetlayerSpacing = Convert.ToInt32(e.Value);
+
+        var orderedLayers = Gds.AdditionalInformation.Layers.OrderBy(x => x.Value.Number);
+        int totalOffset = 0;
+        foreach (var layer in orderedLayers)
+        {
+            layer.Value.Offset += totalOffset;
+            if (prevUserSetlayerSpacing < userSetlayerSpacing)
+            {
+                layer.Value.Offset += totalOffset;
+                totalOffset += userSetlayerSpacing;
+            }
+            else
+            {
+                layer.Value.Offset -= totalOffset;
+                totalOffset -= userSetlayerSpacing;
+            }
+        }
+
+        await Render(Gds, ShowLayers);
+
+        prevUserSetlayerSpacing = userSetlayerSpacing;
+    }
+
+    private async Task changeBackground(ChangeEventArgs e)
+    {
+        await js.InvokeVoidAsync("changeBackgroundInterOp", e.Value.ToString());
+    }
+
+    private async Task cinematicView()
+    {
+        cinematicViewToggle = !cinematicViewToggle;
+
+        playSound(cinematicViewToggle);
+
+        await js.InvokeVoidAsync("cinematicViewInterOp", cinematicViewToggle);
+    }
+
+    private async Task playSound(bool playSound)
+    {
+        hidden = !playSound;
+
+        StateHasChanged();
+    }
+
+    public async Task Render(GDS gds, List<CheckboxItem> showLayers)
+    {
+        //Save if needed for re-render on layer spacing change.
+        if (gds is not null)
+            this.Gds = gds;
+
+        if(showLayers is not null)
+            this.ShowLayers = showLayers;
+
+        if (Gds is null || ShowLayers is null)
+            return;
+
+        List<Element> elements = new List<Element>();
+
+        foreach (var element in Gds.StreamFormat.Structure.Elements)
+        {
+            var boundry = element.Boundry.First();
+
+            try //Temp
+            {
+                if (!isRenderableElement(boundry.Layer.Type))
+                    continue;
+
+                short layerNumber = boundry.Layer.Data;
+
+                //Skip current element if the layer it is on is disabled.
+                if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
+                    continue;    
+
+
+                var newElement = new Element();
+                newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
+                //newElement.Layer.Offset += userSetlayerSpacing;
+
+                int[] rawPoints = boundry.XY.Data;
+                for (int j = 0; j < rawPoints.Length; j = j + 2)
+                {
+                    var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
+                    newElement.Points.Add(newPoint);
+                }
+
+                elements.Add(newElement);
+            }
+            catch (Exception)
+            {
+
+            }
+        }
+
+        await js.InvokeVoidAsync("draw", new { elements = elements });
+
+        await js.InvokeVoidAsync("render3D");
+    }
+
+    #endregion ***********************************************
+
+    private bool isRenderableElement(RecordType type)
+    {
+        //temp
+        return true;
+
+        switch (type)
+        {
+            case RecordType.BOUNDARY: return true;
+            //case RecordType.BOUNDARY: return true;
+            //case RecordType.BOUNDARY: return true;
+            //todo: add all other types
+
+            default: return false;
+        }    
+    
+    }
+
+    #region Models ************************************
+
+
+
+
+
+    #endregion ****************************************
+}

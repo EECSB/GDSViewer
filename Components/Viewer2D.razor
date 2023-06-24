@@ -1,0 +1,21 @@
+﻿@using GDSViewer.Models;
+
+@using Layer = GDSViewer.Models.Layer;
+@using Point = GDSViewer.Models.Element.Point;
+@using static GDSViewer.Models.GDS.Record;
+
+
+<h3>Viewer2D</h3>
+
+@code {
+    #region Vraiables ****************************************
+
+    [Parameter]
+    public GDS Gds { get; set; }
+    [Parameter]
+    public List<CheckboxItem> ShowLayers { get; set; }
+
+    #endregion ***********************************************
+
+
+}

@@ -1,0 +1,152 @@
+﻿@using System.Text;
+
+@using GDSViewer.Models;
+
+@using Layer = GDSViewer.Models.Layer;
+@using Point = GDSViewer.Models.Element.Point;
+@using static GDSViewer.Models.GDS.Record;
+
+@inject IJSRuntime js;
+
+<div id="svgWrapper" class="container">
+    <div class="overlay row">
+        <div class="col" style="padding: 0;">
+            Opacity
+        </div>
+        <div class="col">
+            <input style="vertical-align: middle;" type="range" min="0" max="1" value="@opacity" step="0.1" @oninput="adjustOpacity" />
+        </div>
+    </div>
+    <svg viewBox="-2000 -1000 4000 4000" xmlns="http://www.w3.org/2000/svg">
+        @((MarkupString)svgString)
+    </svg>
+</div>
+
+@code {
+    #region Vraiables ****************************************
+
+    private float opacity = 0.5f;
+    private string svgString = "";
+
+    [Parameter]
+    public GDS Gds { get; set; }
+    [Parameter]
+    public List<CheckboxItem> ShowLayers { get; set; }
+
+    #endregion ***********************************************
+
+
+
+    #region Initialization ***********************************
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Render(Gds, ShowLayers);
+    }
+
+    protected override async void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await js.InvokeVoidAsync("registerSVGEvents");
+        }
+    }
+
+    #endregion ***********************************************
+
+
+
+    #region Methods ******************************************
+
+    private async Task adjustOpacity(ChangeEventArgs e)
+    {
+        if (Gds is null)
+            return;
+
+        if (ShowLayers is null)
+            return;
+
+        opacity = float.Parse(e.Value.ToString());
+
+        await Render(Gds, ShowLayers);
+    }
+
+    public async Task Render(GDS gds, List<CheckboxItem> showLayers)
+    {
+        //Save if needed for re-render on opacity change.
+        if (gds is not null)
+            this.Gds = gds;
+
+        if (showLayers is not null)
+            this.ShowLayers = showLayers;
+
+
+        if (Gds is null || ShowLayers is null)
+            return;
+
+        //Use StringBuilder to build the SVG string.
+        var svgBuilder = new StringBuilder();
+
+        int i = 0;
+        foreach (var element in Gds.StreamFormat.Structure.Elements)
+        {
+            i++;
+
+            var boundry = element.Boundry.First();
+
+            try //Temp
+            {
+                /*if (!isRenderableElement(boundry.Layer.Type))
+                    continue;*/
+
+                int asd = 0;
+                if (boundry.Layer.Data is null)
+                    asd = 0;
+
+                short layerNumber = boundry.Layer.Data;
+
+                //Skip current element if the layer it is on is disabled.
+                if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
+                    continue;
+
+
+                var newElement = new Element();
+                newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
+                
+                int[] rawPoints = boundry.XY.Data;
+                for (int j = 0; j < rawPoints.Length; j = j + 2)
+                {
+                    var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
+                    newElement.Points.Add(newPoint);
+                }
+
+                // Append the polygon tag with the points attribute
+                svgBuilder.AppendFormat("<polygon points=\"{0}\" fill=\"{1}\" opacity=\"{2}\" stroke=\"black\" stroke-width=\"6\"/>", string.Join(" ", newElement.Points.Select(p => $"{p.X},{p.Y}")), newElement.Layer.Color, opacity);
+            }
+            catch (Exception)
+            {
+
+            }
+        }
+
+        //Get the final SVG string.
+        svgString = svgBuilder.ToString();
+
+        StateHasChanged();
+    }
+
+    private bool isRenderableElement(RecordType type)
+    {
+        switch (type)
+        {
+            //case RecordType.XY: return true;
+            case RecordType.BOUNDARY: return true;
+            //case RecordType.BOUNDARY: return true;
+            //todo: add all other types
+
+            default: return false;
+        }
+    }
+
+    #endregion ***********************************************
+}

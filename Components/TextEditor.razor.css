@@ -1,0 +1,32 @@
+﻿body {
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 800px;
+    padding: 0;
+    overflow-y: auto;
+} 
+
+
+textarea:focus-visible {
+    outline: none;
+}
+
+textarea {
+    border: none;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    resize: none;
+}
+
+textarea.numbered {
+    background: url('resources/images/texteditor/numberbackground.png');
+    background-attachment: local;
+    background-repeat: no-repeat;
+    padding-left: 35px;
+    padding-top: 10px;
+    border-color: #ccc;
+}

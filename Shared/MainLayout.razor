@@ -1,0 +1,23 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <main>
+        <div class="top-row px-4 chipGradient2">
+
+            <div style="width: -webkit-fill-available;">
+                <img id="logoIcon" src="resources/Images/Logo/icon2.png" />
+                <img id="logoText" src="resources/Images/Logo/text2.png" />
+                <h1 style="margin-bottom: 0rem; display: none;">GDSII Viewer</h1>
+            </div>
+
+            <div>
+                <a href="https://eecs.blog" target="_blank" style="font-weight: 600;">About</a>
+            </div>
+
+        </div>
+
+        <article class="content px-4" style="padding-left: 3rem !important; padding-right: 3rem !important;">
+            <GDSViewer.Pages.Viewer></GDSViewer.Pages.Viewer>
+        </article>
+    </main>
+</div>
