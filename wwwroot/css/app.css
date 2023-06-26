@@ -162,4 +162,13 @@ a, .btn-link {
     height: auto;
 }
 
+.toolbar > :first-child:nth-of-type(1) {
+    padding-left: 0;
+}
+
+.toolbarItem {
+    width: fit-content;
+    padding: 10px;
+}
+
 /*******************************************************************************************************************/

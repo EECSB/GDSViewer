@@ -106,7 +106,8 @@
                     <!-- *********************************************** View Change ***************************************************** -->
 
                     <div class="row viewBorderBackground" style="border-bottom: none;"><!-- For now keep fixed at 182px-->
-                        <div class="col">
+                        <div class="row">
+
                             <div class="col-1 toolbarItem">
                                 <div><b>View</b></div>
                                 <div>
@@ -118,6 +119,12 @@
                                     </select>
                                 </div>
                             </div>
+
+                            @foreach (var toolbarItem in toolbarItems)
+                            {
+                                @toolbarItem
+                            }
+
                         </div>
                     </div>
 
@@ -134,13 +141,13 @@
                             <!-- For now keep it fixed at 802px -->
                             @switch (view)
                             {
-                                case ViewType.ViewText: <TextEditor @ref="viewer" Gds="gds"></TextEditor>;
+                                case ViewType.ViewText: <TextEditor @ref="viewer" Gds="gds" Parent="@this"></TextEditor>;
                                     break;
-                                case ViewType.View2DSvg: <Viewer2DSvg @ref="viewer" Gds="gds" ShowLayers="checkboxItems"></Viewer2DSvg>;
+                                case ViewType.View2DSvg: <Viewer2DSvg @ref="viewer" Gds="gds" ShowLayers="checkboxItems" Parent="@this"></Viewer2DSvg>;
                                     break;
-                                case ViewType.View2D: <Viewer2D @ref="viewer" Gds="gds" ShowLayers="checkboxItems"></Viewer2D>;
+                                case ViewType.View2D: <Viewer2D @ref="viewer" Gds="gds" ShowLayers="checkboxItems" Parent="@this"></Viewer2D>;
                                     break;
-                                case ViewType.View3D: <Viewer3D @ref="viewer" Gds="gds" ShowLayers="checkboxItems"></Viewer3D>;
+                                case ViewType.View3D: <Viewer3D @ref="viewer" Gds="gds" ShowLayers="checkboxItems" Parent="@this"></Viewer3D>;
                                     break;
 
                                 default:
@@ -210,8 +217,10 @@
 </div>
 
 @code {
+
     #region Vraiables ****************************************
 
+    private List<RenderFragment> toolbarItems = new List<RenderFragment>();
     private IRenderable? viewer = null;
     private ViewType view = ViewType.View2DSvg;
     private string currentlySelectedFileName = "";
@@ -1141,6 +1150,20 @@
 
 
     #region Methods ******************************************
+
+    public void ClearToolbarItems()
+    {
+        toolbarItems.Clear();
+
+        StateHasChanged();
+    }
+
+    public void AddToolbarItem(RenderFragment item)
+    {
+        toolbarItems.Add(item);
+
+        StateHasChanged();
+    }
 
     private async Task downloadFile()
     {

@@ -35,6 +35,9 @@
     private bool cinematicViewToggle = false;
     private bool hidden = true;
 
+
+    [Parameter]
+    public Pages.Viewer Parent { get; set; }
     [Parameter]
     public GDS Gds { get; set; }
     [Parameter]
@@ -46,9 +49,25 @@
 
     #region Initialization ***********************************
 
+    private async Task InitializeToolbar()
+    {
+        Parent.ClearToolbarItems();
+
+        /*RenderFragment saveButton = (__builder) =>
+        {
+            <div class="col-1 toolbarItem" style="align-self: end;">
+                <button @onclick="downloadSvg">Download Image</button>
+            </div>
+        };
+
+        Parent.AddToolbarItem(saveButton);*/
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await Render(Gds, ShowLayers);
+
+        await InitializeToolbar();
     }
 
     protected override async void OnAfterRender(bool firstRender)

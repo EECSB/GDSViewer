@@ -3,7 +3,7 @@
 @inject IJSRuntime JSR;
 
 <div class="container">
-    <img style="width: 25px;" src="resources/images/icons/save.png" />
+    
     <textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>
 </div>
 
@@ -14,10 +14,10 @@
     public string GdsAsText { get; set; }
 
     [Parameter]
-    public GDS Gds { get; set; }
+    public Pages.Viewer Parent { get; set; }
 
     [Parameter]
-    public List<ToolBarItem> ToolBarItems { get; set; }
+    public GDS Gds { get; set; }
 
     #endregion ***********************************************
 
@@ -25,13 +25,27 @@
 
     #region Initialization ***********************************
 
+    private async Task InitializeToolbar()
+    {
+        Parent.ClearToolbarItems();
+
+        RenderFragment saveButton = (__builder) =>
+        {
+            <div class="col-1 toolbarItem" style="align-self: end;">
+                <button @onclick="saveChanges" style="padding: 0; border: none;">
+                    <img style="width: 25px;" src="resources/images/icons/save.png" />
+                </button>
+            </div>
+        };
+
+        Parent.AddToolbarItem(saveButton);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await Render(Gds, null);
 
-        ToolBarItems.Clear();
-
-        //ToolBarItems.Add(new ToolBarItem("", ));
+        await InitializeToolbar();
     }
 
     #endregion ***********************************************

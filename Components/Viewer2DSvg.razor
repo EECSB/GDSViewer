@@ -17,7 +17,7 @@
             <input style="vertical-align: middle;" type="range" min="0" max="1" value="@opacity" step="0.1" @oninput="adjustOpacity" />
         </div>
     </div>
-    <svg viewBox="-2000 -1000 4000 4000" xmlns="http://www.w3.org/2000/svg">
+    <svg id="gdsSVG" viewBox="-2000 -1000 4000 4000" xmlns="http://www.w3.org/2000/svg">
         @((MarkupString)svgString)
     </svg>
 </div>
@@ -29,7 +29,11 @@
     private string svgString = "";
 
     [Parameter]
+    public Pages.Viewer Parent { get; set; }
+
+    [Parameter]
     public GDS Gds { get; set; }
+
     [Parameter]
     public List<CheckboxItem> ShowLayers { get; set; }
 
@@ -39,9 +43,25 @@
 
     #region Initialization ***********************************
 
+    private async Task InitializeToolbar()
+    {
+        Parent.ClearToolbarItems();
+
+        RenderFragment saveButton = (__builder) =>
+        {
+            <div class="col-1 toolbarItem" style="align-self: end;">
+                <button @onclick="downloadSvg" class="buttonStyle2">Download Image</button>
+            </div>
+        };
+
+        Parent.AddToolbarItem(saveButton);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await Render(Gds, ShowLayers);
+
+        await InitializeToolbar();
     }
 
     protected override async void OnAfterRender(bool firstRender)
@@ -57,6 +77,11 @@
 
 
     #region Methods ******************************************
+
+    private async Task downloadSvg()
+    {
+        await js.InvokeVoidAsync("downloadSvg", "mySvg.svg");
+    }
 
     private async Task adjustOpacity(ChangeEventArgs e)
     {

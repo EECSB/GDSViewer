@@ -146,6 +146,20 @@ function onPointerUp() {
     viewBox.y = newViewBox.y;
 }
 
+function downloadSvg(filename) {
+    const svgElement = document.getElementById("gdsSVG");
+    const svgContent = svgElement.outerHTML;
+
+    const link = document.createElement("a");
+    link.href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgContent);
+    link.download = filename;
+    link.style.display = "none";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 
 
 
