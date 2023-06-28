@@ -17,7 +17,7 @@
         </div>
     </div>
 
-    <div id="container" style="width: 800px; height: 800px; border: 2px solid black;"></div>
+    <div id="container" style="width: 800px; height: 800px;"></div>
 </div>
 
 @code {
@@ -26,6 +26,7 @@
     private int userSetlayerSpacing = 10;
     private bool cinematicViewToggle = false;
     private bool hidden = true;
+    public string ModelDownloadFileType { get; set; } = ".stl";
 
 
     [Parameter]
@@ -71,6 +72,33 @@
         };
 
         Parent.AddToolbarItem(cinematicViewButton);
+
+
+        RenderFragment changeFileTypeDD = (__builder) =>
+        {
+            <div class="col-1 toolbarItem" style="align-self: end;">
+                <div><b>File Type</b></div>
+                <div>
+                    <select @bind="ModelDownloadFileType">
+                        <option value=".stl">STL</option>
+                        <option value=".obj">OBJ</option>
+                        <option value=".gltf">GLTF</option>
+                    </select>
+                </div>
+            </div>
+        };
+
+        Parent.AddToolbarItem(changeFileTypeDD);
+
+
+        RenderFragment download3DButton = (__builder) =>
+        {
+            <div class="col-1 toolbarItem" style="align-self: end;">
+                <button @onclick="download3DObject" class="buttonStyle2">3D Download</button>
+            </div>
+        };
+
+        Parent.AddToolbarItem(download3DButton);
     }
 
     protected override async Task OnInitializedAsync()
@@ -124,6 +152,11 @@
     private async Task changeBackground(ChangeEventArgs e)
     {
         await js.InvokeVoidAsync("changeBackgroundInterOp", e.Value.ToString());
+    }
+
+    private async Task download3DObject()
+    {
+        await js.InvokeVoidAsync("download3DModel", Parent.CurrentlySelectedFileName, ModelDownloadFileType);
     }
 
     private async Task cinematicView()

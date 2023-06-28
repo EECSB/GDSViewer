@@ -2,6 +2,13 @@
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+
+
 var WIDTH = 800; // window.innerWidth;
 var HEIGHT = 800; //window.innerHeight;
 let renderer;
@@ -9,6 +16,9 @@ let scene;
 let camera;
 let loader;
 let controls;
+
+
+
 let chipObjectsGroup = new THREE.Group();
 
 let cinematicViewToggle = false;
@@ -46,48 +56,39 @@ const texture = loader2.load(window.location.href + 'resources/Images/Background
         scene.background = rt.texture;
 });
 
-window.registerThree = function () {
-    /*if (scene != undefined)
-    {
-        if (scene.children != undefined) {
-            
-                while (scene.children.length > 0) {
-                    scene.remove(scene.children[0]);
-                }
-            
-        }
-    }*/
+window.download3DModel = function (fileName, fileType) {
+    let exporter;
+    let data;
 
+    switch (fileType) {
+        case ".stl":
+                exporter = new STLExporter();
+                data = exporter.parse(scene);
+                BlazorDownloadFile(fileName + '.stl', 'application/octet-stream', data);
+            break;
+        case ".obj":
+                exporter = new OBJExporter();
+                data = exporter.parse(scene);
+                BlazorDownloadFile(fileName + '.obj', 'application/octet-stream', data);
+            break
+        case ".gltf":
+                exporter = new GLTFExporter();
+                exporter.parse(scene, function (gltf) {
+                    data = JSON.stringify(gltf, null, 2);
+                    BlazorDownloadFile(fileName + '.gltf', 'application/octet-stream', data);
+                });
+            break;
+    }
+}
+
+window.registerThree = function () {
     const container = document.getElementById('container');
     container.appendChild(renderer.domElement);
 
-    /*
-
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(WIDTH, HEIGHT);
-    renderer.setClearColor(0xDDDDDD, 1);
-
-    scene = new THREE.Scene();
-
-    camera = new THREE.PerspectiveCamera(100, WIDTH / HEIGHT);
-    camera.position.z = 2000;
-    scene.add(camera);
-
-    // Create ambient light and add to scene.
-    var light = new THREE.AmbientLight(0x404040); // soft white light
-    scene.add(light); 
-
-    // Create directional light and add to scene.
-    var directionalLight = new THREE.DirectionalLight(0xffffff);
-    directionalLight.position.set(3, 3, 2);
-    scene.add(directionalLight);
-
-    controls = new OrbitControls(camera, renderer.domElement);
-    loader = new GLTFLoader();*/
+    container.addEventListener('resize', onWindowResize, false);
 }
 
 window.draw = function (data) {
-    
     //Remove any previous objects.
     for (var i = chipObjectsGroup.children.length - 1; i >= 0; --i)
         chipObjectsGroup.remove(chipObjectsGroup.children[i]);
@@ -100,8 +101,8 @@ window.draw = function (data) {
         const shape = new THREE.Shape();
         let isFirstIteration = true;
         for (let point of points) {
-            if (isFirstIteration) {
                 shape.moveTo(point.x, point.y);
+            if (isFirstIteration) {
                 isFirstIteration = false;
             } else {
                 shape.lineTo(point.x, point.y);
@@ -186,4 +187,17 @@ function cinematicView() {
 
 function animate() {
     cinematicView();
+}
+
+function onWindowResize() {
+    const container = document.getElementById('container');
+
+    var width = container.innerWidth;
+    var height = container.innerHeight;
+
+
+    // Update the renderer size and aspect ratio
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
 }

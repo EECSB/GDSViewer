@@ -98,6 +98,12 @@ function getPointFromEvent(event) {
 }
 
 function onPointerMove(event) {
+    //Avoids a jump of the image on the first move by centering it.
+    if (isFirstClick) {
+        isFirstClick = false;
+
+        return;
+    }
 
     if (!isPointerDown)
         return;
@@ -114,14 +120,6 @@ function onPointerMove(event) {
     //Meanwhile scaleRatio adjust the "step size" or "move sensitivity" according to the scale/zoom. 
     newViewBox.x = viewBox.x - ((pointerPosition.x - pointerOrigin.x) * ratio / scaleRatio);
     newViewBox.y = viewBox.y - ((pointerPosition.y - pointerOrigin.y) * ratio / scaleRatio);
-
-    //Avoids a jump of the image on the first move by centering it.
-    if (isFirstClick) {
-        newViewBox.x = viewBox.width/2;
-        newViewBox.y = viewBox.height/2;
-
-        isFirstClick = false;
-    }
 
     const viewBoxString = `${newViewBox.x} ${newViewBox.y} ${viewBox.width} ${viewBox.height}`;
 

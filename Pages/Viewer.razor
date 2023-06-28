@@ -85,7 +85,7 @@
                         </div>
 
                         <div class="col-3 toolbarItem" style="width: 25%;">
-                            @if (currentlySelectedFileName.Contains("sky130"))
+                            @if (CurrentlySelectedFileName.Contains("sky130"))
                             {
                                 <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/foundry-provided.html">PDK Docs</a>
                                 <a href="https://antmicro-skywater-pdk-docs.readthedocs.io/en/test-submodules-in-rtd/contents/libraries/sky130_fd_sc_hd/cells/nand2/README.html">Example PDK NAND2 Cell Docs</a>
@@ -223,7 +223,7 @@
     private List<RenderFragment> toolbarItems = new List<RenderFragment>();
     private IRenderable? viewer = null;
     private ViewType view = ViewType.View2DSvg;
-    private string currentlySelectedFileName = "";
+    public string CurrentlySelectedFileName { get; set; } = "";
     private List<CheckboxItem> checkboxItems = new List<CheckboxItem>();
 
     private GDS gds = null;
@@ -1175,7 +1175,7 @@
 
         byte[] file = gds.Serialize();
 
-        await js.InvokeVoidAsync("BlazorDownloadFile", currentlySelectedFileName, "application/octet-stream", file);
+        await js.InvokeVoidAsync("BlazorDownloadFile", CurrentlySelectedFileName, "application/octet-stream", file);
     }
 
 
@@ -1210,9 +1210,9 @@
 
     private async Task openExampleGDSFile(ChangeEventArgs e)
     {
-        currentlySelectedFileName = e.Value.ToString();
+        CurrentlySelectedFileName = e.Value.ToString();
 
-        string filePath = $"resources/GDS Files/Sky130 GDS/{currentlySelectedFileName}";
+        string filePath = $"resources/GDS Files/Sky130 GDS/{CurrentlySelectedFileName}";
 
         byte[] rawGDS = await httpClient.GetByteArrayAsync(filePath);
 
