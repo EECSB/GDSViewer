@@ -3,9 +3,15 @@
 @using Layer = GDSViewer.Models.Layer;
 @using Point = GDSViewer.Models.Element.Point;
 @using static GDSViewer.Models.GDS.Record;
+@using GDSViewer.JsInterop;
+
+@inject IJSRuntime jsRuntime;
 
 
-<h3>Viewer2D</h3>
+<div class="viewWrapper">
+    <div id="canvas"></div>
+</div>
+
 
 @code {
     #region Vraiables ****************************************
@@ -17,6 +23,8 @@
     [Parameter]
     public List<CheckboxItem> ShowLayers { get; set; }
 
+    private KonvaJsInterop konvaJsInterop;
+
     #endregion ***********************************************
 
     #region Initialization ***********************************
@@ -25,20 +33,54 @@
     {
         Parent.ClearToolbarItems();
 
-        /*RenderFragment saveButton = (__builder) =>
+        RenderFragment backgroundDropdown = (__builder) =>
         {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <button @onclick="downloadSvg" class="buttonStyle2">Download Image</button>
+            <div id="center" class="col-1 toolbarItem" style="align-self: end;">
+                <select id="backgroundSelection">
+                    <option value="lines">Lines</option>
+                    <option value="dottedLines">Dots</option>
+                    <option value="none" selected="selected">None</option>
+                </select>
             </div>
         };
 
-        Parent.AddToolbarItem(saveButton);*/
+        Parent.AddToolbarItem(backgroundDropdown);
+
+
+        RenderFragment centerButton = (__builder) =>
+        {
+            <div id="center" class="col-1 toolbarItem" style="align-self: end;" >
+                <img style="height: 22px; padding: 1px; padding-right: 5px;" src="/resources/images/icons/center.png" />
+            </div>
+        };
+
+        Parent.AddToolbarItem(centerButton);
+
+
+        RenderFragment zoomInButton = (__builder) =>
+        {
+            <div id="zoomIn" class="col-1 toolbarItem" style="align-self: end;">
+                <img style="height: 22px; padding: 1px; padding-right: 5px;" src="/resources/images/icons/zoomIn.png" />
+            </div>
+        };
+
+        Parent.AddToolbarItem(zoomInButton);
+
+
+        RenderFragment zoomOutButton = (__builder) =>
+        {
+            <div id="zoomOut" class="col-1 toolbarItem" style="align-self: end;">
+                <img style="height: 22px; padding: 1px; padding-right: 5px;" src="/resources/images/icons/zoomOut.png" />
+            </div>
+        };
+
+        Parent.AddToolbarItem(zoomOutButton);
     }
 
     protected override async Task OnInitializedAsync()
     {
         //await Render(Gds, ShowLayers);
-
+        konvaJsInterop = new KonvaJsInterop(jsRuntime);
         await InitializeToolbar();
     }
 
@@ -46,7 +88,12 @@
     {
         if (firstRender)
         {
-            //await js.InvokeVoidAsync("registerSVGEvents");
+            //Initilize Konvajs 2D library.
+            await konvaJsInterop.InitializeKonva();
+            //Send this objects reference to javascript so we can make calls to C# instance methods from it.
+            //await commonJsInteropUtils.SendObjectReference(this);
+            //Set selected item.
+            //await konvaJsInterop.SelectItem(State.CurrentlySelectedComponent.ID);
         }
     }
 

@@ -12,7 +12,7 @@
             Layer Distance
         </div>
         <div class="col">
-            <input type="range" min="0" max="400" value="@userSetlayerSpacing" @oninput="sliderChanged" />
+            <input type="range" min="50" max="700" value="@userSetlayerSpacing" @oninput="sliderChanged" />
             @*<input style="vertical-align: middle;" type="range" min="0" max="1" value="@opacity" step="0.1" @oninput="adjustOpacity" />*@
         </div>
     </div>
@@ -103,8 +103,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Render(Gds, ShowLayers);
-
         await InitializeToolbar();
     }
 
@@ -113,6 +111,8 @@
         if (firstRender)
         {
             await js.InvokeVoidAsync("registerThree");
+
+            await Render(Gds, ShowLayers);
         }
     }
 
@@ -122,31 +122,21 @@
 
     #region Methods ******************************************
 
-    int prevUserSetlayerSpacing = 0;
     private async Task sliderChanged(ChangeEventArgs e)
     {
         userSetlayerSpacing = Convert.ToInt32(e.Value);
 
         var orderedLayers = Gds.AdditionalInformation.Layers.OrderBy(x => x.Value.Number);
-        int totalOffset = 0;
+
+        int layerOffset = 0;
         foreach (var layer in orderedLayers)
         {
-            layer.Value.Offset += totalOffset;
-            if (prevUserSetlayerSpacing < userSetlayerSpacing)
-            {
-                layer.Value.Offset += totalOffset;
-                totalOffset += userSetlayerSpacing;
-            }
-            else
-            {
-                layer.Value.Offset -= totalOffset;
-                totalOffset -= userSetlayerSpacing;
-            }
+            layer.Value.Offset = userSetlayerSpacing * layerOffset;
+
+            layerOffset += 1;
         }
 
         await Render(Gds, ShowLayers);
-
-        prevUserSetlayerSpacing = userSetlayerSpacing;
     }
 
     private async Task changeBackground(ChangeEventArgs e)
@@ -156,7 +146,7 @@
 
     private async Task download3DObject()
     {
-        await js.InvokeVoidAsync("download3DModel", Parent.CurrentlySelectedFileName, ModelDownloadFileType);
+        await js.InvokeVoidAsync("download3DModelInterOp", Parent.CurrentlySelectedFileName, ModelDownloadFileType);
     }
 
     private async Task cinematicView()
@@ -224,9 +214,9 @@
             }
         }
 
-        await js.InvokeVoidAsync("draw", new { elements = elements });
+        await js.InvokeVoidAsync("drawInterOp", new { elements = elements });
 
-        await js.InvokeVoidAsync("render3D");
+        await js.InvokeVoidAsync("render3DInterOp");
     }
 
     #endregion ***********************************************

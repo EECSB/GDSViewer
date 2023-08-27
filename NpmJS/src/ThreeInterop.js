@@ -7,8 +7,6 @@ import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
-
-
 var WIDTH = 800; // window.innerWidth;
 var HEIGHT = 800; //window.innerHeight;
 let renderer;

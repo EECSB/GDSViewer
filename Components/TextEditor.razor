@@ -1,17 +1,29 @@
 ﻿@using GDSViewer.Models;
 
+@using BlazorMonaco;
+@using BlazorMonaco.Editor;
+@using BlazorMonaco.Languages;
+
 @inject IJSRuntime JSR;
 
 <div class="container">
-    
-    <textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>
+    @if(false) //is mobile device
+    {
+        <textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>
+    }
+    else
+    {
+        <div id="gdsTextEditor" style=" "></div>
+    }
 </div>
 
 
 @code {
     #region Vraiables ****************************************
 
-    public string GdsAsText { get; set; }
+    private bool isFirstRender = true;
+
+    public string GdsAsText { get; set; } = "";
 
     [Parameter]
     public Pages.Viewer Parent { get; set; }
@@ -48,25 +60,38 @@
         await InitializeToolbar();
     }
 
+    protected override async void OnAfterRender(bool firstRender)
+    {
+        isFirstRender = firstRender;
+
+        if (firstRender)
+        {
+            await JSR.InvokeVoidAsync("InitializeMonaco", GdsAsText, "GDS");
+        }
+    }
+
     #endregion ***********************************************
 
 
 
     #region Methods ******************************************
 
-    private async Task saveChanges()
+    private async Task saveCurrent()
     {
-        /*foreach (var recordView in recordsView)
-            {
-            if (!recordView.changed)
-            continue;
-
-            recordView.changed = false;
-
-            record.Type = new GDS.Record.RecordType();
-        }*/
+        await saveChanges();
     }
 
+    private async Task loadEditor(string text)
+    {
+        await JSR.InvokeVoidAsync("SetMonacoContent", text);
+    }
+
+    private async Task saveChanges()
+    {
+        GdsAsText = await JSR.InvokeAsync<string>("GetMonacoContent");
+
+        Gds.Deserialize(GdsAsText);
+    }
 
     public async Task Render(GDS gds, List<CheckboxItem> showLayers)
     {
@@ -74,10 +99,11 @@
         if (gds is not null)
             this.Gds = gds;
 
-
         if (Gds is null)
             return;
 
+
+        //GdsAsText = Gds.AsText();
 
         foreach (var record in gds.Records)
         {
@@ -109,9 +135,11 @@
                         break;
                 }
             }
-
             GdsAsText += $"{record.Type.ToString()}: {data} \n";
         }
+
+        if (!isFirstRender)
+            await loadEditor(GdsAsText);
 
         StateHasChanged();
     }

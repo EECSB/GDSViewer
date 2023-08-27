@@ -1,13 +1,6 @@
 ﻿body {
 }
 
-.viewWrapper {
-    width: 800px;
-    height: 800px;
-    position: relative;
-    padding: 0;
-}
-
 .overlay {
     position: absolute;
     bottom: 2%;

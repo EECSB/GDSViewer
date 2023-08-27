@@ -178,3 +178,17 @@ function BlazorDownloadFile(filename, contentType, content) {
     // On older versions of Safari, it seems you need to comment this line...
     URL.revokeObjectURL(exportUrl);
 }
+
+function applyStyleForElement(data) {
+    document.getElementById(data.id).style[data.attrib] = data.value;
+}
+
+function applyStyleForElementClass(data) {
+    for (let classReference of document.getElementsByClassName(data.className)) {
+        classReference.style[data.attrib] = data.value;
+    }
+}
+
+function setInnerHTMLForElement(data) {
+    document.getElementById(data.id).innerHTML = data.value;
+}

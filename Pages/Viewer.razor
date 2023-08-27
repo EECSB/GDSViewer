@@ -1,4 +1,4 @@
-﻿@page "/viewer"
+﻿@*@page "/viewer"*@
 
 @using System.IO;
 @using System.Net.Http
@@ -112,10 +112,10 @@
                                 <div><b>View</b></div>
                                 <div>
                                     <select @onchange="viewChange">
-                                        <option value="@ViewType.ViewText">Text</option>
-                                        <option selected value="@ViewType.View2DSvg">2D SVG</option>
-                                        <option value="@ViewType.View2D">2D</option>
-                                        <option value="@ViewType.View3D">3D</option>
+                                        <option value="@ViewType.ViewText">Text Editor</option>
+                                        <option selected value="@ViewType.View2DSvg">2D Viewer</option>
+                                        <option value="@ViewType.View2D">2D Editor</option>
+                                        <option value="@ViewType.View3D">3D Viewer</option>
                                     </select>
                                 </div>
                             </div>
@@ -224,6 +224,7 @@
     private IRenderable? viewer = null;
     private ViewType view = ViewType.View2DSvg;
     public string CurrentlySelectedFileName { get; set; } = "";
+    public string CurrentlySelectedFileType { get; set; } = "";
     private List<CheckboxItem> checkboxItems = new List<CheckboxItem>();
 
     private GDS gds = null;
@@ -1175,7 +1176,7 @@
 
         byte[] file = gds.Serialize();
 
-        await js.InvokeVoidAsync("BlazorDownloadFile", CurrentlySelectedFileName, "application/octet-stream", file);
+        await js.InvokeVoidAsync("BlazorDownloadFile", (CurrentlySelectedFileName + CurrentlySelectedFileType), "application/octet-stream", file);
     }
 
 
@@ -1210,9 +1211,12 @@
 
     private async Task openExampleGDSFile(ChangeEventArgs e)
     {
-        CurrentlySelectedFileName = e.Value.ToString();
+        string[] fileInfo = e.Value.ToString().Split('.');
 
-        string filePath = $"resources/GDS Files/Sky130 GDS/{CurrentlySelectedFileName}";
+        CurrentlySelectedFileName = fileInfo[0];
+        CurrentlySelectedFileType = fileInfo[1];
+
+        string filePath = $"resources/GDS Files/Sky130 GDS/{CurrentlySelectedFileName}.{CurrentlySelectedFileType}";
 
         byte[] rawGDS = await httpClient.GetByteArrayAsync(filePath);
 

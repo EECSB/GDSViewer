@@ -7,7 +7,12 @@
     height: 800px;
     padding: 0;
     overflow-y: auto;
-} 
+}
+
+
+#gdsTextEditor {
+    height: inherit;
+}
 
 
 textarea:focus-visible {

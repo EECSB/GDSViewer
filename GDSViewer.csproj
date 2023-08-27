@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <RunAOTCompilation>false</RunAOTCompilation>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,8 +16,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Models\KonvaJsInterop.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="7.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="7.0.3" PrivateAssets="all" />
+    <PackageReference Include="BlazorMonaco" Version="3.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,8 +31,8 @@
 
   <ItemGroup>
     <Folder Include="Components\Viewer2DSvg\" />
-    <Folder Include="wwwroot\js\" />
     <Folder Include="wwwroot\css\fonts\" />
+    <Folder Include="wwwroot\js\webpack-bundle\" />
   </ItemGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">

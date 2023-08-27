@@ -14,12 +14,7 @@ namespace GDSViewer.Models
 
         public GDS(byte[] gdsData)
         {
-            Records = new List<Record>();
-
-            parseRecords(gdsData);
-            constructGDS();
-
-            AdditionalInformation = new AdditionalGDSInformation(this);
+            Deserialize(gdsData);
         }
 
         private void parseRecords(byte[] gdsData) 
@@ -88,6 +83,68 @@ namespace GDSViewer.Models
             //todo: serialize GDS to byte[]
 
             return serializedGDS;
+        }
+
+        public void Deserialize(byte[] gdsData)
+        {
+            Records = new List<Record>();
+
+            parseRecords(gdsData);
+            constructGDS();
+
+            AdditionalInformation = new AdditionalGDSInformation(this);
+        }
+
+        public void Deserialize(string gdsAstext)
+        {
+            /*foreach (var recordView in recordsView)
+                {
+                if (!recordView.changed)
+                continue;
+
+                recordView.changed = false;
+
+                record.Type = new GDS.Record.RecordType();
+            }*/
+        }
+
+        public string AsText() 
+        {
+            string gdsAsText = "";
+
+            foreach (var record in this.Records)
+            {
+                string data = "";
+                if(record.Data is not null)
+                {
+                    switch (record.Data)
+                    {
+                        case double[] da:
+                            foreach (var item in da)
+                            {
+                                data += item.ToString() + " ";
+                            }
+                            break;
+                        case int[] ia:
+                            foreach (var item in ia)
+                            {
+                                data += item.ToString() + " ";
+                            }
+                            break;
+                        case string s:
+                            break;
+                        default:
+                            data = record.Data.ToString();
+                            break;
+                    }
+                }
+
+                //No need to use StringBuilder explicitly.
+                //When the code gets lowered it should be optimized automatically.
+                gdsAsText += $"{record.Type.ToString()}: {data} \n";
+            }
+
+            return gdsAsText;
         }
 
         #endregion **************************************************************************
