@@ -54,6 +54,22 @@ const texture = loader2.load(window.location.href + 'resources/Images/Background
         scene.background = rt.texture;
 });
 
+window.render3DInterOp = function () {
+    render3D();
+}
+
+window.changeBackgroundInterOp = function (backgroundName) {
+    changeBackground(backgroundName);
+}
+
+window.drawInterOp = function (data) {
+    draw(data);
+}
+
+window.cinematicViewInterOp = function (cinematicViewToggleInterOp) {
+    cinematicView(cinematicViewToggleInterOp);
+}
+
 window.download3DModel = function (fileName, fileType) {
     let exporter;
     let data;
@@ -86,7 +102,7 @@ window.registerThree = function () {
     container.addEventListener('resize', onWindowResize, false);
 }
 
-window.draw = function (data) {
+function draw(data) {
     //Remove any previous objects.
     for (var i = chipObjectsGroup.children.length - 1; i >= 0; --i)
         chipObjectsGroup.remove(chipObjectsGroup.children[i]);
@@ -130,16 +146,12 @@ window.draw = function (data) {
     render3D();
 }
 
-window.render3D = function () {
+function render3D() {
     animate();
 
     renderer.render(scene, camera);
 
     requestAnimationFrame(render3D);
-}
-
-window.changeBackgroundInterOp = function (backgroundName) {
-    changeBackground(backgroundName);
 }
 
 function changeBackground(backgroundName) {
@@ -150,8 +162,7 @@ function changeBackground(backgroundName) {
     });
 }
 
-
-window.cinematicViewInterOp = function (cinematicViewToggleInterOp) {
+function cinematicView(cinematicViewToggleInterOp) {
     cinematicViewToggle = cinematicViewToggleInterOp;
 
     // Compute the bounding box of the group
@@ -167,7 +178,7 @@ var camera_speed = 0.1;
 const clock = new THREE.Clock();
 var time = 0;
 
-function cinematicView() {
+function runCinematicView() {
     if (cinematicViewToggle) {
         clock.getDelta();
         time = clock.elapsedTime.toFixed(2);
@@ -184,7 +195,7 @@ function cinematicView() {
 }
 
 function animate() {
-    cinematicView();
+    runCinematicView();
 }
 
 function onWindowResize() {

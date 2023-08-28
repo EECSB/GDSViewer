@@ -132,6 +132,7 @@ namespace GDSViewer.Models
                             }
                             break;
                         case string s:
+                            data = s;
                             break;
                         default:
                             data = record.Data.ToString();

@@ -103,40 +103,7 @@
             return;
 
 
-        //GdsAsText = Gds.AsText();
-
-        foreach (var record in gds.Records)
-        {
-            string data = "";
-            string dataColor = "";
-            @if (record.Data is not null)
-            {
-                switch (record.Data)
-                {
-                    case double[] da:
-                        foreach (var item in da)
-                        {
-                            data += item.ToString() + " ";
-                        }
-                        dataColor = "7ec002";
-                        break;
-                    case int[] ia:
-                        foreach (var item in ia)
-                        {
-                            data += item.ToString() + " ";
-                        }
-                        dataColor = "aaf224";
-                        break;
-                    case string s:
-                        dataColor = "ae53ef";
-                        break;
-                    default:
-                        data = record.Data.ToString();
-                        break;
-                }
-            }
-            GdsAsText += $"{record.Type.ToString()}: {data} \n";
-        }
+        GdsAsText = Gds.AsText();
 
         if (!isFirstRender)
             await loadEditor(GdsAsText);
