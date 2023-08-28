@@ -1,4 +1,6 @@
-﻿import * as THREE from 'three';
+﻿//Includes///////////////////////////////////////
+
+import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -6,207 +8,305 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-var WIDTH = 800; // window.innerWidth;
-var HEIGHT = 800; //window.innerHeight;
-let renderer;
-let scene;
-let camera;
-let loader;
-let controls;
+/////////////////////////////////////////////////
 
 
 
-let chipObjectsGroup = new THREE.Group();
+//Global variables///////////////////////////////
 
-let cinematicViewToggle = false;
+let app;
+//let dotNetObjRef; //Not needed here for now.
 
-renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(WIDTH, HEIGHT);
-renderer.setClearColor(0xDDDDDD, 1);
-
+/////////////////////////////////////////////////
 
 
-scene = new THREE.Scene();
 
-camera = new THREE.PerspectiveCamera(100, WIDTH / HEIGHT, 1, 50000);
-camera.position.z = 2000;
-scene.add(camera);
+//C# Interop Functions///////////////////////////
 
-scene.add(chipObjectsGroup);
+//Init./////////////////////
 
-// Create ambient light and add to scene.
-var light = new THREE.AmbientLight(0x404040); // soft white light
-scene.add(light);
+window.registerThree = function () {
+    let settings = {
+        containerSizeX: container.clientWidth,
+        containerSizeY: container.clientHeight,
+        containerElement: document.getElementById('container')
+    };
 
-// Create directional light and add to scene.
-var directionalLight = new THREE.DirectionalLight(0xffffff);
-directionalLight.position.set(3, 3, 2);
-scene.add(directionalLight);
+    app = new Viewer3D(settings);
+}
 
-controls = new OrbitControls(camera, renderer.domElement);
-loader = new GLTFLoader();
+/*function setDotNetObjRef(ref) {
+    dotNetObjRef = ref;
+}*/
 
-const loader2 = new THREE.TextureLoader();
-const texture = loader2.load(window.location.href + 'resources/Images/Background/background1.jpg', () => {
-        const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
-        rt.fromEquirectangularTexture(renderer, texture);
-        scene.background = rt.texture;
-});
+////////////////////////////
 
-window.render3DInterOp = function () {
-    render3D();
+window.startRender3DInterOp = function () {
+    app.startRender3D();
 }
 
 window.changeBackgroundInterOp = function (backgroundName) {
-    changeBackground(backgroundName);
+    app.changeBackground(backgroundName);
 }
 
 window.drawInterOp = function (data) {
-    draw(data);
+    app.draw(data);
 }
 
 window.cinematicViewInterOp = function (cinematicViewToggleInterOp) {
-    cinematicView(cinematicViewToggleInterOp);
+    app.cinematicView(cinematicViewToggleInterOp);
 }
 
-window.download3DModel = function (fileName, fileType) {
-    let exporter;
-    let data;
+window.download3DModelInterOp = function (CurrentlySelectedFileName, ModelDownloadFileType) {
+    app.download3DModel(CurrentlySelectedFileName, ModelDownloadFileType);
+}
 
-    switch (fileType) {
-        case ".stl":
+
+/////////////////////////////////////////////////
+
+
+
+class Viewer3D {
+
+    //Initialize//////////////////////////////////////
+
+    constructor(settings) {
+        //Add settings.
+        this.settings = settings;
+
+        //Initialize the 3D viewer by adding all the needed compoents(renderer, scene, camera, ...).
+        this.initializeViewer();
+
+        //Setsup the initial scene by loading the background and "drawing" the first scene.
+        this.setupInitialScene();
+    }
+
+    initializeViewer() {
+        //let loader = new GLTFLoader();
+
+        //Init. varibles//////////
+
+        this.cinematicViewToggle = false;
+
+        //////////////////////////
+        
+        //Create and init. the renderer.
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(this.settings.containerSizeX, this.settings.containerSizeY);
+        this.renderer.setClearColor(0xDDDDDD, 1);
+        this.renderer.xr.enabled = true; //Enable for VR.
+
+        //Create a scene
+        this.scene = new THREE.Scene();
+
+        //Create and init. a camera and add it to the scene.
+        this.camera = new THREE.PerspectiveCamera(100, this.settings.containerSizeX / this.settings.containerSizeY, 1, 50000);
+        this.camera.position.z = 2000;
+        this.scene.add(this.camera);
+
+        //Create objects group and add it to the scene.
+        this.chipObjectsGroup = new THREE.Group();
+        this.scene.add(this.chipObjectsGroup);
+
+        //Create ambient light and add it to the scene.
+        const light = new THREE.AmbientLight(0x404040); // soft white light
+        this.scene.add(light);
+
+        //Create a directional light and add it to scene.
+        const directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(3, 3, 2);
+        this.scene.add(directionalLight);
+
+        //Create controls.
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+
+        //Init. a texture loader. It will get used by changeBackground().
+        this.textureLoader = new THREE.TextureLoader();
+
+        this.cinematicSettings = {
+            chipCenterPoint: new THREE.Vector3(),
+            camera_offset: { x: 10000, y: 10000, z: 10000 },
+            camera_speed: 0.1,
+            clock: new THREE.Clock()//,
+            //time: 0
+        };
+
+        //Add VR button.
+        this.settings.containerElement.appendChild(VRButton.createButton(this.renderer));
+    }
+
+    setupInitialScene() {
+        //Init. background.
+        this.changeBackground("background1.jpg");
+
+        //Start the render loop.
+        //this.startRender3D(); //Remove??
+    }
+
+    /////////////////////////////////////////////////////////
+
+
+
+    /////////////////////////////////////////////////////////
+
+    startRender3D() {
+        //Perform animations of objects or movements of camera.
+        app.runCinematicView();//todo: optimize
+        //this.runVR();
+
+        //Call renderer to render the scene.
+        app.renderer.render(app.scene, app.camera);
+
+        requestAnimationFrame(app.startRender3D); //setAnimationLoop needs to be used for VR.
+        //app.renderer.setAnimationLoop(app.startRender3D);
+    }
+
+    runCinematicView() {
+        if (this.cinematicViewToggle) {
+            const clock = this.cinematicSettings.clock;
+            const chipCenterPoint = this.cinematicSettings.chipCenterPoint;
+            const camera_offset = this.cinematicSettings.camera_offset;
+            const camera_speed = this.cinematicSettings.camera_speed;
+
+            clock.getDelta();
+            const time = clock.elapsedTime.toFixed(2);
+
+            this.camera.position.x = chipCenterPoint.x + camera_offset.x * (Math.sin(time * camera_speed));
+            this.camera.position.z = chipCenterPoint.z + (camera_offset.z * Math.cos(time * 0.1)) * (Math.cos(time * camera_speed));
+            this.camera.position.y = chipCenterPoint.y + camera_offset.y * (Math.cos(time * 0.05));
+
+            this.camera.lookAt(chipCenterPoint.x, chipCenterPoint.y, chipCenterPoint.z);
+        } else {
+            this.camera.rotation.y += 0.0;
+            this.camera.rotation.x += 0.0;
+        }
+    }
+
+    draw(data) {
+        //Remove any previous objects.
+        for (var i = this.chipObjectsGroup.children.length - 1; i >= 0; --i)
+            this.chipObjectsGroup.remove(this.chipObjectsGroup.children[i]);
+
+        let polygons = data.elements;
+
+        for (let polygon of polygons) {
+            let points = polygon.points;
+
+            const shape = new THREE.Shape();
+            let isFirstIteration = true;
+            for (let point of points) {
+                shape.moveTo(point.x, point.y);
+                if (isFirstIteration) {
+                    isFirstIteration = false;
+                } else {
+                    shape.lineTo(point.x, point.y);
+                }
+            }
+
+            const extrudeSettings = {
+                depth: polygon.layer.depth
+            };
+
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const material = new THREE.MeshPhongMaterial({
+                color: polygon.layer.color,
+                wireframe: false,
+                shininess: 150
+            });
+
+
+            const mesh = new THREE.Mesh(geometry, material);
+
+            mesh.rotation.set(1.5, 0.0, 0);
+            mesh.position.set(0, polygon.layer.offset, 0);
+
+            this.chipObjectsGroup.add(mesh);
+        }
+    }
+
+    /////////////////////////////////////////////////////////
+
+
+
+    //Other//////////////////////////////////////////////////
+
+    cinematicView(cinematicViewToggleInterOp) {
+        this.cinematicViewToggle = cinematicViewToggleInterOp;
+
+        // Compute the bounding box of the group
+        const bbox = new THREE.Box3().setFromObject(this.chipObjectsGroup);
+
+        // Calculate the center point of the bounding box
+        bbox.getCenter(this.cinematicSettings.chipCenterPoint);
+    }
+
+    onWindowResize() {
+        const width = this.settings.containerElement.innerWidth;
+        const height = this.settings.containerElement.innerHeight;
+
+        //Update the renderer size and aspect ratio.
+        this.renderer.setSize(width, height);
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+    }
+
+    changeBackground(backgroundName) {
+        const texture = this.textureLoader.load(window.location.href + '/resources/Images/Background/' + backgroundName, () => {
+            const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
+            rt.fromEquirectangularTexture(this.renderer, texture);
+            this.scene.background = rt.texture;
+        });
+    }
+
+    download3DModel(fileName, fileType) {
+        let exporter;
+        let data;
+
+        switch (fileType) {
+            case ".stl":
                 exporter = new STLExporter();
-                data = exporter.parse(scene);
+                data = exporter.parse(this.scene);
                 BlazorDownloadFile(fileName + '.stl', 'application/octet-stream', data);
-            break;
-        case ".obj":
+                break;
+            case ".obj":
                 exporter = new OBJExporter();
-                data = exporter.parse(scene);
+                data = exporter.parse(this.scene);
                 BlazorDownloadFile(fileName + '.obj', 'application/octet-stream', data);
-            break
-        case ".gltf":
+                break
+            case ".gltf":
                 exporter = new GLTFExporter();
-                exporter.parse(scene, function (gltf) {
+                exporter.parse(this.scene, function (gltf) {
                     data = JSON.stringify(gltf, null, 2);
                     BlazorDownloadFile(fileName + '.gltf', 'application/octet-stream', data);
                 });
-            break;
+                break;
+        }
     }
+
+    /////////////////////////////////////////////////////////
 }
 
-window.registerThree = function () {
-    const container = document.getElementById('container');
-    container.appendChild(renderer.domElement);
 
-    container.addEventListener('resize', onWindowResize, false);
-}
 
-function draw(data) {
-    //Remove any previous objects.
-    for (var i = chipObjectsGroup.children.length - 1; i >= 0; --i)
-        chipObjectsGroup.remove(chipObjectsGroup.children[i]);
+/*
+runVR() {
+    // Update VR headset position and orientation
+    this.vrSession.requestAnimationFrame(startRender3D);
+    this.vrSession.onXRFrame((time, frame) => {
+        const xrPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+        if (xrPose) {
+            const position = xrPose.transform.position;
+            const orientation = xrPose.transform.orientation;
 
-    let polygons = data.elements;
-
-    for (let polygon of polygons) {
-        let points = polygon.points;
-
-        const shape = new THREE.Shape();
-        let isFirstIteration = true;
-        for (let point of points) {
-                shape.moveTo(point.x, point.y);
-            if (isFirstIteration) {
-                isFirstIteration = false;
-            } else {
-                shape.lineTo(point.x, point.y);
-            }
+            // Update camera position and rotation based on VR headset pose
+            this.camera.position.set(position.x, position.y, position.z);
+            this.camera.quaternion.set(orientation.x, orientation.y, orientation.z, orientation.w);
         }
 
-        const extrudeSettings = {
-            depth: polygon.layer.depth
-        };
-
-        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        const material = new THREE.MeshPhongMaterial({
-            color: polygon.layer.color,
-            wireframe: false,
-            shininess: 150
-        });
-
-
-        const mesh = new THREE.Mesh(geometry, material);
-
-        mesh.rotation.set(1.5, 0.0, 0);
-        mesh.position.set(0, polygon.layer.offset, 0);
-
-        chipObjectsGroup.add(mesh);
-    }
-
-    render3D();
-}
-
-function render3D() {
-    animate();
-
-    renderer.render(scene, camera);
-
-    requestAnimationFrame(render3D);
-}
-
-function changeBackground(backgroundName) {
-    const texture = loader2.load(window.location.href + '/resources/Images/Background/' + backgroundName, () => {
-        const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
-        rt.fromEquirectangularTexture(renderer, texture);
-        scene.background = rt.texture;
+        // Render the scene with the updated camera
+        this.renderer.render(this.scene, this.camera);
     });
-}
+}*/
 
-function cinematicView(cinematicViewToggleInterOp) {
-    cinematicViewToggle = cinematicViewToggleInterOp;
-
-    // Compute the bounding box of the group
-    const bbox = new THREE.Box3().setFromObject(chipObjectsGroup);
-
-    // Calculate the center point of the bounding box
-    bbox.getCenter(chipCenterPoint);
-}
-
-const chipCenterPoint = new THREE.Vector3();
-var camera_offset = { x: 10000, y: 10000, z: 10000 };
-var camera_speed = 0.1;
-const clock = new THREE.Clock();
-var time = 0;
-
-function runCinematicView() {
-    if (cinematicViewToggle) {
-        clock.getDelta();
-        time = clock.elapsedTime.toFixed(2);
-
-        camera.position.x = chipCenterPoint.x + camera_offset.x * (Math.sin(time * camera_speed));
-        camera.position.z = chipCenterPoint.z + (camera_offset.z * Math.cos(time * 0.1)) * (Math.cos(time * camera_speed));
-        camera.position.y = chipCenterPoint.y + camera_offset.y * (Math.cos(time * 0.05));
-
-        camera.lookAt(chipCenterPoint.x, chipCenterPoint.y, chipCenterPoint.z);
-    } else {
-        camera.rotation.y += 0.0;
-        camera.rotation.x += 0.0;
-    }
-}
-
-function animate() {
-    runCinematicView();
-}
-
-function onWindowResize() {
-    const container = document.getElementById('container');
-
-    var width = container.innerWidth;
-    var height = container.innerHeight;
-
-
-    // Update the renderer size and aspect ratio
-    renderer.setSize(width, height);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-}

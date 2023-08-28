@@ -23,6 +23,8 @@
 @code {
     #region Vraiables ****************************************
 
+    private bool isFirstRender = true;
+
     private int userSetlayerSpacing = 10;
     private bool cinematicViewToggle = false;
     private bool hidden = true;
@@ -108,6 +110,8 @@
 
     protected override async void OnAfterRender(bool firstRender)
     {
+        isFirstRender = firstRender;
+
         if (firstRender)
         {
             await js.InvokeVoidAsync("registerThree");
@@ -215,8 +219,9 @@
         }
 
         await js.InvokeVoidAsync("drawInterOp", new { elements = elements });
-
-        await js.InvokeVoidAsync("render3DInterOp");
+        
+        if (isFirstRender)
+            await js.InvokeVoidAsync("startRender3DInterOp");
     }
 
     #endregion ***********************************************
