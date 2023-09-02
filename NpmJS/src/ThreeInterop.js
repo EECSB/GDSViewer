@@ -139,17 +139,14 @@ class Viewer3D {
 
         //Add VR button.
         this.settings.containerElement.appendChild(VRButton.createButton(this.renderer));   
-
-        //Start animation/render loop.
-        //this.startRender3D(); //Will be started by interop call from C# by Viewer3D.razor component.
     }
 
     setupInitialScene() {
         //Init. background.
         this.changeBackground("background1.jpg");
 
-        //Start the render loop.
-        //this.startRender3D(); //Remove??
+        //Start animation/render loop.
+        //this.startRender3D(); //Will be started by interop call from C# by Viewer3D.razor component.
     }
 
     /////////////////////////////////////////////////////////
@@ -159,12 +156,20 @@ class Viewer3D {
     /////////////////////////////////////////////////////////
 
     startRender3D() {
-        requestAnimationFrame(this.startRender3D.bind(this)); //setAnimationLoop needs to be used for VR.
-        //app.renderer.setAnimationLoop(app.startRender3D);
+        //requestAnimationFrame(this.startRender3D.bind(this)); //setAnimationLoop() needs to be used for VR.
+        this.renderer.setAnimationLoop(this.animate.bind(this));
+    }
 
+    animate() {
         //Perform animations of objects or movements of camera.
         this.runCinematicView();//todo: optimize
         //this.runVR();
+
+        /*if (resizeRendererToDisplaySize(this.renderer)) {
+            const canvas = this.renderer.domElement;
+            this.camera.aspect = canvas.clientWidth / canvas.clientHeight;
+            this.camera.updateProjectionMatrix();
+        }*/
 
         //Call renderer to render the scene.
         this.renderer.render(this.scene, this.camera);
@@ -238,25 +243,6 @@ class Viewer3D {
 
 
     //Other//////////////////////////////////////////////////
-
-    runVR() {
-        // Update VR headset position and orientation
-        this.vrSession.requestAnimationFrame(startRender3D);
-        this.vrSession.onXRFrame((time, frame) => {
-            const xrPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
-            if (xrPose) {
-                const position = xrPose.transform.position;
-                const orientation = xrPose.transform.orientation;
-
-                // Update camera position and rotation based on VR headset pose
-                this.camera.position.set(position.x, position.y, position.z);
-                this.camera.quaternion.set(orientation.x, orientation.y, orientation.z, orientation.w);
-            }
-
-            // Render the scene with the updated camera
-            this.renderer.render(this.scene, this.camera);
-        });
-    }
 
     cinematicView(cinematicViewToggleInterOp) {
         this.cinematicViewToggle = cinematicViewToggleInterOp;

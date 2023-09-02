@@ -4,7 +4,8 @@
 .overlay {
     position: absolute;
     bottom: 3%;
-    left: calc(50% - 129px); /* elementWidth = 258 => 258/2 => 129px*/
+    left: 6%;
+    /*left: calc(50% - 129px);*/ /* elementWidth = 258 => 258/2 => 129px*/
 }
 
 #VRButton {
