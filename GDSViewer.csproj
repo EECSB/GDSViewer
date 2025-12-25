@@ -9,10 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="wwwroot\js\webpack-bundle\**" />
+    <Content Remove="wwwroot\js\webpack-bundle\**" />
+    <None Remove="wwwroot\js\webpack-bundle\**" />
+    <EmbeddedResource Remove="wwwroot\js\webpack-bundle\**" />
+    
     <Compile Remove="wwwroot\Node\**" />
     <Content Remove="wwwroot\Node\**" />
-    <EmbeddedResource Remove="wwwroot\Node\**" />
     <None Remove="wwwroot\Node\**" />
+    <EmbeddedResource Remove="wwwroot\Node\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,7 +37,6 @@
   <ItemGroup>
     <Folder Include="Components\Viewer2DSvg\" />
     <Folder Include="wwwroot\css\fonts\" />
-    <Folder Include="wwwroot\js\webpack-bundle\" />
   </ItemGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
