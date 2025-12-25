@@ -113,44 +113,48 @@
         var svgBuilder = new StringBuilder();
 
         int i = 0;
-        foreach (var element in Gds.StreamFormat.Structure.Elements)
+        foreach (var structure in gds.StreamFormat.Structures)
         {
-            i++;
-
-            var boundry = element.Boundry.First();
-
-            try //Temp
+            foreach (var elementModel in structure.Elements)
             {
-                /*if (!isRenderableElement(boundry.Layer.Type))
-                    continue;*/
-
-                int asd = 0;
-                if (boundry.Layer.Data is null)
-                    asd = 0;
-
-                short layerNumber = boundry.Layer.Data;
-
-                //Skip current element if the layer it is on is disabled.
-                if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
+                if (elementModel.Element is not GDS.IHasLayer)
                     continue;
 
-
-                var newElement = new Element();
-                newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
+                GDS.ElementType element = elementModel.Element;
+                GDS.IHasLayer elementLayer = element as GDS.IHasLayer;
                 
-                int[] rawPoints = boundry.XY.Data;
-                for (int j = 0; j < rawPoints.Length; j = j + 2)
+
+                i++;
+
+                try //Temp
                 {
-                    var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
-                    newElement.Points.Add(newPoint);
+                    /*if (!isRenderableElement(boundry.Layer.Type))
+                        continue;*/
+
+                    short layerNumber = elementLayer.LAYER.Data;
+
+                    //Skip current element if the layer it is on is disabled.
+                    if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
+                        continue;
+
+
+                    var newElement = new Element();
+                    newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
+
+                    int[] rawPoints = element.XY.Data;
+                    for (int j = 0; j < rawPoints.Length; j = j + 2)
+                    {
+                        var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
+                        newElement.Points.Add(newPoint);
+                    }
+
+                    // Append the polygon tag with the points attribute
+                    svgBuilder.AppendFormat("<polygon points=\"{0}\" fill=\"{1}\" opacity=\"{2}\" stroke=\"black\" stroke-width=\"6\"/>", string.Join(" ", newElement.Points.Select(p => $"{p.X},{p.Y}")), newElement.Layer.Color, opacity);
                 }
+                catch (Exception)
+                {
 
-                // Append the polygon tag with the points attribute
-                svgBuilder.AppendFormat("<polygon points=\"{0}\" fill=\"{1}\" opacity=\"{2}\" stroke=\"black\" stroke-width=\"6\"/>", string.Join(" ", newElement.Points.Select(p => $"{p.X},{p.Y}")), newElement.Layer.Color, opacity);
-            }
-            catch (Exception)
-            {
-
+                }
             }
         }
 

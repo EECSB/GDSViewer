@@ -1,14 +1,14 @@
 ﻿body {
 }
 
+#container {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 .overlay {
     position: absolute;
     bottom: 3%;
-    left: 6%;
-    /*left: calc(50% - 129px);*/ /* elementWidth = 258 => 258/2 => 129px*/
-}
-
-#VRButton {
-    left: 2%; /*left: calc(15% - 75px);*/
-    bottom: 2%;
+    left: calc(50% - 7em);
 }

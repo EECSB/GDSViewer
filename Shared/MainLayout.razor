@@ -5,19 +5,50 @@
         <div class="top-row px-4 chipGradient2">
 
             <div style="width: -webkit-fill-available;">
-                <img id="logoIcon" src="resources/Images/Logo/icon2.png" />
-                <img id="logoText" src="resources/Images/Logo/text2.png" />
+                <img id="logoIcon" src="./resources/Images/Logo/icon2.png" />
+                <img id="logoText" src="./resources/Images/Logo/text2.png" />
                 <h1 style="margin-bottom: 0rem; display: none;">GDSII Viewer</h1>
             </div>
 
             <div>
-                <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank" style="font-weight: 600;">About</a>
+                <div style="height: 100%; padding: 0.4em; font-weight: 600; color: white;" @onclick="() => { showAbout = true; }">
+                    About
+                </div>
+
+                @if (showAbout)
+                {
+                    <div class="popupDiv popupZIndex_0" style="height: fit-content; width: 80%; left: 10%;">
+                        <div class="col">
+
+                            <div class="row mb-5">
+                                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold; color: white;">
+                                    About
+                                </div>
+
+                                <div class="col d-flex justify-content-end">
+                                    <button class="buttonStyle2" @onclick="() => { showAbout = false; }">X</button>
+                                </div>
+                            </div>
+
+                            <div class="row mb-5">
+                                <p>This is a free and open source online GDSII file viewer/editor. It allows you to view GDS files in 2D/3D, edit them in 2D or directly via a text editor.</p>
+                                <p>Link to the <a href="https://github.com/EECSB/GDSViewer" target="_blank">Github repository</a>. Find out more about the project in my blog post <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank">here</a>.</p>
+                            </div>
+
+                        </div>
+                    </div>
+                }
             </div>
 
         </div>
 
-        <article class="content px-4" style="padding-left: 3rem !important; padding-right: 3rem !important;">
+
+        <article class="content px-4">
             <GDSViewer.Pages.Viewer></GDSViewer.Pages.Viewer>
         </article>
     </main>
 </div>
+
+@code {
+    private bool showAbout = false;
+}

@@ -78,7 +78,9 @@ window.InitializeMonaco = function (text, language) {
 	monacoEditor = monaco.editor.create(document.getElementById('gdsTextEditor'), {
 		theme: "defaultGDS",
 		value: text,
-		language: language
+		language: language,
+		automaticLayout: true,
+		wordWrap: "on"
 	});
 }
 
@@ -89,6 +91,15 @@ window.SetMonacoContent = function (text) {
 
 window.GetMonacoContent = function () {
 	return monacoEditor.getValue();
+}
+
+window.ToggleMonacoWordwrap = function (value) {
+	let wrap = "off";
+
+	if (value)
+		wrap = "on";
+
+	monacoEditor.updateOptions({ wordWrap: wrap });
 }
 
 function getKeyWords()

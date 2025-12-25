@@ -1,17 +1,8 @@
 ﻿body {
 }
 
-.container {
-    display: flex;
-    flex-direction: column;
-    height: 800px;
-    padding: 0;
-    overflow-y: auto;
-}
-
-
 #gdsTextEditor {
-    height: inherit;
+    height: -webkit-fill-available;
 }
 
 

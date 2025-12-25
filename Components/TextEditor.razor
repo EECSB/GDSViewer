@@ -1,21 +1,13 @@
 ﻿@using GDSViewer.Models;
 
-@using BlazorMonaco;
+@*@using BlazorMonaco;
 @using BlazorMonaco.Editor;
-@using BlazorMonaco.Languages;
+@using BlazorMonaco.Languages;*@
 
 @inject IJSRuntime JSR;
 
-<div class="container">
-    @if(false) //is mobile device
-    {
-        <textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>
-    }
-    else
-    {
-        <div id="gdsTextEditor" style=" "></div>
-    }
-</div>
+<div id="gdsTextEditor"></div>
+@*<textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>*@
 
 
 @code {
@@ -45,7 +37,7 @@
         {
             <div class="col-1 toolbarItem" style="align-self: end;">
                 <button @onclick="saveChanges" style="padding: 0; border: none;">
-                    <img style="width: 25px;" src="resources/images/icons/save.png" />
+                    <img style="width: 25px;" src="./resources/images/icons/save.png" />
                 </button>
             </div>
         };

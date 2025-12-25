@@ -1,14 +1,17 @@
 ﻿//Includes///////////////////////////////////////
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
-import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 /////////////////////////////////////////////////
 
@@ -50,12 +53,14 @@ window.startRender3DInterOp = function () {
     app.startRender3D();
 }
 
-window.changeBackgroundInterOp = function (backgroundName) {
-    app.changeBackground(backgroundName);
-}
 
 window.drawInterOp = function (data) {
     app.draw(data);
+}
+
+
+window.changeBackgroundInterOp = function (backgroundName) {
+    app.changeBackground(backgroundName);
 }
 
 window.cinematicViewInterOp = function (cinematicViewToggleInterOp) {
@@ -137,13 +142,63 @@ class Viewer3D {
             //time: 0
         };
 
-        //Add VR button.
-        this.settings.containerElement.appendChild(VRButton.createButton(this.renderer));   
+
+
+        // Add VR button.
+        const vrButton = VRButton.createButton(this.renderer);
+        // Create wrapper
+        const vrwrapper = document.createElement('div');
+        vrwrapper.style.position = 'relative';
+        vrwrapper.style.bottom = '110px';
+        vrwrapper.style.left = 'calc(50% - 10em)';
+        vrwrapper.style.zIndex = '9999';
+        vrwrapper.style.width = 'fit-content';
+        // Reset VRButton positioning so wrapper controls it
+        vrButton.style.position = 'static';
+
+        vrwrapper.appendChild(vrButton);
+        this.settings.containerElement.appendChild(vrwrapper);
+
+
+        // Add AR button.
+        const arButton = ARButton.createButton(this.renderer, { requiredFeatures: ['hit-test'] });
+        // Create wrapper
+        const arwrapper = document.createElement('div');
+        arwrapper.style.position = 'relative';
+        arwrapper.style.bottom = '150px';
+        arwrapper.style.left = 'calc(50% + 1em)';
+        arwrapper.style.zIndex = '9999';
+        arwrapper.style.width = 'fit-content';
+        // Reset ARButton positioning so wrapper controls it
+        arButton.style.position = 'static';
+
+        arwrapper.appendChild(arButton);
+        this.settings.containerElement.appendChild(arwrapper);
+
+
+
+        // Create TransformControls for moving objects
+        this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+        this.scene.add(this.transformControls);
+
+        // Prevent OrbitControls when using TransformControls
+        this.transformControls.addEventListener('dragging-changed', (event) => {
+            this.controls.enabled = !event.value;
+        });
+
+        this.transformControls.setMode('translate');
+
+        
+        // Handle window resize
+        // Bind the instance method so 'this' refers to Viewer3D inside handler
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        // Ensure correct initial size (in case container CSS changed after construction)
+        this.onWindowResize();
     }
 
     setupInitialScene() {
         //Init. background.
-        this.changeBackground("background1.jpg");
+        this.changeBackground("none");
 
         //Start animation/render loop.
         //this.startRender3D(); //Will be started by interop call from C# by Viewer3D.razor component.
@@ -164,12 +219,6 @@ class Viewer3D {
         //Perform animations of objects or movements of camera.
         this.runCinematicView();//todo: optimize
         //this.runVR();
-
-        /*if (resizeRendererToDisplaySize(this.renderer)) {
-            const canvas = this.renderer.domElement;
-            this.camera.aspect = canvas.clientWidth / canvas.clientHeight;
-            this.camera.updateProjectionMatrix();
-        }*/
 
         //Call renderer to render the scene.
         this.renderer.render(this.scene, this.camera);
@@ -205,6 +254,11 @@ class Viewer3D {
 
         for (let polygon of polygons) {
             let points = polygon.points;
+
+            if (points.length < 3) {
+                console.warn("Skipping polygon, it should have more than 3 points, error or it's another type of element.", data)
+                continue;
+            }
 
             const shape = new THREE.Shape();
             let isFirstIteration = true;
@@ -254,9 +308,14 @@ class Viewer3D {
         bbox.getCenter(this.cinematicSettings.chipCenterPoint);
     }
 
+    
     onWindowResize() {
-        const width = this.settings.containerElement.innerWidth;
-        const height = this.settings.containerElement.innerHeight;
+        //const canvasElement = document.getElementById(app.settings.containerID);
+        //const canvasWidth = canvasElement.offsetWidth;
+        //const canvasHeight = canvasElement.offsetHeight;
+
+        const width = this.settings.containerElement.offsetWidth;
+        const height = this.settings.containerElement.offsetHeight-3; //-3 to account for border, maybe not the best solution but it works.
 
         //Update the renderer size and aspect ratio.
         this.renderer.setSize(width, height);
@@ -265,6 +324,11 @@ class Viewer3D {
     }
 
     changeBackground(backgroundName) {
+        if (!backgroundName || backgroundName.toLowerCase() === "none") {
+            this.scene.background = null;
+            return;
+        }
+
         const texture = this.textureLoader.load(window.location.href + '/resources/Images/Background/' + backgroundName, () => {
             const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
             rt.fromEquirectangularTexture(this.renderer, texture);

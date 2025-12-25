@@ -4,5 +4,10 @@
 .overlay {
     position: absolute;
     bottom: 2%;
-    left: 45%;
+    left: calc(50% - 5em);
+}
+
+#gdsSVG {
+    height: inherit;
+    width: -webkit-fill-available;
 }

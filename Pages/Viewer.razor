@@ -18,94 +18,70 @@
 <PageTitle>GDSII Viewer</PageTitle>
 
 
-<div id="gdsWrapper" class="row">
+<div>
 
     <!-- *********************************************** Info. Text ****************************************************** -->
    
     <!--Temp. warning while in dev. -->
     <div class="row">
         <center>
-            <p style="background-color: lightcoral; color: darkred; padding: 10px; font-weight: 700; width: fit-content;">WARNING: This app is in development. It might not work or display things correctly, files don't get validated for the correct structure after editing, etc...</p>
-        </center>
-    </div>
-
-    <!-- Add some spacing -->
-    <div class="row">
-        <p></p>
-    </div>
-
-    <!-- Info. Text -->
-    <div class="row">
-        <center>
-            <p>This is a free and open source online GDSII file viewer/editor. It allows you to view GDS files in 2D/3D, edit them in 2D or directly via a text editor.</p>
+            <p style="background-color: lightcoral; color: darkred; padding: 10px; font-weight: 700;">WARNING: This app is in development. It might not work or display things correctly, files don't get validated for the correct structure after editing, etc...</p>
         </center>
     </div>
 
     <!-- ***************************************************************************************************************** -->
 
 
-    <!-- Add some spacing -->
-    <div class="row">
-        <p></p>
-        <p></p>
-    </div>
-
-
     <!-- *********************************************** Main App ***************************************************** -->
-    
-    <div class="row d-flex justify-content-center-on-over-990">
-        <div class="col" style="max-width: 62em; min-width: 990px;"> <!-- For now keep fixed at 990px-->
+
+    <div class="row" style="justify-content: center; align-items: center;">
+        <div class="col" style="max-width: 90%;">
 
             <!-- *********************************************** Top Toolbar ***************************************************** -->
 
-            <div class="row">
-                <div class="col">
-                    <div class="row toolbar">
+            <div class="row toolbar">
 
-                        <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
-                            <div class="buttonStyle2">
-                                <InputFile Id='fileUpload' style="margin-left: 10px; display:none;" OnChange="onFileInputChanged" multiple />
-                                <label for='fileUpload'>Upload GDS</label>
-                            </div>
-                        </div>
-
-                        <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
-                            <button class="buttonStyle2" @onclick="downloadFile">Download GDS</button>
-                        </div>
-
-                        <div class="col-4 toolbarItem">
-                            <div><b>Sky130 GDS Examples</b></div>
-                            <select @onchange="openExampleGDSFile" style="max-width: 12em;">
-                                <option value="" disabled selected>Temp. Test GDS Files</option>
-                                @foreach (var file in exampleFiles)
-                                {
-                                    <option value="@file">@file</option>
-                                }
-                            </select>
-                        </div>
-
-                        <div class="col-3 toolbarItem" style="width: 25%;">
-                            @if (CurrentlySelectedFileName.Contains("sky130"))
-                            {
-                                <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/foundry-provided.html">PDK Docs</a>
-                                <a href="https://antmicro-skywater-pdk-docs.readthedocs.io/en/test-submodules-in-rtd/contents/libraries/sky130_fd_sc_hd/cells/nand2/README.html">Example PDK NAND2 Cell Docs</a>
-                            }
-                        </div>
-
+                <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
+                    <div class="buttonStyle2">
+                        <InputFile Id='fileUpload' style="margin-left: 10px; display:none;" OnChange="onFileInputChanged" multiple />
+                        <label for='fileUpload'>Upload GDS</label>
                     </div>
                 </div>
+
+                <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
+                    <button class="buttonStyle2" @onclick="downloadFile">Download GDS</button>
+                </div>
+
+                <div class="col-4 toolbarItem">
+                    <div><b>Sky130 GDS Examples</b></div>
+                    <select @onchange="openExampleGDSFile" style="max-width: 12em;">
+                        <option value="" disabled selected>Temp. Test GDS Files</option>
+                        @foreach (var file in exampleFiles)
+                        {
+                            <option value="@file">@file</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-3 toolbarItem" style="width: 25%;">
+                    @if (CurrentlySelectedFileName.Contains("sky130"))
+                    {
+                        <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/foundry-provided.html">PDK Docs</a>
+                        <a href="https://antmicro-skywater-pdk-docs.readthedocs.io/en/test-submodules-in-rtd/contents/libraries/sky130_fd_sc_hd/cells/nand2/README.html">Example PDK NAND2 Cell Docs</a>
+                    }
+                </div>
+
             </div>
 
             <!-- ***************************************************************************************************************** -->
             
-            <!-- Add some spacing -->
-            <br>
 
-            <div class="row">
-                <div class="col">
-                    <!-- *********************************************** View Change ***************************************************** -->
+            <br> <!-- Add some spacing -->
 
-                    <div class="row viewBorderBackground" style="border-bottom: none;"><!-- For now keep fixed at 182px-->
+
+            <!-- *********************************************** View Change ***************************************************** -->
+
+            <div class="row viewBorderBackground" style="border-bottom: none;">
                         <div class="row">
 
                             <div class="col-1 toolbarItem">
@@ -128,17 +104,16 @@
                         </div>
                     </div>
 
-                    <!-- ***************************************************************************************************************** -->
+            <!-- ***************************************************************************************************************** -->
 
-                    
-                    <!-- *************************************************** View ******************************************************** -->
-
-                    <div class="row flex-nowrap">
             
-                        <!-- ************************************************** View ********************************************************* -->
+            <!-- *************************************************** View ******************************************************** -->
 
-                        <div class="col-9 viewBorderBackground" style="background-color: white; width: 802px; padding: 0;">
-                            <!-- For now keep it fixed at 802px -->
+            <div class="row" style="height: 55em">
+    
+                <!-- ************************************************** View ********************************************************* -->
+
+                <div class="col viewBorderBackground" style="background-color: white; padding: 0; width: 80%; height: inherit;">
                             @switch (view)
                             {
                                 case ViewType.ViewText: <TextEditor @ref="viewer" Gds="gds" Parent="@this"></TextEditor>;
@@ -154,54 +129,54 @@
                                     break;
                             }
                         </div>
-            
-                        <!-- ***************************************************************************************************************** -->
-            
-                        <!-- ************************************************** Layers ******************************************************* -->
-            
-                        <div class="col viewBorderBackground" style="border-left: none;">
+    
+                <!-- ***************************************************************************************************************** -->
+    
+                <!-- ************************************************** Layers ******************************************************* -->
+                
+                @if (view != ViewType.ViewText)
+                {
+                    <div id="layerSidebar" class="col-1 viewBorderBackground">
 
-                            <div class="row" style="text-align: center;"><b>Layers</b></div>
+                        <div class="row" style="text-align: center;"><b>Layers</b></div>
 
-                            <div class="row" style="text-align: center; overflow-y: auto; padding: 2px;">
-                                <div class="col" style="min-width: 182px;"><!-- For now keep fixed at 182px-->
-                                    @if(view != ViewType.ViewText)
+                        <div class="row" style="text-align: center; overflow-y: auto; padding: 2px;">
+                            <div class="col-1" style="min-width: 182px; width: fit-content;"><!-- For now keep fixed at 182px-->
+                                @if(view != ViewType.ViewText)
+                                {
+                                    @for (int i = 0; i < checkboxItems.Count - 1; i++)
                                     {
-                                        @for (int i = 0; i < checkboxItems.Count - 1; i++)
-                                        {
-                                            var item = checkboxItems[i];
+                                        var item = checkboxItems[i];
 
-                                            <div class="row">
-                                                <div class="col-1">
+                                        <div class="row">
+                                            <div class="col-1">
 
-                                                </div>
-
-                                                <div class="col-1" style="padding: 0.3em 0em; font-size: 12px;">
-                                                    @(i + 1).
-                                                </div>
-
-                                                <div class="col-8">
-                                                    <label>
-                                                        @item.Label
-                                                        <input type="checkbox" @onchange="async e => await layersChanged(e, item)" checked="@item.IsSelected" style="margin-left: 10px;" />
-                                                    </label>
-                                                </div>
                                             </div>
-                                        }
+
+                                            <div class="col-1" style="padding: 0.3em 0em; font-size: 12px;">
+                                                @(i + 1).
+                                            </div>
+
+                                            <div class="col-1" style="width: fit-content;">
+                                                <label>
+                                                    @item.Label
+                                                    <input type="checkbox" @onchange="async e => await layersChanged(e, item)" checked="@item.IsSelected" style="margin-left: 10px;" />
+                                                </label>
+                                            </div>
+                                        </div>
                                     }
-                                </div>
+                                }
                             </div>
-
                         </div>
-            
-                        <!-- ***************************************************************************************************************** -->
-            
-                    </div>
 
-                    <!-- ***************************************************************************************************************** -->
-                </div>
+                    </div>
+                }
+
+                <!-- ***************************************************************************************************************** -->
+    
             </div>
 
+            <!-- ***************************************************************************************************************** -->
         </div>
     </div>
 
@@ -214,6 +189,7 @@
         <p></p>
         <p></p>
     </div>
+
 </div>
 
 @code {
@@ -1258,20 +1234,26 @@
     {
         checkboxItems.Clear();
 
-        foreach (var element in gds.StreamFormat.Structure.Elements)
+        foreach (var structure in gds.StreamFormat.Structures)
         {
-            var boundry = element.Boundry.First();
-
-            try //Temp
+            foreach (var elementModel in structure.Elements)
             {
-                short layer = boundry.Layer.Data;
+                try //Temp
+                {
+                    if (elementModel.Element is not GDS.IHasLayer)
+                        continue;
 
-                if (checkboxItems.Where(x => x.Id == layer).Count() == 0)
-                    checkboxItems.Add(new CheckboxItem { Id = layer, Label = $"Layer {layer}", IsSelected = true });
-            }
-            catch (Exception)
-            {
+                    GDS.IHasLayer element = elementModel.Element as GDS.IHasLayer;
+                    
+                    short layer = element.LAYER.Data;
 
+                    if (checkboxItems.Where(x => x.Id == layer).Count() == 0)
+                        checkboxItems.Add(new CheckboxItem { Id = layer, Label = $"Layer {layer}", IsSelected = true });
+                }
+                catch (Exception)
+                {
+
+                }
             }
         }
     }

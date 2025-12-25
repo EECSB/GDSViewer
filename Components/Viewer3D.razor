@@ -17,7 +17,7 @@
         </div>
     </div>
 
-    <div id="container" style="width: 800px; height: 800px;"></div>
+    <div id="container"></div>
 </div>
 
 @code {
@@ -54,6 +54,7 @@
                 <div><b>Background</b></div>
                 <div>
                     <select @onchange="changeBackground">
+                        <option value="none" selected>No Background</option>
                         <option value="background1.jpg">White</option>
                         <option value="background2.jpg">White Room</option>
                         <option value="background3.jpg">Future Room</option>
@@ -115,6 +116,7 @@
         if (firstRender)
         {
             await js.InvokeVoidAsync("registerThree");
+            await js.InvokeVoidAsync("startRender3DInterOp");
 
             await Render(Gds, ShowLayers);
         }
@@ -183,45 +185,59 @@
 
         List<Element> elements = new List<Element>();
 
-        foreach (var element in Gds.StreamFormat.Structure.Elements)
+        foreach (var structure in gds.StreamFormat.Structures)
         {
-            var boundry = element.Boundry.First();
-
-            try //Temp
+            foreach (var elementModel in structure.Elements)
             {
-                if (!isRenderableElement(boundry.Layer.Type))
+                if (elementModel.Element is not GDS.IHasLayer)
                     continue;
 
-                short layerNumber = boundry.Layer.Data;
+                GDS.IHasLayer elementLayer = elementModel.Element as GDS.IHasLayer;
+                GDS.ElementType element = elementModel.Element;
 
-                //Skip current element if the layer it is on is disabled.
-                if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
-                    continue;    
+                short layer = elementLayer.LAYER.Data;
 
-
-                var newElement = new Element();
-                newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
-                //newElement.Layer.Offset += userSetlayerSpacing;
-
-                int[] rawPoints = boundry.XY.Data;
-                for (int j = 0; j < rawPoints.Length; j = j + 2)
+                try //Temp
                 {
-                    var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
-                    newElement.Points.Add(newPoint);
+                    if (!isRenderableElement(elementLayer.LAYER.Type))
+                        continue;
+
+                    short layerNumber = elementLayer.LAYER.Data;
+
+                    //Skip current element if the layer it is on is disabled.
+                    if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
+                        continue;
+
+
+                    var newElement = new Element();
+                    newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
+                    //newElement.Layer.Offset += userSetlayerSpacing;
+
+                    int[] rawPoints = element.XY.Data;
+                    for (int j = 0; j < rawPoints.Length; j = j + 2)
+                    {
+                        var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
+                        newElement.Points.Add(newPoint);
+                    }
+
+                    //TODO: add support for other element types like TEXT, STRING, etc.
+                    if (rawPoints.Length < 3)
+                    {
+                        Console.WriteLine("C# Error: polygon should have more than 3 points.");
+                    }
+                    else
+                    {
+                        elements.Add(newElement);
+                    }
                 }
-
-                elements.Add(newElement);
-            }
-            catch (Exception)
-            {
-
+                catch (Exception ex)
+                {
+                    Console.WriteLine("C# Error while iterating layers: " + ex.Message);
+                }
             }
         }
 
         await js.InvokeVoidAsync("drawInterOp", new { elements = elements });
-        
-        if (isFirstRender)
-            await js.InvokeVoidAsync("startRender3DInterOp");
     }
 
     #endregion ***********************************************

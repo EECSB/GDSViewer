@@ -36,34 +36,43 @@ namespace GDSViewer.Models
     {
         public AdditionalGDSInformation(GDS gds)
         {
-            GetLayers(gds.StreamFormat.Structure.Elements);
+            GetLayers(gds.StreamFormat.Structures);
         }
 
         public Dictionary<short, Layer> Layers { get; set; } = new Dictionary<short, Layer>();
 
-        public void GetLayers(List<ElementModel> elements)
+        public void GetLayers(List<StructureModel> structures)
         {
-            foreach (var element in elements)
+            foreach (var structure in structures)
             {
-                var boundry = element.Boundry.First();
+                foreach (var elementModel in structure.Elements)
+                {
+                    if (elementModel.Element is not GDS.IHasLayer)
+                        continue;
 
-                if (boundry.Layer.Type != RecordType.LAYER)
-                    continue;
+                    GDS.IHasLayer element = elementModel.Element as GDS.IHasLayer;
 
-                short layerNumber = boundry.Layer.Data;
+                    //if (boundry.Layer.Type != RecordType.LAYER)
+                    //    continue;
 
-                string layerColor = "";
-                var newLayer = new Layer(boundry.Layer.Data, layerColor);
+                    short layerNumber = element.LAYER.Data;
 
-                if (!Layers.ContainsKey(layerNumber))
-                    Layers.Add(layerNumber, newLayer);
+                    string layerColor = "";
+                    var newLayer = new Layer(element.LAYER.Data, layerColor);
+
+                    if (!Layers.ContainsKey(layerNumber))
+                        Layers.Add(layerNumber, newLayer);
+                }
             }
+
+            if(Layers.Count == 0)
+                return;
 
             var orderedLayers = Layers.OrderBy(x => x.Value.Number);
 
             int absoluteOffset = 0;
             int setLayerOffset = 0; //Keep fixed at 0 for now.
-            foreach (var layer in orderedLayers) 
+            foreach (var layer in orderedLayers)
             {
                 layer.Value.Offset = absoluteOffset;
                 absoluteOffset += layer.Value.Depth + setLayerOffset;

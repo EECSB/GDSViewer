@@ -14,6 +14,7 @@ function initKonva(data) {
     const viewWrapper = document.getElementsByClassName("viewWrapper")[0];
 
     let settings = {
+        containerID: "konvaCanvas",
         containerSizeX: viewWrapper.clientWidth,
         containerSizeY: viewWrapper.clientHeight,
         blockSnapSize: 10,
@@ -27,6 +28,27 @@ function initKonva(data) {
 function setDotNetObjRef(ref) {
     dotNetObjRef = ref;
 }
+
+function resizeStage() {
+    const canvasElement = document.getElementById(app.settings.containerID);
+
+    if (canvasElement == null)
+        return;
+
+    const canvasWidth = canvasElement.offsetWidth;
+    const canvasHeight = canvasElement.offsetHeight;
+
+    app.stage.width(canvasWidth);
+    app.stage.height(canvasHeight);
+
+    app.stage.draw();
+}
+
+//Resize listener
+window.addEventListener('resize', () => {
+    if (app && app.stage)
+        resizeStage();
+});
 
 ////////////////////////////
 
@@ -93,7 +115,7 @@ class ItemMap {
 
     makeContainer() {
         return new Konva.Stage({
-            container: "canvas",
+            container: this.settings.containerID,
             width: this.settings.containerSizeX,
             height: this.settings.containerSizeY,
             x: 0,

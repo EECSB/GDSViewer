@@ -1,10 +1,6 @@
 ﻿body {
 }
 
-#gdsWrapper {
-    
-}
-
 .viewBorderBackground {
     border: 2px solid #41464b61;
     background-color: whitesmoke;
@@ -20,4 +16,4 @@
     .justify-content-center-on-over-990 {
         justify-content: normal !important;
     }
-}
+}   
