@@ -217,8 +217,7 @@ class Viewer3D {
 
     animate() {
         //Perform animations of objects or movements of camera.
-        this.runCinematicView();//todo: optimize
-        //this.runVR();
+        this.runCinematicView();
 
         //Call renderer to render the scene.
         this.renderer.render(this.scene, this.camera);
@@ -239,9 +238,6 @@ class Viewer3D {
             this.camera.position.y = chipCenterPoint.y + camera_offset.y * (Math.cos(time * 0.05));
 
             this.camera.lookAt(chipCenterPoint.x, chipCenterPoint.y, chipCenterPoint.z);
-        } else {
-            this.camera.rotation.y += 0.0;
-            this.camera.rotation.x += 0.0;
         }
     }
 

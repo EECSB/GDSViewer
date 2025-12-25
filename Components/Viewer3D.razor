@@ -5,6 +5,7 @@
 @using static GDSViewer.Models.GDS.Record;
 
 @inject IJSRuntime js;
+@inject NavigationManager Navigation;
 
 <div class="viewWrapper">
     <div class="overlay row">
@@ -21,6 +22,12 @@
 </div>
 
 @code {
+    #region Components ***************************************
+
+    private Pages.QR qrCodeComponent;
+
+    #endregion ***********************************************
+
     #region Vraiables ****************************************
 
     private bool isFirstRender = true;
@@ -87,21 +94,23 @@
                         <option value=".obj">OBJ</option>
                         <option value=".gltf">GLTF</option>
                     </select>
+                    <img @onclick="download3DObject" src="./resources/Images/Icons/download.png" style="padding-left: 0.5em;">
                 </div>
             </div>
         };
 
         Parent.AddToolbarItem(changeFileTypeDD);
 
-
-        RenderFragment download3DButton = (__builder) =>
+        RenderFragment qrCodeButton = (__builder) =>
         {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <button @onclick="download3DObject" class="buttonStyle2">3D Download</button>
+
+            <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
+                <img @onclick="getQRCode" src="./resources/Images/Icons/qr.png" style="padding-left: 2em;">
+                <GDSViewer.Pages.QR @ref="qrCodeComponent" />
             </div>
         };
 
-        Parent.AddToolbarItem(download3DButton);
+        Parent.AddToolbarItem(qrCodeButton);
     }
 
     protected override async Task OnInitializedAsync()
@@ -127,6 +136,11 @@
 
 
     #region Methods ******************************************
+
+    private void getQRCode()
+    {
+        qrCodeComponent.GenerateQRCode($"{Navigation.BaseUri}");
+    }
 
     private async Task sliderChanged(ChangeEventArgs e)
     {

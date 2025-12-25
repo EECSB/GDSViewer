@@ -1,6 +1,4 @@
-﻿@*@page "/viewer"*@
-
-@using System.IO;
+﻿@using System.IO;
 @using System.Net.Http
 @using System.Text.Json
 @using System.Threading.Tasks
@@ -19,43 +17,39 @@
 
 
 <div>
-
-    <!-- *********************************************** Info. Text ****************************************************** -->
-   
-    <!--Temp. warning while in dev. -->
-    <div class="row">
-        <center>
-            <p style="background-color: lightcoral; color: darkred; padding: 10px; font-weight: 700;">WARNING: This app is in development. It might not work or display things correctly, files don't get validated for the correct structure after editing, etc...</p>
-        </center>
-    </div>
-
-    <!-- ***************************************************************************************************************** -->
-
-
     <!-- *********************************************** Main App ***************************************************** -->
 
     <div class="row" style="justify-content: center; align-items: center;">
-        <div class="col" style="max-width: 90%;">
+        <div id="mainAppContainer" class="col">
+
+            <!-- *********************************************** Info. Text ****************************************************** -->
+            <!--Temp. warning while in dev. -->
+            <div class="row">
+                <p style="background-color: lightcoral; color: darkred; padding: 10px; font-weight: 700;">WARNING: This app is in development. It might not work or display things correctly, files don't get validated for the correct structure after editing, etc...</p>
+            </div>
+
+            <!-- ***************************************************************************************************************** -->
 
             <!-- *********************************************** Top Toolbar ***************************************************** -->
 
             <div class="row toolbar">
 
                 <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
-                    <div class="buttonStyle2">
-                        <InputFile Id='fileUpload' style="margin-left: 10px; display:none;" OnChange="onFileInputChanged" multiple />
-                        <label for='fileUpload'>Upload GDS</label>
-                    </div>
+                    <InputFile id="fileUpload" style="margin-left: 10px; display:none;" OnChange="onFileInputChanged" multiple />
+                    <label for="fileUpload" style="cursor: pointer; display: inline-flex; align-items: center; " title="Upload GDS">
+                        <img src="./resources/Images/Icons/upload.png" alt="Upload GDS" />
+                    </label>
                 </div>
 
                 <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
-                    <button class="buttonStyle2" @onclick="downloadFile">Download GDS</button>
+                    <img @onclick="downloadFile" src="./resources/Images/Icons/download.png" title="Download GDS">
                 </div>
 
-                <div class="col-4 toolbarItem">
-                    <div><b>Sky130 GDS Examples</b></div>
+                <div class="col-4 toolbarItem ps-5">
                     <select @onchange="openExampleGDSFile" style="max-width: 12em;">
-                        <option value="" disabled selected>Temp. Test GDS Files</option>
+                        <option value="text1" disabled selected>Temp. Test GDS Files</option>
+                        <option value="Mosfet.gds">Mosfet.gds</option>
+                        <option value="text2" disabled>Sky130 GDS Examples</option>
                         @foreach (var file in exampleFiles)
                         {
                             <option value="@file">@file</option>
@@ -63,12 +57,17 @@
                     </select>
                 </div>
 
-                <div class="col-3 toolbarItem" style="width: 25%;">
+                <div class="col-1 toolbarItem" style="width: fit-content">
                     @if (CurrentlySelectedFileName.Contains("sky130"))
                     {
-                        <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/foundry-provided.html">PDK Docs</a>
-                        <a href="https://antmicro-skywater-pdk-docs.readthedocs.io/en/test-submodules-in-rtd/contents/libraries/sky130_fd_sc_hd/cells/nand2/README.html">Example PDK NAND2 Cell Docs</a>
+                        <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/foundry-provided.html" target="_blank">PDK Docs</a>
+                        <span>, </span>
+                        <a href="https://skywater-pdk.readthedocs.io/en/main/contents/libraries/sky130_fd_sc_hd/cells/nand2/README.html#sky130-fd-sc-hd-nand2" target="_blank">Example PDK NAND2 Cell Docs</a>
                     }
+                </div>
+
+                <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
+                    <img @onclick="shareFile" src="./resources/Images/Icons/share.png" title="Share GDS">
                 </div>
 
             </div>
@@ -82,34 +81,34 @@
             <!-- *********************************************** View Change ***************************************************** -->
 
             <div class="row viewBorderBackground" style="border-bottom: none;">
-                        <div class="row">
+                 <div class="row">
 
-                            <div class="col-1 toolbarItem">
-                                <div><b>View</b></div>
-                                <div>
-                                    <select @onchange="viewChange">
-                                        <option value="@ViewType.ViewText">Text Editor</option>
-                                        <option selected value="@ViewType.View2DSvg">2D Viewer</option>
-                                        <option value="@ViewType.View2D">2D Editor</option>
-                                        <option value="@ViewType.View3D">3D Viewer</option>
-                                    </select>
-                                </div>
-                            </div>
+                     <div class="col-1 toolbarItem">
+                         <div><b>View</b></div>
+                         <div>
+                             <select @onchange="viewChange">
+                                <option value="@ViewType.ViewText">Text Editor</option>
+                                <option selected value="@ViewType.View2DSvg">2D Viewer</option>
+                                @*<option value="@ViewType.View2D">2D Editor</option> Disable 2D viewer as it will not be implemented for now(maybe in the future).*@
+                                <option value="@ViewType.View3D">3D Viewer</option>
+                             </select>
+                         </div>
+                     </div>
 
-                            @foreach (var toolbarItem in toolbarItems)
-                            {
-                                @toolbarItem
-                            }
+                     @foreach (var toolbarItem in toolbarItems)
+                     {
+                         @toolbarItem
+                     }
 
-                        </div>
-                    </div>
+                 </div>
+             </div>
 
             <!-- ***************************************************************************************************************** -->
 
             
             <!-- *************************************************** View ******************************************************** -->
 
-            <div class="row" style="height: 55em">
+            <div id="viewContainer" class="row">
     
                 <!-- ************************************************** View ********************************************************* -->
 
@@ -207,7 +206,7 @@
 
     private List<string> exampleFiles = new List<string>()
     {
-        "Mosfet.gds",
+        //"Mosfet.gds", // moved =>
         "sky130_fd_sc_hd__a2111oi_0.gds",
         "sky130_fd_sc_hd__a2111oi_1.gds",
         "sky130_fd_sc_hd__a2111oi_2.gds",
@@ -1142,11 +1141,17 @@
         StateHasChanged();
     }
 
+    private async Task shareFile()
+    {
+        //todo: implement sharing
+        throw new NotImplementedException();
+    }
+
     private async Task downloadFile()
     {
         if (gds is null)
         {
-            //todo: show warning to user
+            await js.InvokeVoidAsync("alert", "No GDS file loaded. Please upload a file or open an example.");
             return;
         }
 
@@ -1166,7 +1171,9 @@
             {
                 foreach (var file in e.GetMultipleFiles(e.FileCount))
                 {
-                    //Only one file is supported. If multiple files present only the first one will be read. //todo: inform user about this?
+                    if(e.FileCount > 1)
+                        await js.InvokeVoidAsync("alert", "For now only one file is supported. If multiple files present only the first one will be read.");
+                        
                     await file.OpenReadStream().CopyToAsync(ms);
                     rawGDS = ms.ToArray();
 
@@ -1176,8 +1183,7 @@
         }
         catch (Exception ex)
         {
-            //todo: tell user about read error
-            //exceptionErrorMessage = ex.Message;
+            await js.InvokeVoidAsync("alert", $"Error loading the GDS file: {ex.Message}");
             _ = InvokeAsync(StateHasChanged);
         }
 

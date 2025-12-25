@@ -104,6 +104,7 @@ namespace GDSViewer.Models
 
         public void Deserialize(string gdsAstext)
         {
+            //todo: deserialize GDS from text representation
             /*foreach (var recordView in recordsView)
                 {
                 if (!recordView.changed)

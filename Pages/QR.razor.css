@@ -1,0 +1,9 @@
+﻿.svgContainer {
+    width: 100%;
+    max-width: 30em;
+}
+
+    .svgContainer > svg {
+        width: 100%;
+        height: 100%;
+    }

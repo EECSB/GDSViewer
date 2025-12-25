@@ -1,6 +1,19 @@
 ﻿body {
 }
 
+.toolbar {
+    border: 2px solid #41464b61;
+    background-color: whitesmoke;
+}
+
+#viewContainer {
+    height: 55em;
+}
+
+#mainAppContainer {
+    max-width: 80%;
+}
+
 .viewBorderBackground {
     border: 2px solid #41464b61;
     background-color: whitesmoke;
@@ -16,4 +29,13 @@
     .justify-content-center-on-over-990 {
         justify-content: normal !important;
     }
-}   
+
+    #viewContainer {
+        height: 45em;
+    }
+
+    #mainAppContainer {
+        max-width: 90%;
+    }
+}
+
