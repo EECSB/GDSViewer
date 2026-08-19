@@ -1,0 +1,92 @@
+# Build and test, on every push and pull request.
+#
+# All three layers the project keeps - the C# tests, the browser-JS units, and the Playwright end-to-end
+# run - because a change that crosses into the browser is not covered by any one of them. The e2e job
+# starts the app itself; playwright.config.js has the dotnet run in it.
+#
+# The C# tests are filtered. Twenty of them use KLayout as a second implementation to check this one
+# against, and it is not on a runner and not worth installing there: it is a desktop EDA tool, and what
+# those tests cover is agreement with somebody else's reader, which is a thing to check on a machine that
+# has one rather than a thing to gate a merge on.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: Build and C# tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet restore
+
+      - run: dotnet build --configuration Release --no-restore
+
+      # Needs!=KLayout keeps the tests that need a tool this machine does not have. A filter on a property
+      # a test does not carry passes, so everything untagged still runs.
+      - name: Test
+        run: dotnet test --configuration Release --no-build --filter "Needs!=KLayout" --logger "console;verbosity=normal"
+
+      # Proves the two packages still build as packages, on the same commit rather than only on a tag -
+      # a licence expression or a missing readme fails here rather than on the release.
+      - name: Pack
+        run: dotnet pack --configuration Release --no-build --output ./artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ./artifacts/*
+          retention-days: 7
+
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The unit half needs nothing installed - it is Node's own test runner over the pure helpers.
+      - name: JS unit tests
+        run: npm test
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Starts the app itself, per the webServer block in playwright.config.js. The first run compiles it,
+      # which is why that timeout is generous.
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

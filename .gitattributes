@@ -4,6 +4,42 @@
 * text=auto
 
 ###############################################################################
+# Vendored third-party libraries.
+#
+# Files under wwwroot/lib are served to the browser exactly as upstream shipped
+# them, so keep git out of their line endings and out of diffing them - they are
+# replaced wholesale on a version bump, never edited in place. See
+# wwwroot/lib/README.md, which is ours and stays a normal text file.
+###############################################################################
+wwwroot/lib/** -text -diff
+wwwroot/lib/README.md text diff
+
+###############################################################################
+# The same for the one vendored C# library.
+#
+# GdsII takes no packages - everything in it is compiled into the WebAssembly
+# the browser downloads - so Clipper2 is checked in as source under the same
+# rule the JavaScript follows. Ten thousand lines that are not ours and are
+# replaced wholesale, so keep them out of diffs. See GdsII/Clipper2/README.md.
+###############################################################################
+GdsII/Clipper2/** -text -diff
+GdsII/Clipper2/README.md text diff
+
+###############################################################################
+# Layout files.
+#
+# Binary, and asserted byte for byte: the corpus and interop tests serialize
+# each file and compare it against the bytes on disk. Git's own heuristic
+# already classifies them as binary, but that is a heuristic - say it outright
+# so no clone can hand these to a line-ending filter.
+#
+# OASIS for the same reason and one more: a CRLF filter would find the \r\n in
+# "%SEMI-OASIS\r\n" at the very front of every one of them.
+###############################################################################
+*.gds binary
+*.oas binary
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

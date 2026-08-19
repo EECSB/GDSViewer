@@ -43,8 +43,28 @@ a, .btn-link {
   box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
 }
 
+/*
+    Padding at the foot rather than empty paragraphs.
+
+    There were three <p></p> under the viewer doing this job, which is a spacer made of content: it takes
+    whatever height a paragraph happens to be, it is read out as three blank paragraphs, and it is in the
+    markup of the page rather than in its layout.
+*/
 .content {
-    padding-top: 1.1rem;
+    /*
+        A link in the chain that fits the app to the window - see main in MainLayout.razor.css, and
+        .viewerPage in Viewer.razor.css for the rest of it. Without flex it is only as tall as what is in
+        it; without min-height: 0 it refuses to shrink below that, which is the same thing one step later.
+
+        The padding is inside this, so what the view is handed is already the window less the padding.
+    */
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+
+    padding-top: 4rem;
+    padding-bottom: 4rem;
 }
 
 .valid.modified:not([type=checkbox]) {
@@ -162,21 +182,2363 @@ a, .btn-link {
     height: auto;
 }
 
-.toolbarItem {
-    width: fit-content;
-    padding: 10px;
+/*
+    The bar above the view, and the controls in it.
+
+    The vertical padding is the bar's, not each control's. It used to be 10px all round on every item, so
+    the bar's height was decided by whichever control happened to be tallest once its own padding was
+    added - and the space above the first row of controls was being set by a rule in a component that
+    knows nothing about the bar. Sideways spacing stays on the items, since that is the gap *between*
+    them and belongs to them.
+*/
+/*
+    **And sideways it is the band it is painted on, which it was not.**
+
+    The gray band is .viewBorderBackground; this row sits inside it and carried a Bootstrap row's negative
+    side margins on top of a column's padding that was already cancelling them. The result was a row
+    hanging 11px off the left edge of its own band and stopping 13px short of the right - so the controls
+    were 11px from the left edge and 35 from the right, and every attempt to even that up by moving the
+    last button was measuring against this row rather than against the thing anybody can see.
+
+    Zeroed both ways, so the row is the band's own content box: what is left at each end is a column's own
+    10px gutter plus the band's 12, which is 22 and is 22 at both ends.
+*/
+/*
+    **The bar's own inset, on the bar.**
+
+    Six all round, and the two columns at the ends give up their gutters to it. It was the other way about
+    - the bar had none sideways and every column carried 10px, so what stood between the first button and
+    the edge was that button's column rather than the bar, and the two ends had to be kept in agreement by
+    hand. One rule owns it now, and the gutters between columns are what the columns are still for.
+*/
+/*
+    **And when it wraps, the same six between the rows.**
+
+    The bar is a flex row that wraps rather than scrolls, so a narrow window turns it into two rows or three
+    - and those rows sat directly on each other, the controls of one touching the controls of the next while
+    six pixels of air ran all the way round the outside of them. row-gap rather than a margin on the items:
+    it is space between wrapped *lines*, so it appears only once the bar has more than one and adds nothing
+    above the first. A bar wide enough to stay on one line is not changed by this at all.
+*/
+.viewToolbar {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 6px;
+    row-gap: 6px;
 }
 
+.viewToolbar > .toolbarItem:first-child {
+    padding-left: 0;
+}
+
+.toolbarItem {
+    width: fit-content;
+    padding: 0 10px;
+}
+
+/*
+    The last item in the bar, held apart from the rest - by distance, on the same line as them.
+
+    Pushed there rather than placed there: the toolbar is a row of columns and the full-screen button is
+    the only one that is about the window instead of about the file, so it goes where nothing else is
+    rather than in the queue with them.
+
+    Bottom-aligned like every other column. It was top-aligned, on the reading that a button in the corner
+    is plainly a button about the corner - which held while the bar was a mix of heights and stopped
+    holding once the rest of it became one row of squares of one size, where the odd one out reads as
+    misaligned rather than as apart. The whole width between it and the last group already says the same
+    thing without breaking the line.
+
+    It keeps its own gutter, so the space between it and the right edge of the bar is the space between the
+    left edge and the Open button - the bar's own 12 plus a column's 10, both ends. It had the gutter taken
+    off on the reading that 12 was enough for the last thing in a row; what that actually produced was a bar
+    inset 22 on one side and 12 on the other, which is the kind of asymmetry that reads as wrong before
+    anybody works out why.
+*/
+/*
+    The two at the far end, with air between them.
+
+    They are not a group and must not read as one: the title bar and the page's margins are two separate
+    decisions about how much room the drawing gets, where a butted pair says "one control, pick a side". The
+    gap is the tools' own, so the end of the bar is spaced like the rest of it.
+*/
+.toolbarEnd {
+    margin-left: auto;
+    align-self: end;
+    padding-right: 0;
+
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+/*
+    And the same box as the buttons it now lines up with.
+
+    .iconButton is a flex container, so its height is its icon's plus its padding - 28px, against the 25.6
+    of a bar button, whose height is a line box plus its own. Sized here the way they are rather than by
+    trimming the padding until the numbers agree: a magic 3.8px would be right until the bar's type size
+    moved. The look is left alone - this is the one control up here that is about the window rather than
+    about the file, and it is the only one not competing to be pressed.
+
+    The type size is set even though there is no text, because there are two ems downstream of it: the 2.2
+    floor .buttonIcon puts under the width, and the 1.5 line box the page gives everything. At the bar's
+    own 0.9 both come out where every other button's do; at the inherited 1 the button was 35.2 wide in a
+    row of 31.7s. A pixel of padding comes off each side instead of the border, which the others have not
+    got and this one is keeping.
+*/
+.iconButton.toolbarEndButton {
+    display: inline-block;
+    font-size: 0.9em;
+    padding: 1px 7px;
+    border-radius: 3px;
+}
+
+/*
+    Fifteen, like every other glyph in the bar. .iconButton draws at sixteen, which is right for the two
+    that float over the view at their own size and one pixel wrong in a row of icons that are all fifteen.
+
+    A pixel each side is also what makes the width come out: at fifteen the box is inside the 2.2em floor
+    .buttonIcon puts under it, so this button is exactly as wide as the ones it sits in line with instead
+    of a third of a pixel wider.
+*/
+.iconButton.toolbarEndButton > svg {
+    width: 15px;
+    height: 15px;
+}
+
+/*
+    A button in the bar above the view, rather than one somebody is being asked to press. These sit in a
+    row with dropdowns and icons, so at the full button size they read as the loudest thing there while
+    being the least important - one size down puts them level with the controls beside them.
+*/
+/*
+    The smaller of the two button sizes. Two names for one rule rather than two rules: the toolbar's
+    buttons and Clear History under the history list are the same size for the same reason - neither is
+    the main thing on the surface it sits on.
+*/
+.buttonStyle2.toolbarButton,
+.buttonStyle2.smallButton {
+    font-size: 0.9em;
+    padding: 2px 8px;
+}
+
+/*
+    Two buttons in the width of one, stacked.
+
+    The bar's height is set by its tallest column - a label over a dropdown - and there is room under a
+    single button for a second one. Both are given the full width of the column so the shorter word does
+    not sit in a narrower box than the longer one, which is what makes a stack read as a pair rather than
+    as two unrelated buttons that happen to be near each other.
+*/
+.toolbarStack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.buttonStyle2.stackedButton {
+    font-size: 0.8em;
+    padding: 1px 8px;
+    width: 100%;
+}
+
+/*
+    Editing in place: one cell answers to the pointer and the rest of the layout stays visible.
+
+    Faded rather than hidden, which is the whole point - a cell edited without its surroundings is a cell
+    edited blind. Enough contrast that the context is still readable, little enough that what is being
+    worked on is obvious at a glance.
+*/
+.outOfContext {
+    opacity: 0.12 !important;
+}
+
+/*
+    Another instance of the cell being edited. Full strength and outlined, because an edit moves these too
+    and somebody should be able to watch them move - a view that showed only the one clicked through would
+    be telling a comfortable lie about how much one change touches.
+*/
+.alsoAffected {
+    stroke: #7b1fa2 !important;
+    stroke-width: 1.5px !important;
+    stroke-dasharray: 4 3;
+    vector-effect: non-scaling-stroke;
+}
+
+/*
+    Which cell is being edited, along the top of the view, with every level of the chain clickable.
+*/
+.contextBar {
+    position: absolute;
+    top: 0.6em;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 11;
+
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+    max-width: 90%;
+    flex-wrap: wrap;
+
+    padding: 0.35em 0.6em;
+
+    border: 1px solid #41464b61;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.92);
+}
+
+/*
+    The crumbs, and the three actions beside them.
+
+    **Rounded, because .buttonStyle2 carries no radius of its own.** Everything else in the app that looks
+    rounded gets it from a rule further in - the selection panel has one, the toolbar has one - and this bar
+    had neither, so its buttons were the one run of square corners left on screen.
+
+    A row rather than a block, for the ones with a picture in front of the word: an icon and a word in a
+    button that is not a flex row sit on the text baseline, which drops a 12px glyph a pixel and a half
+    below the middle of a 0.75em line.
+*/
+.buttonStyle2.contextCrumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+
+    font-size: 0.75em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    opacity: 0.6;
+}
+
+/*
+    A crumb button that is only its picture.
+
+    Square rather than the wider pill the worded ones were: with the text gone the horizontal padding is the
+    only thing left making it oblong, and three oblongs of dead space is most of what taking the words off was
+    meant to give back. The gap the flex row holds between icon and words costs nothing with no words in it.
+*/
+.buttonStyle2.contextCrumb.contextCrumbIconOnly {
+    padding: 2px;
+    justify-content: center;
+}
+
+/*Sized against the words beside it rather than fixed, so the pair scales with the bar's own type.*/
+.contextCrumbIcon {
+    flex: none;
+    width: 1.15em;
+    height: 1.15em;
+}
+
+.buttonStyle2.contextCrumb:hover {
+    opacity: 0.85;
+}
+
+.buttonStyle2.contextCrumb.contextCrumbOn {
+    opacity: 1;
+}
+
+.contextArrow {
+    opacity: 0.45;
+}
+
+.contextCount {
+    margin-left: 0.4em;
+    font-size: 0.75em;
+    opacity: 0.7;
+}
+
+/*
+    A button inside the selection panel. The panel takes pointer events itself now, so this only sizes it.
+
+    0.75em on a panel already at 0.85 made these 10.2px - the smallest type in the app, on the one part of
+    it you press rather than read. 1em is 13.6, the size of the words around them: a button the same size as
+    the text it sits under, which is what it was furthest from.
+*/
+.buttonStyle2.selectionAction {
+    margin-top: 0.4em;
+    font-size: 1em;
+    padding: 3px 9px;
+}
+
+/*
+    The three that are a picture instead of a word - copy, cut and delete.
+
+    Square, so a row of them reads as a set rather than as three different widths, and sized by the glyph
+    now that there is no text to size it. The icon is the same 16px box every other inline icon in the app
+    is drawn in.
+
+    Two classes deep on purpose. `.buttonStyle2.selectionAction` above sets nine pixels of side padding for
+    a button with a word in it, and at one class this rule lost to it: the content box came out under ten
+    pixels wide and the flex line squeezed a 15px icon down to 10.
+*/
+.buttonStyle2.actionIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+
+    /*
+        Twenty-six, not the twenty-eight these were.
+
+        Eight of them share the row now that Array is one - copy, array, cut, delete and the four turns -
+        and eight of 28 with the gaps and the rule between them is 274px against the 260 the row has when
+        the panel is tall enough to carry a scrollbar. At 26 it is 253, which fits the narrow case with
+        room rather than fitting the wide one by a pixel.
+    */
+    width: 26px;
+    height: 26px;
+}
+
+.actionIcon > svg {
+    flex: none;
+    width: 15px;
+    height: 15px;
+}
+
+/*
+    The row of actions at the foot of the panel - seven squares across, in two groups.
+
+    Wrapping allowed because one of the seven is not always a square: with an instance chosen the delete
+    becomes "Delete instance", a word, and the row is wider than the panel. A second line is a poor row;
+    a row running out past the panel's edge is not a row at all.
+*/
+/*
+    The panel's actions, butted together into one control rather than scattered as separate squares.
+
+    The same shape the tools in the bar make, and for the same reason: eight squares with air between them
+    read as eight decisions, where a strip reads as one thing with parts. These are not mutually exclusive
+    the way the tools are - nothing here stays lit - so what a strip has to do instead is stay legible as
+    parts, which is what the seams below are for.
+
+    No gap, so the seams are the only thing between them.
+*/
+.selectionActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+}
+
+/*
+    Square inside the run, round at its ends.
+
+    Two classes deep to beat the panel's own rounding rule - see .selectionPanel .buttonStyle2, which makes
+    everything in here round and which this is the one exception to.
+*/
+.selectionActions .buttonStyle2.selectionAction {
+    border-radius: 0;
+}
+
+/*
+    One height for every action in the panel: the squares' own.
+
+    A word button is 29.8 left alone - a line-height of 23.8 the panel hands it, plus three of padding each
+    way - where the squares beside it are 26, and the two sat in one column at two heights. Trace net and
+    Array were the ones it showed on, since each is alone in its group with nothing next to it to be measured
+    against by eye.
+
+    Stated with border-box so the padding stays what it is and only the box changes; a button centers its own
+    text, so nothing has to be recalculated to keep the word in the middle.
+*/
+.selectionActions .buttonStyle2.selectionAction {
+    box-sizing: border-box;
+    height: 26px;
+}
+
+/*
+    And one size of type on the ones with a word on them, which is .lineUpButton's - what every other word
+    button in the panel is set at.
+
+    Trace net was the panel's own 13.6 where New cell above it is 11.15, so the largest words in the panel
+    were on the button that does the least common thing. It also sat off-center: a 23.8px line inside a 26px
+    box has nowhere to go but up against the top.
+
+    **The picture buttons are left out of it, and that is the whole reason this is a rule of its own.**
+    `.selectionAction` holds every action off the row above with `margin-top: 0.4em`, and an em is the
+    element's *own* type - so setting these to 0.82 took the squares' margin from 5.44px to 4.46 while
+    .turnGroup beside them, which is not an action and did not get the smaller type, kept 5.44. The four
+    turns sat 0.98px below the four squares: the same one-pixel step in the middle of one row that the note
+    above .turnGroup was written for, arrived at from the other direction. A square has no word on it to
+    size, so nothing here was ever meant for them.
+*/
+.selectionActions .buttonStyle2.selectionAction:not(.actionIcon) {
+    font-size: 0.82em;
+    line-height: 1;
+}
+
+/*
+    A worded action that carries its glyph as well - Trace net is the one.
+
+    The squares beside it dropped their words because a copy and a delete mark are read without them. This
+    one has no such picture, so it keeps both, and needs the row layout the cell bar's buttons already use:
+    the icon sized against the words rather than fixed, so the pair scales with the button's own type.
+*/
+.buttonStyle2.selectionActionSays {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+.selectionActions > .buttonStyle2.selectionAction:first-child,
+.turnGroup > .buttonStyle2.selectionAction:first-of-type {
+    border-radius: 3px 0 0 3px;
+}
+
+.selectionActions > .buttonStyle2.selectionAction:last-child,
+.turnGroup > .buttonStyle2.selectionAction:last-child {
+    border-radius: 0 3px 3px 0;
+}
+
+/*
+    A group of one is not a strip, so it is round on every corner.
+
+    It matches both rules above - it is the first child and it is the last - and the later one wins outright,
+    which left Array and Trace net square down their left-hand side for no reason anybody could see. The
+    exact bug .toolGroup hit when the merge switch was alone in its group, and the same fix: a lone button
+    has no neighbour to butt against.
+*/
+.selectionActions > .buttonStyle2.selectionAction:only-child {
+    border-radius: 3px;
+}
+
+/*
+    The button a turn group follows, which ends the first run without being the last of the row.
+
+    :has, because which button that is depends on whether the turns are drawn at all - they come and go with
+    what is chosen - and a class would have to be worked out in C# for something the layout already knows.
+*/
+.selectionActions > .buttonStyle2.selectionAction:has(+ .turnGroup) {
+    border-radius: 0 3px 3px 0;
+}
+
+/*
+    A hairline between neighbours, so a strip does not read as one wide button.
+
+    Drawn on the buttons rather than between them: they are one solid color butted together, and without
+    this the four of them are a blue rectangle with four pictures on it. Light rather than dark, because it
+    is a seam in something filled rather than a rule between two things.
+*/
+.selectionActions .buttonStyle2.selectionAction + .buttonStyle2.selectionAction,
+.turnGroup > .buttonStyle2.selectionAction + .buttonStyle2.selectionAction {
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/*
+    The delete square is its own color, so its seam is its own too.
+
+    A white hairline that reads as a seam on blue is a stripe on red - the two sit next to each other, and
+    the line belongs to whichever button draws it.
+*/
+.selectionActions .buttonStyle2.selectionDelete + .buttonStyle2.selectionAction {
+    border-left-color: rgba(255, 255, 255, 0.45);
+}
+
+/*
+    What the Array square opened, on a ground of its own.
+
+    These are the only rows in the panel that are there because a button is held down, and without something
+    tying them to it they read as three more rows in a column of rows - the square lit at the top, the boxes
+    somewhere below it, and no telling that one is the other's inside.
+
+    Bled out to the panel's edges the way .panelDivider is, so the patch spans the panel rather than sitting
+    in it with a margin either side, which would read as a card rather than as a part of this one being
+    open. Faint: it is a ground, and everything on it has to stay as readable as the rows above.
+*/
+.arrayOpened {
+    margin: 0.35em -0.75em 0.1em -0.75em;
+    padding: 0.35em 0.75em 0.45em 0.75em;
+    background: rgba(0, 0, 0, 0.055);
+    border-radius: 3px;
+}
+
+/*The last row inside it keeps the patch's own foot rather than adding its margin to it.*/
+.arrayOpened > .selectionActions {
+    margin-bottom: 0;
+}
+
+/*
+    The rule and the four turns, as one thing the row can move about.
+
+    The same gap inside as the row has outside, so that on the one line it usually takes this is invisible
+    - seven squares evenly spaced, which is what it looks like. It exists for the line it does not fit on.
+*/
+.turnGroup {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    margin-top: 0.4em;
+}
+
+/*
+    The group holds them off the row above, so the four inside must not each do it again.
+
+    Left alone they did, and the four sat 0.56px below the three squares beside them - the group taking the
+    row's top margin as a flex item and the buttons taking it a second time within the group. Half a pixel
+    is nothing to read and paints as a one-pixel step between the two halves of a row whose whole point is
+    that it is one row.
+*/
+.turnGroup .buttonStyle2.selectionAction {
+    margin-top: 0;
+}
+
+/*
+    The rule between what a shape can be done *to* and what it can be turned *into*.
+
+    Copy, cut, delete and the four turns are one row now, which the panel has the width for - but read
+    straight across, delete sits against a quarter turn as though pressing either were the same kind of
+    thing. This says they are two groups, and keeps the button that takes something away from being the
+    one a hand lands on next to a turn.
+
+    Stretched to the buttons rather than given a height of its own, so it stays their height whatever they
+    are sized to next. It sits inside .turnGroup, which is what holds the whole group off the row above -
+    so there is no top margin here to add to that one.
+*/
+.actionDivider {
+    width: 0;
+    align-self: stretch;
+
+    /*
+        Wider than it was, now that the buttons either side of it have closed up.
+
+        It used to be one gap among eight equal ones and only had to be a little more than the rest. With
+        the runs butted together it is the only air in the row, and it is what stops the eight reading as
+        one long button - so it is a space with a line in it rather than a line in a space.
+    */
+    margin: 0 0.45em;
+    border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+/*The one action here that takes something away, colored so it is not pressed by muscle memory.*/
+.buttonStyle2.selectionDelete {
+    background-color: #b32121;
+}
+
+/*
+    The shape the select tool has picked out.
+
+    A non-scaling stroke, so the outline is the same weight at any zoom - a width in layout units would be
+    invisible zoomed out and would swallow the shape zoomed in, which is the one thing a highlight must not
+    do. The dashes are what tell it apart from a shape that simply has a dark outline of its own.
+*/
+.shapeSelected {
+    stroke: #d81b60 !important;
+    stroke-width: 2.5px !important;
+    stroke-dasharray: 6 3;
+    vector-effect: non-scaling-stroke;
+    paint-order: stroke;
+}
+
+/*
+    Design rule violations, drawn over the layout.
+
+    No fill, because a marker says where to look rather than replacing what is being looked at - a filled
+    one hides the very geometry somebody has to see to understand the fault.
+
+    A different color and a different dash from .shapeSelected on purpose. The two can be on screen at once,
+    and "this is chosen" and "this is wrong" are not things to have to tell apart by guessing; orange
+    against the selection's pink, and a tighter dash.
+
+    non-scaling-stroke on both, so a marker stays visible at every zoom. Without it the outline of a
+    150-nanometer fault is invisible on a die and inches thick close up.
+*/
+.drcMarker {
+    fill: none;
+    stroke: #ff6d00;
+    stroke-width: 3px;
+    stroke-dasharray: 3 2;
+    vector-effect: non-scaling-stroke;
+    paint-order: stroke;
+}
+
+/*
+    A zero-length line with a round cap, which draws a dot exactly as wide as the stroke.
+
+    An off-grid fault is a coordinate and has no extent at all, so there is no region to outline. A circle
+    would need a radius in database units - a speck across a die, and covering the cell close up - where
+    this is the same size on screen wherever the view happens to be.
+*/
+.drcMarkerPoint {
+    stroke: #ff6d00;
+    stroke-width: 9px;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+/*
+    The layout is a drawing, not a document.
+
+    Without this the browser treats the pin labels as text and lets a drag select them - which is ugly on
+    its own, and worse than ugly while editing: a drag that starts a selection is a drag the browser may
+    take over, and the pointer events that were moving a corner stop arriving. The corner then jumps to
+    wherever the sequence resumed, which reads as the editor losing its mind rather than as the browser
+    doing something reasonable with what it thought was text.
+*/
+#gdsSVG {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/*
+    The grid.
+
+    Its width is set in layout units by the code that draws it rather than here, because a grid line has to
+    stay one pixel wide at every zoom and non-scaling-stroke would fight the two thicknesses that make a
+    tenth line readable. Only the color belongs in a stylesheet.
+*/
+.gridLine {
+    stroke: #7f8c99;
+}
+
+/*
+    The grid pitch, which is a number and should look like the number it is - a full-width input in a
+    toolbar this thick would push everything beside it off the end.
+*/
+/*
+    The pitch, in a box the size of the buttons beside it.
+
+    **It was the tallest thing in the bar, and it made everything next to it tall too.** Nothing here set a
+    size on it, so it took the browser's own for a number input - 16px of type on a 24px line, against the
+    0.9em on 1.5 that every button in the bar uses. Measured: 30px against their 25.6. The group is a flex
+    row, so Show, Snap, Shapes and the unit beside them were all stretched to match it, and the whole Grid
+    column stood taller than the tools.
+
+    The arithmetic, so the two can be checked against each other rather than trusted: 0.9em of the bar's
+    16px is 14.4, one and a half of that is a 21.6 line, and a pixel of padding and a pixel of border either
+    side make 25.6 - which is 2px of padding plus the same line box, the way a toolbar button gets there.
+*/
+.gridPitch {
+    width: 4em;
+
+    font-size: 0.9em;
+    line-height: 1.5;
+    padding: 1px 4px;
+    border-width: 1px;
+}
+
+/*
+    The grid's icon, and the number it governs, as one control.
+
+    Flush: the icon carries the left cap, the box is square on that side, and there is nothing between them.
+    They are the grid and how far apart it is - a gap would read as two things that happen to be adjacent,
+    which is how the whole column read when it was three buttons, a box and a dropdown in a row.
+
+    Lit while any of the three is on, so the icon says whether the grid is doing anything without the menu
+    having to be opened to find out.
+*/
+.toolbarGrid {
+    position: relative;
+}
+
+/*
+    Which view is on, as three boxes with one of them lit.
+
+    Two or three characters each rather than a drawing: there is no picture of "text" that is not a page of
+    squiggles, and none of 2D that is not also one of 3D.
+
+    The boxes are .toolButton, which is the tool group's own class - so this switch and the tools two
+    columns along are the same control doing the same job, and neither had to invent a way of saying "one
+    of these, and it is that one".
+*/
+.toolbarView {
+    position: relative;
+}
+
+/*
+    Narrower than a tool button, and on purpose.
+
+    These carry the same 15px glyph the tools do, so .buttonIcon's 2.2em floor would make them exactly a
+    tool wide - which is tidy and is fifteen pixels of nothing in a bar that had run out of room. Six
+    either side of the picture is enough to be a button, and the group still reads as a group because it
+    is three boxes butted together.
+
+    The icon's own vertical nudge comes from .buttonIcon svg, which is why the class is still on them.
+*/
+.buttonStyle2.viewPickBox {
+    min-width: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+/*
+    The backdrop's own column, relative so its menu can hang off it - the same as the tools and the grid.
+*/
+.toolbarBackground {
+    position: relative;
+}
+
+/*
+    Which backdrop, shown rather than named.
+
+    Wider than the menus the shape and grid pickers open, because each row carries a picture: the names
+    are somebody's - "Future Room", "Neon" - and no arrangement of words says what a photograph looks
+    like, which is the whole question this menu is asking.
+*/
+.backgroundMenu {
+    min-width: 15em;
+}
+
+/*
+    A row rather than three lines.
+
+    .shapePick is written for a tick and a word, which lay out on one line on their own - a swatch has to
+    be a block to have a size at all, and a block among inline content breaks the line either side of it.
+    Saying the row is a row is what lets both be what they are.
+*/
+.backgroundPick {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+/*
+    The picture itself: 128 pixels wide, generated once from the backdrop and committed beside it.
+
+    Drawn at a third of that, so it is sharp on a high-density screen without another file. The backdrops
+    themselves are up to nine megabytes - a menu that showed those would fetch thirteen to open, which is
+    a menu nobody opens twice.
+*/
+.backgroundSwatch {
+    /*
+        block, because one of these is a span rather than an img - and a span is inline, where a width and
+        a height are values nothing reads. The plain scene's swatch was a box of no size until this said
+        otherwise, so four rows carried a picture and the fifth carried a gap.
+    */
+    display: block;
+    flex: none;
+    width: 42px;
+    height: 28px;
+
+    object-fit: cover;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    border-radius: 2px;
+}
+
+/*
+    The plain scene has no photograph, so its swatch is the color the scene actually is. A crossed-out box
+    would say "none of them" where this says what you get.
+*/
+.backgroundSwatchPlain {
+    background: #d9d9d9;
+}
+
+.backgroundName {
+    white-space: nowrap;
+}
+
+.buttonStyle2.gridMenuButton {
+    border-radius: 3px 0 0 3px;
+    opacity: 0.55;
+}
+
+.buttonStyle2.gridMenuButton:hover {
+    opacity: 0.85;
+}
+
+.buttonStyle2.gridMenuButton.gridMenuButtonOn,
+.buttonStyle2.gridMenuButton.gridMenuButtonOn:hover {
+    opacity: 1;
+}
+
+.toolbarGrid .gridPitch {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/*
+    The tick column on a menu of switches.
+
+    A fixed width whether or not there is a tick in it, so the words line up down the menu rather than
+    shifting sideways as things are turned on and off.
+*/
+.shapePickMark {
+    display: inline-block;
+    width: 1em;
+    color: #1b6ec2;
+}
+
+/*
+    A drawing at the head of a line, on the shape menu only.
+
+    Scoped to that menu rather than put on .shapePick, because the other two menus this class builds - the
+    grid switches and the backdrops - already have something in that column: a tick, and a photograph. A
+    row is what makes the picture and the word sit on one line at all; an svg is inline, and an inline box
+    among text baselines its bottom edge rather than its middle.
+*/
+#shapePicker .shapePick {
+    display: flex;
+    align-items: center;
+    gap: 0.55em;
+}
+
+/*flex: none, or a narrow menu takes the width out of the picture rather than out of the word.*/
+.shapePickIcon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+
+.shapePick:hover > .shapePickMark,
+.shapePick:focus-visible > .shapePickMark {
+    color: inherit;
+}
+
+/*
+    What a placed label will say. Wider than the number boxes beside it, because a pin name is a word and
+    the box should not make somebody scroll a word.
+*/
+.labelText {
+    width: 9em;
+}
+
+/*
+    Every button in the selection panel is rounded, like every button everywhere else.
+
+    .buttonStyle2 carries no radius of its own - the rounding in the bar comes from the rules that cap a
+    group's ends, and in a popup from a rule of its own. This panel had neither, so it was the one place in
+    the app with square corners on everything.
+
+    Three, matching the popups. The inputs beside them too, since a rounded button against a square box is
+    the same mismatch one step along.
+*/
+.selectionPanel .buttonStyle2,
+.selectionPanel input[type="text"],
+.selectionPanel input[type="number"],
+.selectionPanel select {
+    border-radius: 3px;
+}
+
+/*
+    The new cell's name and the button that uses it, as one control.
+
+    No gap and one seam: they were a box and a button with space between them, which reads as two things
+    that happen to be adjacent. The same join the download button makes with its format picker - neither
+    half of either pair means anything alone.
+
+    Twenty-six, which is `.buttonStyle2.actionIcon` above - the copy, cut and delete squares this pair sits
+    under. Measured, because neither half arrived at it on its own: the button came out 29.79 off its
+    line-height plus padding, and the box 35.23 off a border and a bigger padding again. Both are stated
+    here, with border-box, so a change to either one's padding cannot pull the pair apart.
+*/
+.newCellRow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+
+    /*
+        As wide as the squares under it, rather than as wide as the panel.
+
+        The row is a block and took the whole content width - 275 against the strip's 221 - so the pair ran
+        past the row it belongs with by a button and a half, and the panel had two left edges that lined up
+        and two right edges that did not.
+
+        Added up rather than measured: eight 26px squares, the rule between them, and the 0.45em of air on
+        each side of it. Written as the sum so it stays right when any of the three changes - a single
+        number would have been 13.8em of a 16px em against a panel set at 13.6, which is 188 and not 221.
+    */
+    max-width: calc((8 * 26px) + 1px + 0.9em);
+}
+
+.newCellRow > .labelText,
+.newCellRow > .buttonStyle2 {
+    box-sizing: border-box;
+    height: 26px;
+
+    /*
+        And no top margin on the button, which .selectionAction gives every action to hold it off the row
+        above. The row holds this pair off what is above it; the button taking that margin as well sat it
+        4.46px below the box it is joined to - two halves of one control, the same height, starting at
+        different heights.
+    */
+    margin-top: 0;
+}
+
+/*
+    Only the height and the shares are set here. Padding is left to the rules the rest of the panel's
+    buttons and boxes already answer to - with border-box and a stated height it changes where the text
+    sits and nothing else, and reaching in to restate it once cost this button `.lineUpButton`'s smaller
+    type, which is the size every word button in the panel is set at.
+*/
+.newCellRow > .labelText {
+    flex: 1;
+    min-width: 0;
+}
+
+.newCellRow > .buttonStyle2 {
+    flex: none;
+}
+
+/*
+    The seam: rounded at the outside corners of the pair, square where they meet.
+
+    Named through the row rather than on their own, to out-specify the rounding above. That rule reaches the
+    box as `input[type="text"]`, which is a class and an attribute; a bare `.joinedStart` is two classes and
+    loses to it, so the box kept its right-hand corners and the pair still read as two things - while the
+    button, reached by a class in both rules, took the seam and looked done.
+*/
+.selectionPanel .newCellRow .joinedStart {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.selectionPanel .newCellRow .joinedEnd {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+
+    /*Or the button's own left edge draws a second line against the box's right one.*/
+    margin-left: -1px;
+}
+
+/*
+    Turn and mirror. An arrow rather than a word, because four of these have to fit on one line and
+    "Anticlockwise" does not - and the arrows say which way in any language.
+
+    The same square as copy, cut and delete, which is what .actionIcon carries: they are one row of picture
+    buttons over another and four of them at a different width read as a different kind of control.
+
+    No min-width any more. It was 2.2em, and at this font size that is 34px against the 28 of the squares
+    above - the one thing holding the two rows out of line. The square sets the width now.
+
+    Only the glyph is left here. It is a character rather than a drawing, so it is sized in type: 15px, to
+    stand at the height the drawn icons are given.
+
+    Two classes again, for the reason written one rule above: `.buttonStyle2.selectionAction` sets the type
+    for a button with a word in it, and at one class this lost to it and the arrows came out at 13.6 beside
+    icons drawn at 15. The same trap twice in two changes - the sizing of these buttons is set by a pair of
+    classes, so anything overriding it needs a pair too.
+*/
+.buttonStyle2.turnButton {
+    font-size: 15px;
+    line-height: 1;
+}
+
+/*
+    Line up and space out. Words rather than arrows: six directions in arrows is a row of glyphs nobody can
+    tell apart at this size, and "Center" and "Middle" mean different axes - which no pair of arrows says.
+    They wrap onto as many lines as the panel needs.
+
+    **Two classes, because for a long time this rule did nothing at all.** It was written at one, and
+    `.buttonStyle2.selectionAction` sets both a size and a padding at two - so every button carrying this
+    rendered at the panel's own 13.6px with nine pixels of padding, which is what the rule exists to say
+    it should not do. Eleven buttons: Make cell, the four booleans and the six alignments.
+*/
+.buttonStyle2.lineUpButton {
+    font-size: 0.82em;
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+}
+
+/*
+    Grow by: the button and the label at once.
+
+    As wide as the box it acts on, so the row reads as one control rather than as a number and a button
+    that happen to be next to each other. The box is .arrayCount at 3.6em of the panel's 13.6px, which is
+    49px; the same 49 is 4.4em here, because this button sets a font size of its own and an em on it means
+    the button's type rather than the panel's.
+
+    **The size is restated here rather than left to .lineUpButton**, which now sets the same 0.82em. Not
+    to override it - to keep the pair together, because 4.4 is only 49px at that size and a width in ems
+    that depends on a font size two rules away is one nobody can check. At 13.6px, which is what this
+    button rendered at while .lineUpButton was written at one class too few, "Grow by" is 60px and no
+    width under that could hold it.
+
+    Side padding off, over the 0.5em beside it, so that the width is the width rather than the width plus
+    eleven.
+
+    **And the height of the box as well as the width**, which is not a size this button would ever reach
+    on its own: .arrayCount is 18.3px - 1.2 line-heights of the panel's 13.6px, plus its two hairlines -
+    where a button with three pixels of padding above and below comes to 30. Stated as 1.64 of this
+    button's own 11.2px, which is that same 18.3.
+
+    Padding and the top margin off with it. The margin spaces a *column* of action rows; this one is in a
+    row that centers what it holds, where it only pushed the button off the middle by half of itself.
+*/
+.buttonStyle2.growButton {
+    font-size: 0.82em;
+    width: 4.4em;
+    height: 1.64em;
+    padding: 0;
+    margin-top: 0;
+}
+
+/*
+    The rules between the panel's three parts.
+
+    It is one column of a dozen rows - a layer, a cell, four readings, two boxes of numbers, three rows of
+    buttons - and nothing said where one thought ended and the next began. Three groups, which is what the
+    rows already were: what is chosen, what it measures, and what can be done to it.
+
+    Faint and full width. It is a divider, not a border: at panel strength it would be the loudest thing in
+    a box whose whole content is quiet grey text, and there are two of them.
+
+    Bled out to the panel's edges by negative margins against its own padding, because a rule that stops
+    short of the sides reads as an underline on the row above rather than as a line across the panel.
+*/
+.panelDivider {
+    height: 0;
+    margin: 0.45em -0.75em;
+    border-top: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+/*
+    And never one with nothing on a side of it.
+
+    The panel is a column of conditionals - the layer picker only appears for something editable, the cell
+    only for a single shape - so a rule written between two groups can find itself against the top of the
+    panel, the bottom, or another rule, depending on what was chosen. A line above the first row is not a
+    divider, it is a stray mark.
+
+    Asked here rather than guarded at each of the three places it is written, because the question is the
+    same one every time and the answer is about what ended up rendered rather than about what was chosen.
+*/
+.panelDivider:first-child,
+.panelDivider:last-child,
+.panelDivider + .panelDivider {
+    display: none;
+}
+
+/*
+    A row of controls in the panel, held off the ones above and below it.
+
+    The line box alone spaces a row of *text*; a row with a box or a button in it is taller than its line
+    and ends up touching its neighbours. A quarter em either side is what separates the two rows of numbers
+    from each other and from the reading over them.
+*/
+.selectionRow {
+    margin: 0.2em 0;
+}
+
+/*
+    The array's numbers. Narrow, because four of them and their separators share one panel width, and the
+    values are two or three digits.
+*/
+.arrayRow {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+}
+
+/*
+    Narrower, at the same size of type.
+
+    Measured: the box was 57.1px holding "-0.05" at 30.3px, so nearly half of it was empty on a panel where
+    ten of these are stacked. The type is unchanged - what came off is slack and the spinner.
+
+    **Dropping the spinner is what pays for the narrowing.** Chrome draws it over the right-hand end of the
+    field rather than beside it, so on a box this size it sits on top of the digits: that is why a coordinate
+    like "-1,613" read as clipped at the old width. Gone, the content box holds 41px of text against 37px for
+    that value, which is more room than it had before. Nothing is lost with it - the up and down arrows still
+    step a focused number input, which is the only way anybody was using it at four ems.
+*/
+.arrayCount {
+    width: 3.6em;
+    min-width: 0;
+
+    /*
+        As short as the words beside it.
+
+        29.2px, and the arithmetic says where every pixel went: a line box of 23.8 - the panel's own 1.75,
+        inherited by an input that has no use for it - plus two of padding and 3.4 of border. The line height
+        is there to space *rows* of text apart and does nothing inside a box with one line in it.
+
+        A line of its own, a hairline border and no padding above or below brings it to about 19, which is
+        the height of the type it sits next to. Ten pixels a row over the ten of these the panel stacks.
+    */
+    line-height: 1.2;
+    padding: 0 2px;
+    border-width: 1px;
+
+    /*Firefox asks for this on the input; the others ask on the button, below.*/
+    -moz-appearance: textfield;
+}
+
+/*
+    A count, and a distance, sized to what each actually holds.
+
+    3.6em is what every box in this panel is, which is right for a coordinate and far too much for a count:
+    the array is capped at two digits across and two down, so a box built for six was four digits of empty
+    white saying nothing - and the row it sits in is a sentence, where a gap that wide reads as a missing
+    word.
+
+    A pitch is a number with a point in it - "1.15", "0.4", occasionally "-12.5" - so three digits and a
+    separator is what it has to show without scrolling, and a little over that for a sign.
+*/
+.arrayHowMany {
+    width: 2.6em;
+}
+
+.arrayPitch {
+    width: 3.4em;
+}
+
+.arrayCount::-webkit-inner-spin-button,
+.arrayCount::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+}
+
+/*
+    The words between the numbers: "At", "By", "On layer", the unit after a box.
+
+    **The same size as the values they label.** They were 0.8em of a panel already set at 0.85, which is
+    10.9px against 13.6 in the boxes beside them - a difference big enough to read as two different kinds of
+    text rather than one row. Quiet is what opacity is for; size was doing a job it is bad at.
+*/
+.arrayBetween {
+    font-size: 1em;
+    opacity: 0.7;
+}
+
+/*
+    "On layer", and the picker it labels.
+
+    The word says what the control is for. Without it the panel opens on a bare colored square and a pair of
+    numbers, which reads as a heading naming the layer rather than as something you can change - and the one
+    thing that makes it a control, the little arrow, is at the far end where nobody is looking.
+*/
+.layerPickerRow {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: 0.35em;
+}
+
+/*
+    Which layer the chosen shapes are on, at the top of the panel where their layer used to only be named.
+
+    Built rather than a `select`, because an `option` holds text and nothing else - a colored square beside
+    each layer is not something a native dropdown can be made to do, and the square is the point: the
+    sidebar identifies a layer by its color, and a picker that named layers while the sidebar colored them
+    made the reader do the join.
+
+    Takes the rest of the row and is allowed to shrink, since a layer's name can be long and the panel is
+    only so wide. It stays the positioning context, so the list opens under the button rather than under
+    the word beside it.
+*/
+.layerPicker {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.layerPickerButton {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    width: 100%;
+    /*
+        A little room around the layer, unlike the number boxes.
+
+        Those hold one line of digits and nothing else, so they can sit tight to it. This holds a colour
+        swatch, a name and an arrow, and at no padding at all the swatch ran to the edges of the box - which
+        reads as the border being drawn on the swatch rather than around the control. Two pixels is enough
+        to tell the two apart, and the dropdown is a little taller than its text as a result, which is fine.
+    */
+    padding: 2px 6px;
+
+    font: inherit;
+    font-weight: 600;
+
+    /*
+        Close to the number boxes under it in height, and for the same reason - see .arrayCount.
+
+        After the `font` shorthand, not before it. `font: inherit` sets line-height as well, so a line-height
+        declared above it is overwritten by the panel's 1.75 and the button stays 25px while the boxes under
+        it are 17.
+    */
+    line-height: 1.2;
+    text-align: left;
+    color: inherit;
+
+    background: #fff;
+    border: 1px solid #41464b61;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.layerPickerButton:hover {
+    background: #f2f4f7;
+}
+
+.layerPickerName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.layerPickerArrow {
+    opacity: 0.55;
+}
+
+/*
+    Over the panel rather than pushing it open. The panel is a fixed thing over the layout and a list that
+    grew it downwards would move every control under it as it opened - so the list is absolute, and scrolls
+    once a file has more layers than there is room for.
+*/
+.layerPickerList {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 20;
+
+    max-height: 14em;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    background: #fff;
+    border: 1px solid #41464b61;
+    border-radius: 3px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.layerPickerOption {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    width: 100%;
+    padding: 2px 6px;
+
+    font: inherit;
+    text-align: left;
+    color: inherit;
+
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.layerPickerOption:hover {
+    background: #eef2ff;
+}
+
+.layerPickerOptionOn {
+    font-weight: 600;
+    background: #e2e8ff;
+}
+
+/*
+    A panel button that is holding something open, marked the way a pressed tool is - so the disclosure
+    says whether it is showing or hiding without having to look below it.
+*/
+.buttonStyle2.selectionActionOn {
+    opacity: 1;
+    font-weight: 600;
+}
+
+/*
+    The heading over a row of them. Quieter than the shape's own name at the top of the panel, since it
+    labels a group of controls rather than saying anything about the layout.
+*/
+.selectionLabel {
+    margin-top: 0.35em;
+    font-size: 0.75em;
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.gridUnit {
+    align-self: center;
+    padding-left: 0.25em;
+    font-size: 0.85em;
+    opacity: 0.75;
+    cursor: help;
+}
+
+/*
+    The same thing where it is a choice rather than a statement.
+
+    The grid's unit is picked; the path width's is not, and both should read as the same quiet word at the
+    end of a number. So the size and the fade are shared and the help cursor is not - this one is a control,
+    and a cursor that says "hover me for an explanation" over something you are meant to click is a wrong
+    thing to say.
+
+    **Against the box, and as tall as it.** The two are one control read left to right - a number and what
+    it is in - and a unit floating half the height of the box it belongs to beside a gap reads as something
+    else on the bar. Stretched rather than given a height, so it follows the input whatever that turns out
+    to be.
+
+    No width of its own: a select is already as wide as its widest option, which is "units", and anything
+    said here would either cut that off or leave space after it.
+*/
+.gridUnitPick {
+    align-self: stretch;
+    padding: 0;
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+/*
+    What a half-drawn polygon is waiting for. Under the context bar rather than over the geometry, since it
+    is about the gesture in progress and the geometry is what the gesture is being aimed at.
+
+    **Centered on the canvas, like the bar above it.** It used to be pinned to the left edge, which put it
+    over the cell tree's own column and a long way from where anybody drawing is looking - and left it
+    reading as part of the sidebar rather than as something the view is telling you. The bar that says which
+    cell you are in is centered a row higher, so this lines up under it and the two read as one column of
+    messages about the gesture in progress.
+
+    A translate rather than left/right auto margins, because the box is as wide as its sentence: it has no
+    width to center within, so its own middle is what has to be moved to the middle.
+*/
+/*
+    **rem, not em.** This box sets its own font-size to 0.78em, and `top` in em resolves against *that* - so
+    3.1em was 2.42 parent-em, which put it at 38.7px against a context bar whose bottom is at 46.8px. It was
+    overlapping the bar it was meant to sit under, and shrinking the type had quietly moved it up. A root em
+    is the same length whatever this box's own type is doing.
+
+    Clears a one-row bar with a few pixels to spare. A bar wide enough to wrap would reach further down and
+    this would sit on it again - which the three cell actions becoming squares has made much less likely, but
+    not impossible, and there is no CSS way to offset from a sibling's height.
+*/
+.drawHint {
+    position: absolute;
+    top: 3.3rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+
+    /*So a long sentence wraps inside the view rather than running out past its edges.*/
+    max-width: 90%;
+
+    padding: 0.25em 0.6em;
+    border-radius: 0.5em;
+    background: rgba(216, 27, 96, 0.9);
+    color: #fff;
+    font-size: 0.78em;
+    text-align: center;
+    pointer-events: none;
+}
+
+/*
+    A rule check that found something, in the hint's place.
+
+    **The marker orange rather than the hint's pink**, because the sentence and the marks under it are one
+    fact: a count in a different attention color would read as a second, unrelated warning about the same
+    drawing. The hint keeps its own color, being about a gesture rather than about the layout.
+*/
+.drawHintFault {
+    background: rgba(255, 109, 0, 0.92);
+}
+
+/*
+    And one that found nothing. Green, since it is the only message in the app that is good news - and
+    stated at all rather than left silent, because a check that says nothing is indistinguishable from one
+    that never ran.
+*/
+.drawHintClear {
+    background: rgba(56, 142, 60, 0.9);
+}
+
+/*
+    What was picked out, in the corner of the view.
+
+    In the view rather than in the toolbar because it comes and goes, and a control in a bar that appears
+    and disappears changes the bar's height under everything else.
+*/
+.selectionPanel {
+    position: absolute;
+    top: 0.6em;
+    left: 0.6em;
+    z-index: 10;
+
+    max-width: 22em;
+    padding: 0.5em 0.75em;
+
+    /*
+        The panel grows with what is chosen - a single shape gets a handful of rows, several get combining,
+        lining up and spacing out as well - and on a short window that reached past the bottom of the view
+        with the last of the buttons unreachable. It scrolls within the view instead.
+    */
+    max-height: calc(100% - 1.2em);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    border: 1px solid #41464b61;
+    border-left: 3px solid #d81b60;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.92);
+
+    font-size: 0.85em;
+
+    /*
+        Room between the rows rather than around the panel.
+
+        The panel is a dozen readings and controls stacked with nothing between them but the line box, and
+        at 1.45 they ran together - the bounding box under the corner count, the two rows of numbers, the
+        three rows of buttons. Measured on one shape it was 342 pixels of content in a 441 pixel view, so
+        the space to spend was there and the cap was not what was in the way.
+    */
+    line-height: 1.75;
+
+    /*
+        **It takes its own clicks.**
+
+        This was `pointer-events: none` back when the panel was a readout - a few lines about what had been
+        chosen, which there was no reason to let swallow a click meant for the layout behind it. Each control
+        added since put pointer events back on itself, and the gaps between them did not: pressing the
+        panel's own background chose whatever shape happened to be underneath, so reaching for a button and
+        missing it by two pixels silently threw away the selection the panel was describing.
+
+        A panel with controls in it is a surface, and a surface stops what lands on it.
+
+        Taking its own clicks means taking its own drags, and a drag across a surface selects the text on
+        it - so a band pulled across the view smeared a highlight over whatever the panel was saying. Its
+        words are a readout of the thing being worked on rather than something to copy out. The boxes are
+        the exception and need no rule: what is inside an input stays selectable whatever its parent says.
+    */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.selectionHeading {
+    font-weight: 600;
+}
+
+.selectionLayerName {
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+.selectionNote {
+    opacity: 0.7;
+}
+
+/*
+    A note with a mark in front of it.
+
+    align-items:start rather than center, because the sentence wraps to two lines in a panel this wide and a
+    centered icon would sit between them. It belongs against the first line, which is where reading starts.
+
+    flex:none on the icon, or the flex line hands it the shortfall and a 13px circle comes out an ellipse.
+*/
+.noteWithIcon {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35em;
+}
+
+.noteIcon {
+    flex: none;
+    width: 13px;
+    height: 13px;
+
+    /*Down onto the first line's own middle, which a 13px box beside 1.75 line-heights does not start on.*/
+    margin-top: 0.28em;
+}
+
+/*
+    The view's tools, of which exactly one is active.
+
+    Butted together rather than spaced apart, so the group reads as one control with a chosen segment
+    rather than as two buttons that happen to be near each other - which is the difference between "these
+    are alternatives" and "these are actions".
+*/
+.toolGroup {
+    display: flex;
+}
+
+/*
+    A group that is holding its place rather than showing anything.
+
+    The merge switch comes and goes with the tool that is chosen, and rendering it conditionally moved every
+    control to its right by 92 pixels each time - so the grid pitch walked out from under the pointer
+    because a different button appeared. It stays in the bar and stops being drawn instead.
+
+    visibility, not opacity or a transparent color: what is left has to take no clicks, hold no focus and be
+    read out by nothing, and only this one does all three while keeping the box.
+*/
+.toolGroupReserved {
+    visibility: hidden;
+}
+
+.buttonStyle2.toolButton {
+    border-radius: 0;
+    opacity: 0.55;
+}
+
+.buttonStyle2.toolButton:first-child {
+    border-radius: 3px 0 0 3px;
+}
+
+.buttonStyle2.toolButton:last-child {
+    border-radius: 0 3px 3px 0;
+}
+
+/*
+    A seam between neighbours, for a group whose buttons can be on at the same time.
+
+    The same hairline the panel's action strip uses, and here for the same reason: two buttons of one color
+    butted together are one wide button with two pictures on it. Which is not a problem for the tools or the
+    view picker beside them - exactly one of those is ever lit, and the lit one is its own separator - but
+    the two sidebars are independent switches, and both on or both off is the common case.
+
+    So the rule is the distinction rather than a preference: a group where one member is chosen needs no
+    seam, and a group of switches does.
+*/
+.seamedGroup > .buttonStyle2.toolButton + .buttonStyle2.toolButton {
+    border-left: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/*
+    A group of one is not a strip, so it is round on every corner.
+
+    It matched both of the rules above - it is the first child and the last - and the later one won outright,
+    which left the merge switch square down its left-hand side for no reason anybody could see. A lone button
+    has no neighbour to butt against.
+*/
+.toolGroup > .buttonStyle2.toolButton:only-child {
+    border-radius: 3px;
+}
+
+/*
+    The one in use. Full strength against the others' faded state, which is what says "this is the mode
+    you are in" without needing a second color that has to mean something.
+*/
+.buttonStyle2.toolButton.toolButtonOn {
+    opacity: 1;
+}
+
+.buttonStyle2.toolButton:hover {
+    opacity: 0.85;
+}
+
+.buttonStyle2.toolButton.toolButtonOn:hover {
+    opacity: 1;
+}
+
+/*
+    Opening a file and saving one.
+
+    A label rather than a button for the first of them, because a file input is hidden and unstyleable and
+    its label is the only thing that can stand in for it - so it is given the button's own look here rather
+    than being allowed to sit in the bar as the one control that does not look like one.
+
+    Lit like the undo arrows: these are always available and are not alternatives to anything, so there is
+    no state for a highlight to carry.
+
+    **Not a flex box**, which is the trap the note above .buttonIcon svg is written about and which this
+    walked straight into: a flex container takes its height from what is in it, so these two came out the
+    height of a 15px icon while every button beside them was the height of a line of text. inline-block
+    keeps the line box, and the svg's own nudge puts the glyph on the same optical center as the rest.
+*/
+.buttonStyle2.fileButton {
+    display: inline-block;
+    text-align: center;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+/*
+    The one button in the bar that is still a word, a size down from the type the others' words are.
+
+    Every other label up here is a glyph now, so this is the only place a word has to fit - and at the
+    bar's own size it is the widest control in the row by half again. Smaller type keeps the box a box
+    rather than a banner, and the height is a line box plus padding so nothing else moves with it.
+*/
+.buttonStyle2.examplesButton {
+    font-size: 0.75em;
+    line-height: 21.6px;
+}
+
+/*
+    The tools' column, which is the one thing in the bar that has something hanging off it.
+
+    Relative so the shape menu can be placed against it: the menu belongs to the pencil, and the pencil is
+    in here.
+*/
+.toolbarTools {
+    position: relative;
+}
+
+/*
+    Which shape the pencil draws, hanging from the pencil.
+
+    It was five words in the bar - Rectangle, Polygon, Ellipse, Path, Label - the widest column it ever
+    carried, present for as long as the tool was whether or not anybody was about to change the answer. A
+    question that is asked once belongs behind the thing that asks it.
+
+    Over the view rather than pushing it down, so opening and closing this does not move the layout. Its own
+    surface, because it is a menu now rather than a row of the bar - the bar's own buttons would read as
+    still being part of the bar, a few pixels lower.
+*/
+.shapePicker {
+    /*
+        Twelve of transparent border below the column, which puts the white six clear of the top of the
+        canvas - the bar's own padding is the other six. It was four pixels of *gap*, which left the menu
+        sitting on the bar and, once these started closing on mouse-out, put a strip of nothing between the
+        button and the menu that shut it on the way in.
+
+        **A border rather than a bridging pseudo-element**, and this is the one that works. Both were tried,
+        both cover the same twelve pixels, and only this one survives the walk down from the button - a
+        ::before is not an event target, so hovering it does not count as being inside the column the way
+        hovering a real box does. Measured, in both directions: with the bridge the menu closed halfway
+        down, and with the border it does not.
+    */
+    --drop: 12px;
+
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+
+    display: flex;
+    flex-direction: column;
+    min-width: 100%;
+
+    padding: 3px 0;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-top: var(--drop) solid transparent;
+    background-clip: padding-box;
+    border-radius: calc(4px + var(--drop)) calc(4px + var(--drop)) 4px 4px;
+
+    /*inset for the hairline the transparent border took away, and a filter for the shadow - see popupUnder.*/
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.18);
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.22));
+}
+
+
+/*
+    A row that carries the shape's own settings beside it.
+
+    The row still fills the column, so the list reads as a list: the wrapper is only here to be the thing
+    :hover is asked about and the thing the panel is positioned against.
+*/
+.shapePickOpens {
+    position: relative;
+    display: flex;
+}
+
+.shapePickOpens > .shapePick {
+    flex: 1;
+}
+
+/*
+    The mark that says there is more on this row.
+
+    Pushed to the right end by the row's own flex, so it lands past the longest name rather than beside each
+    one - a column of names with a chevron at a different place on every line reads as ragged.
+*/
+.shapePickArrow {
+    margin-left: auto;
+    padding-left: 0.6em;
+    opacity: 0.55;
+}
+
+/*
+    The settings themselves, out to the side of the row.
+
+    To the right, unlike the shape menu's submenus, which flip when there is no room: this hangs off the
+    pencil in the middle of the toolbar and the panel is one field wide, so there is always room. If the
+    pencil ever moves to the right-hand end, this needs the same treatment .shapeMenuLeftward gets.
+
+    Aligned with the row rather than under it, and pulled up by the picker's own 3px of padding so the first
+    field's top edge is the row's.
+*/
+.shapePickPanel {
+    position: absolute;
+    top: -3px;
+    left: 100%;
+    z-index: 31;
+
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+
+    padding: 6px 8px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+}
+
+/*
+    Open on hover and while anything in it has the keyboard.
+
+    focus-within is what makes it usable at all: tabbing into the width box or opening the ends dropdown
+    takes the pointer off the row, and hover alone would shut the panel under the control being used.
+*/
+.shapePickOpens:hover > .shapePickPanel,
+.shapePickOpens:focus-within > .shapePickPanel {
+    display: flex;
+}
+
+/*One labeled field of it, laid out like the toolbar rows these came from.*/
+.shapePickField {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+
+    font-size: 0.8rem;
+    color: #111;
+    white-space: nowrap;
+    cursor: default;
+}
+
+/*So the two names line up and the boxes below each other, rather than each field sizing to its own word.*/
+.shapePickField > span:first-child {
+    flex: none;
+    min-width: 3.4em;
+}
+
+/*
+    And the controls are one height, whatever kind of control they are.
+
+    Measured before this: the width box came out 20.4px tall at an 11.52px font and the ends dropdown 17.7px
+    at 12.8px, because the box carries .gridPitch and the dropdown carried nothing at all - so it took the
+    browser's own defaults and the two rows of one panel disagreed about both. A number box and a dropdown are
+    the same kind of answer to the same kind of question, and a panel where they are visibly different sizes
+    reads as two things assembled rather than one control.
+
+    Stated on both rather than only on the dropdown, so the height is one number in one place instead of a
+    default that happens to match.
+*/
+.shapePickField > input,
+.shapePickField > select {
+    height: 1.75rem;
+
+    font-size: 0.9em;
+    line-height: 1.5;
+    padding: 1px 4px;
+    border-width: 1px;
+}
+
+.shapePickField > input {
+    width: 4.5em;
+}
+
+/*A line of it. The same flat line the right-click menu uses, for the same reason: this is a menu.*/
+.shapePick {
+    flex: none;
+    padding: 3px 12px;
+    font-size: 0.85rem;
+    color: #111;
+    text-align: left;
+    white-space: nowrap;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.shapePick:hover,
+.shapePick:focus-visible {
+    background: #1b6ec2;
+    color: #fff;
+    outline: none;
+}
+
+/*Which one it is drawing, which is the whole reason to open this.*/
+.shapePick.shapePickOn {
+    font-weight: 600;
+    background: rgba(27, 110, 194, 0.14);
+}
+
+.shapePick.shapePickOn:hover {
+    background: #1b6ec2;
+    color: #fff;
+}
+
+/*
+    A tool that does not apply yet - Draw, before a cell is being edited.
+
+    Further back than an unlit tool rather than merely the same, since the difference being drawn is "not
+    this one" against "not yet at all". The tooltip says which, and says what to do about it.
+*/
+.buttonStyle2.toolButton:disabled,
+.buttonStyle2.toolButton:disabled:hover {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/*
+    Every other button in the bar, turned off the same way.
+
+    The rule above is the tools' own. A read-only embed turns off things that are not tools - the file
+    buttons, the history - and they should look the way a tool that cannot be used looks, since it is the
+    same statement: here, and not available.
+
+    **Kept in the bar rather than taken out of it.** A control that has gone leaves somebody wondering
+    whether this app can do the thing at all; one that is visibly off says the page has turned it off. The
+    tooltip on each says which.
+*/
+.buttonStyle2.toolbarButton:disabled,
+.buttonStyle2.toolbarButton:disabled:hover {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/*
+    The same look for a label, which cannot be disabled.
+
+    The file button is a <label for> rather than a <button> - that is how it opens the file dialog without a
+    line of script - and `disabled` means nothing on one. Taking the `for` away stops it opening anything;
+    pointer-events stops the cursor suggesting it might.
+*/
+.buttonStyle2.toolbarButtonOff,
+.buttonStyle2.toolbarButtonOff:hover {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+/*
+    The format the download writes, beside the button that writes it.
+
+    Small, because it is a qualifier on the icon next to it rather than a control of its own - the same
+    reason the toolbar's buttons are a size down from a real one.
+
+    **Given a height**, because a select does not get one the way a button does. A button in this bar is
+    25.6px - a 21.6 line box plus 2px of padding either side - and a select is as tall as its own text and
+    nothing else, which came to 19. Joined to a download button it was pulled up to match by the pair's own
+    stretch; standing alone, as the 3D view's background picker does, it sat 6px short in a row of squares.
+    Written as the number rather than derived, the same way .viewPickButton pins its line box: the bar has
+    one height and this is it.
+*/
+.formatPicker {
+    font-size: 0.8em;
+    padding: 0 2px;
+    height: 25.6px;
+}
+
+/*
+    Two controls that are one control, butted together.
+
+    The same idea the grid's icon and its pitch already use: what is on the left carries the left cap, what
+    is on the right carries the right one, and the seam between them is nothing at all. A gap would read as
+    two things that happen to be adjacent, and neither of these means anything without the other - a format
+    nothing writes, and a save with no say in what it writes.
+
+    stretch, so the dropdown is the button's height rather than its own: the two are one control and one
+    control is one height.
+*/
+.joinedPair {
+    display: flex;
+    align-items: stretch;
+}
+
+.joinedPair > .joinedStart {
+    border-radius: 3px 0 0 3px;
+}
+
+/*
+    No left border on the right-hand half, so the seam is one line rather than two against each other.
+*/
+.joinedPair > .joinedEnd {
+    border-radius: 0 3px 3px 0;
+    border-left-width: 0;
+}
+
+/*
+    A line of text the app needs read but not acknowledged.
+
+    In the page rather than in an alert: a dialog has to be dismissed before anything else can be done,
+    which is the wrong price for something that is worth knowing and not worth stopping for.
+*/
+.inlineNotice {
+    align-items: center;
+    gap: 0.5em;
+
+    margin: 0;
+    padding: 0.4em 0.8em;
+
+    border: 1px solid #c9a227;
+    border-top: none;
+    background-color: #fff8e1;
+    color: #6b5200;
+    font-size: 0.9em;
+}
+
+/*
+    The fence between one group of controls and the next.
+
+    The bar is five groups now - the file, the file's lists, the view, the tools, the grid - which is four
+    boundaries, and this used to be on one of them. The other three got the 20px any two columns get, so
+    three quarters of the bar read as one long undifferentiated row of squares.
+
+    Wider than it was, too. 2em came to 42px at the one boundary that had it against 20 at the ones that
+    did not: a difference you could measure rather than one you could see.
+*/
+/*
+    **And once there was a line, most of the space stopped being needed.**
+
+    A fence started at 3.2em and came down twice, and both times what was actually being asked for was the
+    space, before the line existed to carry the meaning instead. 1em is the last of it: the gap at a
+    boundary is the fence plus the next column's 10px gutter, so 26px against the 20px between two ordinary
+    columns and the 6px between two controls inside a group. Wider than a gutter, narrow enough that the
+    hairline is what somebody reads rather than the distance.
+
+    One value at every width now. It used to widen past 1400px and narrow below it, because four fences at
+    the old size were 141px and the bar has to fit them or wrap - at 1em they are 64px all told, which is
+    less than the *narrow* setting used to cost, so there is nothing left for a media query to save.
+*/
+.toolbarGroupEnd {
+    --fence: 1em;
+
+    position: relative;
+    padding-right: var(--fence);
+}
+
+/*
+    And a line down the middle of the fence, because space alone was doing too much work.
+
+    The gap says these are two groups; the line says it out loud - and now that it does, the gap is down to
+    a hair over an ordinary gutter. A difference somebody has to look for became a difference nobody has to.
+
+    Placed in the middle of what is actually seen, which is this column's fence plus the next one's 10px
+    gutter - so it is half of (fence + 10) in from where the gap starts, which is (fence - 10) / 2 from
+    this column's own right edge. At 1em that is 3px, which is the line sitting 13px clear on either side.
+*/
+/*
+    A column standing on its own, an ordinary gutter from the tools and a fence from the grid.
+
+    Merge is the one control this is about. It is not one of the drawing tools - it is what the drawing tools
+    do when they land on something - so it is a column of its own between them and the grid.
+
+    **The two sides are not the same, and that is what this settled on.** They were made equal first, at a
+    fence's worth each, and equal reads as too much: the gap after Merge has a hairline down the middle of
+    it and the gap before it has nothing, so the same distance looks deliberate on one side and like a
+    mistake on the other.
+
+    Twelve pixels before it and twenty-six after. Twelve is twice the six between two buttons inside a
+    group, so Merge is still plainly its own column and not the last of the tools; twenty-six is the fence,
+    and the line in it is what earns the difference. The tools column keeps its own ten of that twelve, so
+    what is set here is the two that remain.
+*/
+.toolbarGroupEnd.toolbarGroupAlone {
+    padding-left: 2px;
+}
+
+.toolbarGroupEnd::after {
+    content: "";
+
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: calc((var(--fence) - 10px) / 2);
+
+    border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+/*
+    The example list and, beside it, a picture of whatever is chosen.
+
+    Side by side and staying that way. It used to wrap, so on a narrow window the thumbnail dropped under
+    the list rather than being squeezed - which was the better trade when the pair was 220px tall and
+    stacking them cost 250 more. Now that each is the height of the popup, stacking them is twice the
+    canvas, and the picture shrinking is much the cheaper of the two.
+*/
+/*
+    stretch, so the picture is as tall as the filter box and the list beside it put together rather than a
+    square sitting against the top of them.
+*/
+/*
+    **As tall as the canvas will take.**
+
+    It was a 220px list next to a 260px square, in a popup that came to about a third of the view - most of
+    the canvas underneath it left bare while the list it was covering showed nine names out of nine hundred
+    and the picture of the one you were pointing at was a thumbnail. The room was there and nothing was
+    using it.
+
+    The height is measured off the window rather than off the canvas, because the canvas is not this box's
+    parent - the popup hangs from a toolbar column, and a percentage here would be a percentage of that
+    column. 450 is what is above and below it: the header, the bar at the taller of its two heights, the
+    popup's own padding and heading, and the footer some of these have.
+
+    Bounded at both ends, and the floor has to be under the ceiling or the popup scrolls - which is what a
+    240px floor did on a 620px window, where the popup's own cap was 360 and the body wanted 408. The
+    ceiling is because a list of names that scrolls is no more useful at 900 pixels than at 640, and a tall
+    window was giving it 900.
+*/
+.examplePicker {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 1.5em;
+
+    height: min(calc(100vh - 450px), 640px);
+    min-height: 180px;
+}
+
+/*
+    The list keeps its width and gives up its height.
+
+    flex: none, so widening the popup goes entirely to the picture. A list of file names is as wide as it
+    needs to be at 20em and no clearer at 40 - the names are already ellipsed at the far end, and there is
+    a filter box above it for the case that solves.
+*/
+.examplePickerList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+
+    /*
+        Twenty ems where there is room for twenty ems, and less where there is not.
+
+        It was flex: none, which held the width whatever happened - so on a window narrow enough to cap the
+        popup the list took its full share and the picture absorbed every pixel of the shortfall, down to a
+        sliver. Shrinking rather than growing: at a size where the whole popup fits, this is 20em and the
+        picture has the rest, which is the arrangement being kept. The floor is where a file name stops
+        being readable at all.
+    */
+    flex: 0 1 20em;
+    min-width: 12rem;
+
+    /*
+        The cap that makes the list scroll, and it has to be here rather than left to align-items: stretch.
+
+        A wrapped flex container sizes each *line* to the tallest thing on it and only then shares out what
+        is left over - so with nine hundred rows there was nothing left over, the line grew to 19812px, and
+        stretch dutifully stretched the column to match. Measured, after the first attempt did exactly that.
+
+        max-height rather than height, because the wrapping is real: on a narrow window the picture drops
+        below the list and two children each told to be the full height would be twice the box.
+    */
+    max-height: 100%;
+}
+
+.examplePickerFilter {
+    padding: 3px 6px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.examplePickerFilter:focus {
+    outline: none;
+    border-color: #1b6ec2;
+}
+
+/*
+    The list itself. It takes what is left of the column after the filter box, and scrolls rather than
+    growing the popup past the window - which is also what gives Virtualize something to measure how many
+    rows fit into.
+
+    min-height: 0 with it, or there is no scrolling to do: a flex item will not shrink below its content
+    without it, so the list would have pushed the popup open to nine hundred rows tall and overflow-y would
+    have had nothing to catch.
+*/
+.examplePickerOptions {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid #d6d5d5;
+    border-radius: 3px;
+    background-color: #fff;
+}
+
+/*
+    A row. The height is repeated in Viewer.razor as ExampleRowHeight - Virtualize is told how tall a row
+    is rather than measuring one, so the two have to agree or the list scrolls to the wrong place.
+*/
+.examplePickerOption {
+    height: 22px;
+    padding: 0 0.6em;
+    line-height: 22px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.examplePickerOption:hover {
+    background-color: #eaf2fb;
+}
+
+.examplePickerOption.isChosen {
+    background-color: #1b6ec2;
+    color: #fff;
+}
+
+.examplePickerNone {
+    padding: 0.6em;
+    color: #999;
+    font-size: 12px;
+}
+
+/*
+    A group's name. The same height as a row, because Virtualize is told one height for everything in the
+    list and measures nothing - a heading of its own size would put the scrolling out by the difference,
+    a little more with every group scrolled past.
+*/
+.examplePickerHeading {
+    height: 22px;
+    padding: 0 0.6em;
+    line-height: 22px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7a7a7a;
+    background-color: #f4f4f4;
+    border-bottom: 1px solid #e8e8e8;
+}
+
+/*
+    A history row. An example row with two things beside the name: what it is, and a way to throw it away.
+
+    The row itself is not clickable - the name inside it is. A click anywhere on the row would also be a
+    click on the delete button sitting in it, so forgetting a file would open it on the way out.
+*/
+.historyRow {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+
+    /*The name takes the room and the controls keep theirs, so a long name ellipses rather than pushing
+      the delete button off the end of the list.*/
+    padding-right: 0.3em;
+}
+
+.historyRowName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/*
+    Says the records were changed, not just how they are drawn. Worth a word on the row because the file
+    is named after the one it came from: an edited Mosfet.gds is otherwise the same line of text as the
+    bundled cell, and opening the wrong one loses the edit.
+*/
+.historyRowEdited {
+    flex: none;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7a7a7a;
+}
+
+.examplePickerOption.isChosen .historyRowEdited {
+    color: #dce8f5;
+}
+
+/*Square, like every other close control in the app - see .closeButton.*/
+.historyRowForget {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: none;
+    color: #7a7a7a;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.historyRowForget:hover {
+    background-color: #d64545;
+    color: #fff;
+}
+
+.examplePickerOption.isChosen .historyRowForget {
+    color: #fff;
+}
+
+/*
+    The box the preview is drawn in: as tall as the filter and the list together, and as wide as everything
+    the list did not take.
+
+    Which is the point of the popup being bigger at all. A layout drawn at 260px square is a smudge that
+    tells you the shape of the thing and nothing else; at three times the area you can see what the cell
+    actually is, which is the question somebody scrolling a list of nine hundred names is asking.
+
+    flex: 1 with a width to grow from - the popup is sized to its content, so a basis of zero would give the
+    picture nothing to be wide *with*. This is what sets the popup's width; the list beside it is fixed.
+*/
+.examplePreviewFrame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /*
+        **A basis of 32em, not flex: 1.** flex: 1 is shorthand for 1 1 0% - a basis of nothing - so the
+        picture was not sharing a width with the list at all: the list sat at its own 20em, the two came to
+        less than the box, and the picture grew into whatever was left. Which is right while there is room
+        and wrong the moment there is not, because "whatever is left" of a capped popup is a sliver. With a
+        real basis the pair is over-constrained instead, and a shortfall comes out of both in proportion.
+    */
+    flex: 1 1 32em;
+    max-height: 100%;
+
+    /*
+        A floor, and a width below which there is no picture at all.
+
+        **A floor, and a low one.** It was 16rem with the picture dropped entirely below 1200px, which is far
+        too blunt: at 1180 the pair is about twenty pixels short of fitting, and the answer to being twenty
+        pixels short was to show no picture at all. A window a hair under the breakpoint lost the whole
+        point of the panel.
+
+        Ten rems is small for a layout but it is a picture, and a picture of the shape of the thing is what
+        somebody scrolling nine hundred names is after. It only goes when there is genuinely no room for it -
+        see the media query below, which is now at a width where the app itself is barely usable.
+    */
+    min-width: 10rem;
+    border: 1px solid #d6d5d5;
+    border-radius: 3px;
+    background-color: #fff;
+}
+
+/*
+    And below this the picture goes, because there is no longer room for a list and a picture at once.
+
+    It was 1200, which took the picture away from most laptops. 760 is where the two floors plus the gap stop
+    fitting the popup - measured rather than chosen, and a width at which the toolbar has wrapped to three
+    rows and the app is barely usable anyway.
+*/
+@media (max-width: 760px) {
+    .examplePreviewFrame {
+        display: none;
+    }
+}
+
+.examplePreview {
+    width: 100%;
+    height: 100%;
+}
+
+.examplePreviewEmpty {
+    color: #999;
+    font-size: 12px;
+}
+
+/*
+    A control held apart from its neighbours, rather than sitting in the run of them: Admire, which does
+    something to the view rather than setting anything, and the QR icon.
+
+    46 leaves a visible gap of 56 either side, since the item next to it carries 10 of its own. That was
+    the QR icon's spacing already, as 2em of padding on the image itself - one number in one place now, so
+    the two cannot drift apart.
+*/
+.toolbarItemApart {
+    padding-left: 46px;
+    padding-right: 46px;
+}
+
+/*
+    The word above a control in that bar - View, Background, File Type.
+
+    Smaller than the thing it names, which is the way round it should be: at the body size these were
+    larger than the dropdowns underneath them, so the label read as the heading and the control as the
+    footnote. Still bold, since being scannable is the whole job of a label.
+*/
+.toolbarLabel {
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+/*
+    The button that closes a popup. Square, and the same square everywhere.
+
+    Width and height are set together rather than left to the padding: a glyph is not as wide as it is
+    tall, so symmetric padding still gives an oblong, and each popup would end up with a slightly
+    different one as its glyph changed. Centering is done by the flexbox rather than by line-height,
+    which is what keeps the mark on the middle of the square instead of near its top.
+*/
+.closeButton {
+    width: 1.8em;
+    height: 1.8em;
+    padding: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/*
+    The rule inside a popup - under the heading, and between the body and anything set apart from it.
+
+    Global rather than scoped to one component, which is what it used to be: it lived in
+    MainLayout.razor.css as .aboutDivider, so the copy of it in the Examples popup matched nothing and
+    rendered as the browser's own inset <hr>. A line that appears in three dialogs belongs where all
+    three can reach it.
+*/
+/*
+    A popup's heading, and the cross at the end of it.
+
+    **A flex row rather than two bootstrap columns.** Examples and History each had one `col` holding the
+    title, and a `col` takes an equal share of the row - so the half that held nothing was a band of empty
+    popup across the top, wide enough to read as a control that had failed to draw. Space-between puts the
+    title at one end and the cross at the other with nothing in between claiming width.
+*/
+.popupHeading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+}
+
+.popupHeadingName {
+    font-size: large;
+    font-weight: bold;
+}
+
+.popupDivider {
+    border: none;
+    border-top: 1px solid #d6d5d5;
+    margin: 1.5rem 0 1rem 0;
+
+    /*
+        Both of these, or the line is not the one written above it.
+
+        Bootstrap draws an hr as a *background* rather than a border - "background-color: currentColor;
+        border: 0; height: 1px; opacity: .25" - so the gray border-top here was landing on top of a
+        near-black bar, and setting opacity to 1 to stop the border looking washed out made that bar
+        fully opaque. The result was a dark line with a light one drawn over it.
+    */
+    background-color: transparent;
+    opacity: 1;
+}
+
+/*
+    100% rather than inherit. The pane around this is stretched by its flex row, which leaves its own
+    height property at auto - so inherit took that auto and the view sized itself to whatever was drawn
+    in it instead of to the space it had been given.
+*/
 .viewWrapper {
     position: relative;
     padding: 0;
-    height: inherit;
+    height: 100%;
 }
 
 #layerSidebar {
     border-left: none;
-    width: fit-content;
-    height: inherit;
+
+    /*
+        Its width, which the grabber sets and which fits its content until somebody drags it.
+
+        fit-content as the fallback, which is what it always was - so the panel is whatever the widest layer
+        row needs and no more, until a drag says otherwise. `position: relative` for the grabber, which is
+        placed against this edge.
+    */
+    position: relative;
+    width: var(--layer-sidebar, fit-content);
+    flex: none;
+
+    /*
+        A column that fills the row, so the layer list inside can be handed what is left and scroll in it
+        rather than running the sidebar off the bottom of the window.
+    */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+
+    /*
+        Overrides the column gutter this inherits from bootstrap's .col-1, which is 12px a side.
+
+        The layer list is a bordered box inside here, and at that gutter it floated well short of the
+        sidebar's own edges. Narrowing this is what lets the box run nearly the full width, which is where
+        the space is worth spending - a layer row is an index, a swatch, a name and a checkbox.
+    */
+    padding-left: 4px;
+    padding-right: 4px;
 }
 
 
@@ -187,24 +2549,261 @@ a, .btn-link {
     }
 }
 
+/*
+    Full screen: the page's own margins, given to the view.
+
+    Measured before it was written, because there was no point guessing which of nine ancestors was holding
+    the space. Every one of them is at zero padding and zero margin except this: `.content` carries four
+    rems at the top and Bootstrap's `px-4` at the sides, which on a 720-pixel window leaves the view 447.
+
+    **`:has()` rather than a class on the body.** The padding belongs to a layout component the page is
+    rendered *inside*, so Blazor cannot reach up to it and putting a class on the body would mean interop
+    for what is a piece of styling. This lets the page mark itself and the rule look upwards. On a browser
+    without `:has()` the button does nothing visible, which is the right way for this to fail - it is a
+    preference about room, not a feature anything depends on.
+
+    Wins over the media query above by specificity: two classes and an element against one class, with both
+    important.
+*/
+body:has(.viewerPageFull) .content {
+    padding: 0 !important;
+}
+
+/*
+    And the three things that were holding the sides, which the padding was hiding.
+
+    **Bootstrap's gutters are negative margins.** Every `.row` here sits at `margin: 0 -12px` and relies on
+    an ancestor's padding to absorb it. Take the padding away and the outermost row spans -12 to
+    window+12: measured at 1905 wide it ran to 1917, so the page grew a *horizontal* scrollbar - and that
+    bar takes fifteen pixels off the bottom of the window, which is what clipped the opacity slider and
+    read as the page being too tall. Nothing was ever too tall; `.page` is `100dvh` and cannot be.
+
+    **And `max-width: 80%` is what kept the app off the edges**, not the padding. At 1905 it held the whole
+    app to 1543 with 181 pixels of bare page either side, in full screen and out of it. Full screen means
+    the window, so here it is the window.
+
+    **One row, not every row.** Only `.viewerPageRow` has lost the padding its gutter sat in, because only
+    its parent is the article. Every row below it - the toolbar, the two inline notices, `#viewContainer` -
+    still has `#mainAppContainer`'s own twelve pixels to work against, and taking those away as well is a
+    thing that was tried: the toolbar then hung twelve pixels past the window, which is a horizontal
+    scrollbar, which costs fifteen pixels of height, which is a vertical scrollbar. Two bars for one
+    unnecessary edit. `#viewContainer`'s gutter is left alone and is what carries the view out to the edge.
+
+    **Through `body:has()` rather than `.viewerPageFull` alone**, which is about specificity and not about
+    reach. The 80% is a *scoped* style, so Blazor writes it as `#mainAppContainer[b-qutmcw59j5]` - an id and
+    an attribute, which ties `.viewerPageFull #mainAppContainer` exactly, and `GDSViewer.styles.css` is
+    linked after this file, so the tie goes to it and the 80% stays. Measured before it was believed. The
+    element in front breaks the tie and keeps both rules here rather than moving one into the component's
+    own sheet to win by being further down a different file.
+*/
+body:has(.viewerPageFull) .viewerPageRow {
+    margin-left: 0;
+    margin-right: 0;
+}
+
+body:has(.viewerPageFull) #mainAppContainer {
+    max-width: 100%;
+}
+
+/*
+    The sidebar keeps its own width on a narrow screen, and stays beside the view.
+
+    This used to give it the full width and a height of its own contents, which was right when the row
+    wrapped and it dropped onto a line below. The row does not wrap any more - that is what lets the view
+    be sized to the window instead of the window to the view - so a full-width sidebar simply took the
+    row and squeezed the view down to its borders. Two pixels of it, measured, against a sidebar of 861.
+*/
 @media (max-width: 1200px) {
     #layerSidebar {
         border-top: none;
-        border-left: 2px solid #41464b61;
-        width: 100%;
-        height: fit-content;
+        border-left: 1px solid #41464b61;
     }
 }
 
+/*
+    A popup over the view.
+
+    **As wide as what is in it.** It was four fifths of the window whatever it held, which for a list beside
+    a thumbnail is a strip of white about as wide again as the content and a heading marooned at one end.
+    fit-content sizes it to the widest row it actually has, and the cap keeps a long file name from pushing
+    it off the screen.
+
+    Below the bar rather than over it, so the thing that opened it stays visible and the popup lands on the
+    canvas it belongs to. Fixed rather than absolute: the offset is from the window, which is where the bar
+    is measured from too, and a page that scrolls would otherwise slide the popup off its own anchor.
+*/
 .popupDiv {
-    position: absolute;
+    position: fixed;
     z-index: 990;
-    top: 10%;
-    left: 20%;
-    width: 60%;
+    top: 170px;
+    left: 50%;
+    transform: translateX(-50%);
+
+    width: fit-content;
+    max-width: min(92vw, 980px);
+    max-height: calc(100vh - 190px);
+    overflow-y: auto;
+
     padding: 20px;
     box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
     background-color: white;
+    border-radius: 6px;
+}
+
+/*
+    In the middle of the view, rather than in the middle of the window. The QR code is the one of these
+    that belongs to a view instead of to the page.
+
+    It used to carry an inline left: 10% - which was measured from a box .popupDiv had already pulled back
+    half its own width, so a tenth of the way in became a tenth in *minus half a popup*, and most of it hung
+    off the left of the screen. The width beside it, 80%, was over the cap anyway and did nothing.
+
+    Absolute, so it is placed against the .viewWrapper it is written inside instead of against the window -
+    which is the whole point, since the window includes a sidebar the 3D view has nothing to do with.
+*/
+.popupDiv.popupInView {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    /*
+        **A share of the view, and no pixel cap.**
+
+        It was min(90%, 460px), from when the code was a fixed 320 and the cap was only there to stop a long
+        popup running off a small canvas. The code is sized off the height of the view now - see
+        QR.razor.css - and 460 was quietly holding it at 420 whatever that arithmetic said, on every window,
+        which is the whole of why enlarging it twice changed nothing.
+    */
+    max-width: 92%;
+    max-height: 92%;
+}
+
+/*
+    A column that has something hanging off it.
+
+    Relative so an absolutely positioned list inside it is placed against the column rather than against
+    the page - which is also what keeps the list a *descendant*, and so what makes a mouseleave on the
+    column not fire when the pointer moves onto the list.
+*/
+.toolbarPopupHost {
+    position: relative;
+}
+
+/*
+    A popup that hangs off the control that opened it.
+
+    **On the canvas, not on the bar.** top: 100% is the bottom of the *column*, and a column stops where
+    the bar's own 6px of padding begins - so the white started six pixels above the canvas and sat on the
+    strip of bar below the buttons. It begins twelve lower now: six to clear that padding, six more so it
+    stands off the top of the canvas by the same six that runs round the outside of the bar.
+
+    **The twelve is a transparent border, not a gap.** The box still reaches all the way up to the button,
+    because a list that closes when the pointer leaves cannot have a strip of bar between it and its
+    button - crossing that strip is leaving, and the pointer has to cross it to get here. Moving the popup
+    down and bridging the gap with a pseudo-element was the obvious answer and does not work: overflow-y
+    below makes this a scroll container, which clips anything reaching above its padding box, and clipped
+    is not hittable. A border is inside the box and cannot be clipped out of it.
+
+    Two things follow from the border and are here because of it. background-clip, or the white paints out
+    to the border edge and the twelve pixels are back on the bar. And the corner radius is the border's
+    width larger at the top, since a border box rounded at 6 leaves a *padding* box rounded at 6 minus 12,
+    which is a square corner where the other three are round.
+
+    Shorter than the centered version it replaces, since it starts further down the page: what is left is
+    what fits under the bar rather than what fits in the window.
+*/
+.popupDiv.popupUnder {
+    --drop: 12px;
+
+    position: absolute;
+    top: 100%;
+    left: 0;
+    transform: none;
+
+    border-top: var(--drop) solid transparent;
+    background-clip: padding-box;
+    border-radius: calc(6px + var(--drop)) calc(6px + var(--drop)) 6px 6px;
+
+    /*
+        drop-shadow rather than box-shadow, which follows the *border* box - so the popup would cast a
+        shadow from twelve pixels above where it appears to start, laying a smudge along the bar. A filter
+        shadow is cast by what is actually painted, and nothing is painted in the border.
+    */
+    box-shadow: none;
+    filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.2)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.19));
+
+    /*
+        max-content, not the fit-content the centered version uses.
+
+        fit-content is "as wide as the content, but no wider than the space available" - and the space
+        available to an absolutely positioned box is its containing block, which is now a toolbar column
+        about two hundred pixels across. The list and its preview sit side by side in a flex row that wraps,
+        so the popup collapsed to the column's width and the picture dropped underneath the names.
+        max-content ignores the space available and asks the content how wide it wants to be; the cap is
+        what keeps it on the screen.
+    */
+    width: max-content;
+
+    /*
+        Down to the foot of the canvas, near enough, and no further than is any use.
+
+        260 is the header and the bar above this popup plus what is below the view. It was 230, taken from a
+        window whose bar fits on one line - a bar that wraps is 32px taller, so on the narrow window where
+        that happens the popup was reaching past the bottom of the canvas by exactly that.
+
+        The cap is the other half. Height was 100vh less a constant and nothing else, so a 1400px window gave
+        a popup 1116 tall: nine hundred pixels of file names, in a list that scrolls anyway. Past about 760
+        there is nothing left to show.
+    */
+    max-height: min(calc(100vh - 260px), 820px);
+
+    /*
+        And never off the side of the canvas, which is what it did.
+
+        **80vw, not 100.** The room this has is from its own left edge to the right edge of the view, and
+        both of those move with the window - the view is about four fifths of it, the rest being the page
+        margins and the layer sidebar. Measured at seven widths from 1024 to 1920 the room comes to
+        0.801 x width - 368.7, which is where these two numbers are from. The old cap used the intercept and
+        left the slope at 1, so at 1024 it allowed 644px into a space of 451 and the popup hung 192px over
+        the layout it was supposed to sit on.
+
+        Below 1024 the sidebar drops under the view and the line stops holding; the cap is under the room
+        there rather than over it, which is the safe side to be wrong on.
+    */
+    max-width: calc(80vw - 380px);
+}
+
+/*
+    Narrower than the line that room was worked out from.
+
+    The cap above is fitted between 1024 and 1920, and below 1024 the layer sidebar drops under the view -
+    which moves everything the formula was measured from. Extended past its data it goes badly wrong the
+    other way: at 800 it allowed 260px for a list and a picture that will not go below 376, so the popup was
+    narrower than the things inside it and they hung out of the bottom of it.
+
+    Measured directly at the narrow end instead - 451px of room at 1024, 468 at 900 - so 430 is under both.
+
+    **After the rule it overrides, not before it.** It was written next to the picture it was added for,
+    which is two hundred lines above this, so the cap here won and none of it did anything. Both are
+    max-width on the same selector; the later one is the one that counts.
+*/
+@media (max-width: 1024px) {
+    .popupDiv.popupUnder {
+        max-width: 430px;
+    }
+}
+
+
+/*
+    Every button in one of these is rounded, like every other button in the app.
+
+    They were square because .buttonStyle2 is - the rounding elsewhere comes from the rules that cap a
+    group's ends, and nothing in a popup is in a group. Asked here once rather than on each of the four,
+    since the answer is the same for all of them and for the next one added.
+*/
+.popupDiv .buttonStyle2 {
+    border-radius: 3px;
 }
 
 popupZIndex_0 {
@@ -228,3 +2827,1939 @@ popupZIndex_0 {
                 }
 
 /*******************************************************************************************************************/
+/*
+    The layer list.
+
+    A grid rather than rows of fit-content columns, which is what left it ragged: each cell sized itself to
+    its own contents, so the index, the swatch, the label and the checkbox all landed somewhere different on
+    every line. Fixed tracks line the four up, and the grid is centered in the sidebar as a block.
+*/
+/*
+    Bordered so the layers read as one list rather than as more of the sidebar. Only the rows are inside
+    it: the Labels switch above acts on the whole drawing rather than on a layer, so enclosing it would
+    group it with the things it is not.
+*/
+.layerList {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    /*
+        Takes what the sidebar has left and scrolls inside it. A file with a hundred layer/datatype pairs
+        would otherwise make this list as tall as it needs and take the page with it - the overflow was
+        already here, but with nothing capping the height there was never anything to overflow.
+    */
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+
+    padding: 6px 4px;
+    margin: 0 2px 2px 2px;
+    border: 1px solid #d6d5d5;
+    border-radius: 3px;
+    background-color: #fff;
+}
+
+/*
+    Opacity in 2D, layer distance in 3D - under the layers each of them applies to.
+
+    Two names for one rule rather than two rules: they are the same control in the same place answering the
+    same question, which is how to see past the layer on top. One view fades it, the other pulls the stack
+    apart, and only one of the two is ever on screen.
+
+    Outside .layerList rather than in it, because that list takes what the sidebar has left and scrolls -
+    a control inside it would scroll away with the rows. This sits below, always reachable, and the list
+    gives up the height for it.
+
+    **Even top and bottom, which is what "centered" turned out to need.** The label and the slider were
+    already dead level with each other - align-items does that, and both measured a middle of 374.2. What
+    sat low was the pair of them together: the padding was 6px over 2.4px, so their middle was 1.8 under
+    the strip's own. Same total height, split evenly.
+*/
+.layerOpacity,
+.layerSpacing {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+
+    flex: none;
+    padding: 0.35em 0.6em;
+    width: 100%;
+    max-width: 200px;
+
+    font-size: 12px;
+}
+
+.layerOpacity input,
+.layerSpacing input {
+    flex: 1;
+    min-width: 0;
+}
+
+/*Nothing to put a box around before a file is open.*/
+.layerList:empty {
+    display: none;
+}
+
+.layerRow {
+    display: grid;
+    grid-template-columns: 1.6em 16px minmax(5.5em, 1fr) 1.4em 1.3em;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    width: 100%;
+    max-width: 200px;
+    font-size: 12px;
+}
+
+/*
+    Undo and redo, as arrows.
+
+    The bar's buttons are sized by their words and these have none, so they need both dimensions given
+    back: a width, or they collapse to their padding, and a line-height, or they come out shorter than
+    every button beside them. An icon button that is three pixels short of its neighbours reads as a
+    mistake even to somebody who could not say what was wrong.
+*/
+/*
+    A bar button that is a picture rather than a word: undo, redo, the library, the five tools.
+
+    Called after what it does rather than after the first pair to want it - it was .editArrow, which was
+    honest while the only two were the undo arrows and misleading the moment a book and a ruler joined them.
+
+    A minimum width, because a 15px glyph in a button sized to its contents is narrower than every word in
+    the bar beside it, and a row of five of those reads as a gap rather than as a group.
+*/
+.buttonIcon {
+    min-width: 2.2em;
+}
+
+/*
+    Left as an ordinary button rather than made a flex box. A flex container takes its height from what is
+    in it - a 15px icon - where every button beside it is as tall as a line of its text. The line box is
+    still there while the button is not a flex container, so the icon sits in one the same height as the
+    words next to it, and only needs nudging onto the same optical center.
+*/
+.buttonIcon svg {
+    vertical-align: -3px;
+}
+
+/*
+    Typing a label where the label is.
+
+    Positioned absolutely inside #svgWrapper, which is the relative box the coordinates from labelBox are
+    measured against. Over the canvas rather than in the toolbar, because the words and the point they land
+    on are one decision.
+
+    Sized in pixels rather than in the layout's units. It has to stay readable at any zoom, and a box that
+    scaled with the drawing would be a hairline on a die and fill the screen on a contact.
+*/
+/*
+    The actions again, at the pointer.
+
+    Fixed rather than absolute, so the coordinates it is placed at are the ones the event reported and there
+    is nothing to convert - which also means it lands correctly with the page scrolled or the view full
+    screen, where the wrapper's own origin is somewhere else.
+
+    **Nothing scrolls here, and that is not a preference.** A menu with overflow set on either axis is a
+    scroll box, and a scroll box clips what is positioned inside it - which is every submenu, since they sit
+    beside the menu rather than within it. Setting overflow-y alone did it: with one axis not visible the
+    other computes to auto, so the submenu's width became a horizontal scrollbar and the panel it belonged
+    to was never drawn at all.
+
+    So the menu is as tall as it is, and being on screen is a matter of *where it starts* rather than how
+    much of it is shown - see the markup, which anchors it above the pointer when the pointer is low in the
+    window. Ten lines is what it comes to now that the alternatives are behind submenus, which is a height
+    half a window can hold.
+*/
+.shapeMenu {
+    position: fixed;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 11em;
+    padding: 3px 0;
+    font-size: 0.85rem;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+/*
+    A line of it. Flat and full width until it is under the pointer, which is what a menu looks like -
+    these are the same actions the panel draws as blue buttons, and twenty blue buttons in a column would
+    read as a toolbar that had fallen over.
+*/
+/*
+    A line of the menu: a picture, then the words.
+
+    A row rather than a block, now that there is something in front of the text. The gap is the column
+    itself - see .shapeMenuIcon, which is held open on the lines that have no picture so the words down the
+    menu still start at one place. A menu whose text stepped in and out by whether a line happened to have
+    a glyph would be harder to read than one with no glyphs at all.
+*/
+.shapeMenuItem {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+
+    flex: none;
+    padding: 3px 12px;
+    font: inherit;
+    color: #111;
+    text-align: left;
+    white-space: nowrap;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+/*
+    The column the pictures sit in, kept whether or not there is one.
+
+    Copy, Cut, Delete, New cell and Trace net have no glyph of their own - inventing one for each would be
+    five marks nobody recognizes in the column that makes the recognizable ones worth scanning. An empty
+    span of the same width is what keeps the words lined up under them.
+*/
+.shapeMenuIcon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+
+/*The words, which take the rest of the line so the submenu arrow can be pushed to its end.*/
+.shapeMenuSays {
+    flex: 1 1 auto;
+}
+
+.shapeMenuItem:hover:not(:disabled),
+.shapeMenuItem:focus-visible {
+    background: #1b6ec2;
+    color: #fff;
+    outline: none;
+}
+
+/*Offered but not available, which is the menu saying why rather than hiding the answer. The title says.*/
+.shapeMenuItem:disabled {
+    color: rgba(0, 0, 0, 0.38);
+    cursor: default;
+}
+
+/*
+    A line that opens onto more, and what it opens.
+
+    **Held open by :hover and :focus-within rather than by a flag in the component.** A submenu kept in state
+    has to be told when to close as well, which means every way of leaving it - the pointer to a sibling, to
+    the parent, out of the menu entirely, the keyboard somewhere else - and one of those missed leaves a
+    panel hanging over the layout. The two selectors already know all of them, and :focus-within is what
+    makes the same submenu reachable by Tab.
+
+    The wrapper is the hover target, so the submenu stays open while the pointer is inside it: a submenu that
+    closed when the pointer left the parent line could only be reached by moving diagonally faster than the
+    browser fires mouseout.
+*/
+.shapeMenuOpens {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/*
+    A line that opens rather than acts. Its own gap, since the arrow at the end wants more air than the
+    picture at the start - and space-between is gone: the words take the middle now (see .shapeMenuSays),
+    which is what pushes the arrow to the end without the icon being pushed away from them.
+*/
+.shapeMenuParent {
+    gap: 0.5em;
+}
+
+.shapeMenuParent > .shapeMenuSays {
+    margin-right: 1em;
+}
+
+.shapeMenuArrow {
+    opacity: 0.55;
+}
+
+/*
+    Beside the line that opened it, overlapping by the menu's own padding so the two read as one surface.
+
+    -3px is that padding: without it the first line of the submenu sits three pixels below the line it came
+    from, which at this size reads as a misalignment rather than as a nested thing.
+*/
+.shapeSubmenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: -3px;
+    z-index: 1;
+
+    flex-direction: column;
+    min-width: 10em;
+
+    padding: 3px 0;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+.shapeMenuOpens:hover > .shapeSubmenu,
+.shapeMenuOpens:focus-within > .shapeSubmenu {
+    display: flex;
+}
+
+/*
+    And on the other side when the menu was raised near the right-hand edge.
+
+    Which side that is cannot be settled here - it is a comparison against the window's width - so the
+    component asks once when the menu opens and says so with this class. See openShapeMenu.
+*/
+.shapeMenuLeftward .shapeSubmenu {
+    left: auto;
+    right: 100%;
+}
+
+.shapeMenuRule {
+    flex: none;
+    height: 0;
+    margin: 3px 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+/*And never one against either end of the menu, or against another - the same question .panelDivider asks.*/
+.shapeMenuRule:first-child,
+.shapeMenuRule:last-child,
+.shapeMenuRule + .shapeMenuRule {
+    display: none;
+}
+
+/*
+    The sheet that takes the next press, wherever it lands.
+
+    Over everything but the menu, so a press outside closes it rather than reaching the button or the shape
+    underneath - a menu that both closes and does something else on one click is one you cannot dismiss
+    safely over a layout.
+*/
+.shapeMenuBackdrop {
+    position: fixed;
+    z-index: 19;
+    inset: 0;
+    background: none;
+}
+
+.canvasLabelText {
+    position: absolute;
+    z-index: 5;
+    min-width: 6em;
+    padding: 1px 4px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #111;
+    background: #fff;
+    border: 1px solid #0d6efd;
+    border-radius: 3px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/*
+    Picking which layer a shape is drawn on, from the list rather than from the toolbar's dropdown.
+
+    The hand appears only while the Draw tool is out, because that is the only time a click on the row does
+    anything - the rest of the time it is a readout, and a pointer over it would promise a control that is
+    not there.
+*/
+.layerRowPickable {
+    cursor: pointer;
+}
+
+.layerRowPickable:hover {
+    background: rgba(13, 110, 253, 0.06);
+}
+
+/*
+    A bar down the side and a tint rather than a border, because a border on one row of a fixed grid moves
+    every other row by its width - the list would shuffle every time a different layer was picked. The bar
+    is drawn inside the row, so nothing reflows.
+*/
+.layerRowDrawing {
+    background: rgba(13, 110, 253, 0.12);
+    box-shadow: inset 3px 0 0 0 #0d6efd;
+}
+
+.layerRowPickable.layerRowDrawing:hover {
+    background: rgba(13, 110, 253, 0.12);
+}
+
+.layerIndex {
+    text-align: right;
+    color: #555;
+}
+
+.layerName {
+    text-align: left;
+    cursor: text;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*Fills its track so the checkbox after it does not shift when a name is being typed.*/
+.layerNameBox {
+    width: 100%;
+    font-size: 12px;
+    min-width: 0;
+}
+
+.layerVisible {
+    justify-self: center;
+    margin: 0;
+}
+
+/*
+    The color swatch, on a layer row and in the picker's history.
+
+    Bordered rather than bare so a white or very pale layer is still a square rather than a gap in the list.
+*/
+/*
+    The color a layer is drawn in, as a readout. In the row it is a span and does nothing when pressed -
+    the gear beside it is what opens the settings. It is still a button in the settings popup's history
+    strip, where pressing one is the point, so the cursor and hover live with that use rather than here.
+*/
+.layerSwatch {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid #999;
+    border-radius: 2px;
+}
+
+/*An SVG rather than a colored box, when the layer carries a pattern. Same square, drawn instead of filled.*/
+.layerSwatch.layerSwatchFilled {
+    overflow: hidden;
+}
+
+.layerSettingsHistory .layerSwatch {
+    cursor: pointer;
+}
+
+.layerSettingsHistory .layerSwatch:hover {
+    border-color: #333;
+}
+
+/*
+    The gear that opens one layer's settings. Plain, until it is pointed at: a column of them down the
+    side of the list would be a column of buttons competing with the layer names, which are the thing
+    being read.
+*/
+.layerSettingsButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #7a7a7a;
+    cursor: pointer;
+}
+
+.layerSettingsButton:hover {
+    color: #1b6ec2;
+}
+
+/*
+    A labeled control in that popup - the name box and the labels switch - laid out like the rows of the
+    list it came from: what it is on the left, the control on the right.
+*/
+.layerSettingsRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+    .layerSettingsRow + .layerSettingsRow {
+        margin-top: 0.5em;
+    }
+
+/*
+    The patterns, as eight pictures rather than eight words.
+
+    A column below its label instead of beside it, unlike every other row here: the others hold one control
+    and this holds eight, and eight 26px squares on the same line as "Pattern:" is a row wider than the popup.
+*/
+.layerSettingsFills {
+    display: block;
+    cursor: default;
+}
+
+.layerFillChoices {
+    display: grid;
+
+    /*
+        Four across, twice. Eight in a row is a strip too wide for a popup built around a color square, and
+        two rows of four keeps the block roughly as wide as that square is - so the popup's width is still
+        set by the one thing in it that has a natural size.
+    */
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+
+    margin-top: 0.4em;
+}
+
+/*
+    A tile with a frame, which is what makes it read as a choice rather than as a picture.
+
+    No padding: the swatch is the button. A patterned square inset in a white box is two rectangles, and at
+    26px the inner one is too small to tell a hatch from a dot.
+*/
+.layerFillChoice {
+    display: block;
+    padding: 0;
+    height: 26px;
+
+    background: none;
+    border: 1px solid #adb5bd;
+    border-radius: 3px;
+    cursor: pointer;
+
+    /*So the tile's own corners are cut by the frame rather than sitting square inside it.*/
+    overflow: hidden;
+}
+
+.layerFillChoice > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.layerFillChoice:hover {
+    border-color: #495057;
+}
+
+/*
+    The one in use, marked on the frame rather than by a tick over the tile.
+
+    A mark drawn on top would cover the very thing being chosen between - and at this size the difference
+    between dots and squares is a few pixels that a check would sit right on.
+*/
+.layerFillChoice.layerFillChoiceOn {
+    border-color: #1b6ec2;
+    box-shadow: 0 0 0 2px #1b6ec252;
+}
+
+/*
+    Which of a layer's two colors the picker below is aimed at.
+
+    A pair of halves with one seam rather than two buttons with a gap, because these are two states of one
+    control - the seam is what says only one of them can be on. Full width, so it reads as a header over the
+    picker it governs rather than as a stray pair of buttons in the middle of the popup.
+*/
+.colorTargets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+
+    margin-top: 0.4em;
+}
+
+.colorTarget {
+    padding: 3px 6px;
+
+    background: #fff;
+    border: 1px solid #adb5bd;
+    color: #495057;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+}
+
+/*The seam: one border between them rather than two touching.*/
+.colorTarget:first-child {
+    border-radius: 3px 0 0 3px;
+}
+
+.colorTarget:last-child {
+    border-left: none;
+    border-radius: 0 3px 3px 0;
+}
+
+.colorTarget:hover {
+    border-color: #495057;
+}
+
+/*
+    The one in use, filled rather than outlined.
+
+    The fill choices above are marked on the frame because a mark over a tile would cover the picture being
+    chosen between. These are words, and there is nothing to cover.
+*/
+.colorTarget.colorTargetOn {
+    background: #1b6ec2;
+    border-color: #1b6ec2;
+    color: #fff;
+}
+
+/*The seam again, now that one side is blue: the border it lost has to come from its neighbour.*/
+.colorTarget.colorTargetOn:last-child {
+    border-left: 1px solid #1b6ec2;
+}
+
+/*
+    One layer's settings - its color, and whether its labels are drawn. Narrower and higher than the About
+    popup, since it is a small tool rather than something to read, and it sits over the layout so the shape
+    being changed stays in view.
+
+    Placed beside the gear that opened it, from that click's own coordinates.
+
+    fixed rather than absolute, because those coordinates are relative to the viewport - the popup sits at
+    the end of the markup rather than inside the row it belongs to, so there is no positioned ancestor that
+    would make an absolute offset mean the same thing. left and top come from the click, inline.
+*/
+/*
+    Fixed to the viewport and opened beside the row that was clicked, so it never scrolls away from its layer.
+
+    Scrolling rather than growing, because it is fixed: it opens near the pointer and runs downwards, so on a
+    short window the bottom of it - the recent colors, the reset - ends up off the screen with no way to reach
+    it. That is what happened the day a Role row was added, and it will happen again to whatever row comes
+    next unless the popup is the thing that gives.
+
+    How much height it may take is set inline, because it depends on where the popup opened; see Viewer.razor.
+*/
+/*
+    Placed at a point rather than centered, so the transform that centers the others has to go.
+
+    .popupDiv is fixed with left: 50% and translateX(-50%), which is how About and the QR code sit in the
+    middle. This one is given an exact left in the markup - and kept the transform, so it landed half its
+    own width further left than it was told, every time. 130px of the 136 that the popup was sitting off the
+    edge of the canvas after being asked for 6.
+
+    It hid rather than announced itself: the offset is a constant, so placing this beside the pointer looked
+    merely generous, and the clamp that was added to keep it off the sidebar appeared to work for the wrong
+    reason - it was 130px clear before the clamp did anything.
+*/
+.layerSettingsPopup {
+    position: fixed;
+    transform: none;
+    width: 260px;
+    font-size: 13px;
+    overflow-y: auto;
+}
+
+/*
+    The top row: what this is, and the way out of it.
+
+    space-between again. It was flex-end for as long as the close button was the only thing in here - the
+    name had moved to a line of its own and left the header empty beside it - and with a title back on the
+    left that is the layout it wanted all along.
+*/
+.layerSettingsHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+/*Sized like the panel's other headings rather than like a dialog title, since it sits on a 13px popup.*/
+.layerSettingsTitle {
+    font-size: 1.05em;
+}
+
+/*
+    Closes the header off, matching the rule above the footer so the two bracket the body between them.
+
+    Same gray as the footer's border and as the header of the app itself, and border-top rather than the
+    default hr, which browsers draw as an inset groove.
+*/
+.layerSettingsRule {
+    border: none;
+    border-top: 1px solid #d6d5d5;
+    margin: 0.6em 0 0.9em 0;
+
+    /*Transparent as well as opaque - see .popupDivider for why an hr needs both.*/
+    background-color: transparent;
+    opacity: 1;
+}
+
+/*
+    The name box that is also the popup's title. Borderless until it is pointed at, so it reads as the
+    heading it replaced rather than as a form field sitting where a heading should be - but it underlines
+    on hover and focus, which is what says it can be typed in.
+*/
+/*
+    The name box at the top of the settings. A box, drawn as one: it was borderless so it would read as
+    the heading it replaced, which meant the one thing in this popup you can type in was the one thing
+    that did not look like it.
+*/
+/*
+    The name box, filling whatever its row has left after the word in front of it. flex rather than a
+    width, so a long name is not what decides how wide "Name:" gets to be.
+*/
+.layerSettingsName {
+    flex: 1;
+    min-width: 0;
+    margin-left: 0.6em;
+    padding: 3px 6px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: inherit;
+}
+
+.layerSettingsName:focus {
+    outline: none;
+    border-color: #1b6ec2;
+}
+
+/*Red, green and blue, for when it is a number you have rather than a shade you are looking for.*/
+.layerSettingsChannels {
+    display: flex;
+    justify-content: center;
+    gap: 0.6em;
+    margin-top: 0.7em;
+}
+
+    .layerSettingsChannels label {
+        display: flex;
+        align-items: center;
+        gap: 0.3em;
+        color: #666;
+    }
+
+.layerSettingsChannel {
+    width: 4.2em;
+    padding: 2px 4px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.layerSettingsChannel:focus {
+    outline: none;
+    border-color: #1b6ec2;
+}
+
+/*
+    The height and thickness boxes. Wider than the color channels beside them: those hold 0 to 255, and a
+    stack in database units runs to five or six digits before it is out of the metal.
+*/
+.layerSettingsStack {
+    width: 7em;
+    padding: 2px 4px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: right;
+}
+
+.layerSettingsStack:focus {
+    outline: none;
+    border-color: #1b6ec2;
+}
+
+/*
+    The saturation-and-value field: the open picker, rather than a swatch that opens the operating
+    system's one on top of the layout being recolored.
+
+    The hue goes on as a background color inline, and these two gradients wash it out - to white going
+    left, to black going down. That is the standard square, and it costs no images and no canvas.
+
+    The size is fixed and repeated in Viewer.razor, because a mouse event says where it landed and not
+    what it landed on: turning an offset into a saturation needs the width in C# as well as here.
+*/
+.layerSettingsField {
+    position: relative;
+
+    /*
+        content-box on purpose, against the border-box everything else here inherits.
+
+        A mouse event reports where it landed inside the *padding* box, and that is the number C# divides
+        by the size to get a saturation. Under border-box the border eats two pixels of the declared width,
+        so the two disagreed and neither full saturation nor full black could be reached - by a hair, which
+        is exactly the kind of wrong that never gets noticed and never stops being annoying.
+    */
+    box-sizing: content-box;
+    width: 216px;
+    height: 130px;
+    margin: 0 auto;
+    border: 1px solid #999;
+    cursor: crosshair;
+    background-image: linear-gradient(to top, #000, rgba(0, 0, 0, 0)), linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+}
+
+/*
+    Where the color currently is. pointer-events off, so a press that lands on it is still reported
+    against the field - otherwise nudging the color you already have throws it to a corner, the offset
+    having been measured inside this instead.
+*/
+.layerSettingsFieldMark {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+/*The hue, all the way round, under the field it colors.*/
+.layerSettingsHue {
+    display: block;
+    width: 216px;
+    margin: 0.7em auto 0 auto;
+    accent-color: #1b6ec2;
+    background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+    border-radius: 3px;
+    height: 12px;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.layerSettingsHue::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 16px;
+    border: 1px solid #555;
+    border-radius: 2px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.layerSettingsHue::-moz-range-thumb {
+    width: 10px;
+    height: 16px;
+    border: 1px solid #555;
+    border-radius: 2px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.layerSettingsHistoryTitle {
+    margin-top: 0.8em;
+    color: #666;
+}
+
+/*One horizontal row, wrapping only when it has to - the point is to see the lot at a glance.*/
+.layerSettingsHistory {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 0.3em;
+}
+
+/*
+    Two actions now rather than one, so this lays them out along the row instead of leaving the second
+    wherever it happened to land after the first.
+*/
+.layerSettingsFooter {
+    display: flex;
+    justify-content: space-between;
+    gap: 1em;
+
+    margin-top: 0.9em;
+    padding-top: 0.6em;
+    border-top: 1px solid #d6d5d5;
+}
+
+/*
+    The sidebar's own heading and control rows, centered like the list under them.
+
+    Sized down towards the rows it heads rather than left at the body size, for the reason the bar's
+    labels were: this names a narrow column of small text, so at full size it was the largest thing in
+    the sidebar. The padding comes in with it, since the space around a heading should be in proportion
+    to the heading.
+*/
+/*
+    A sidebar heading: the name in the middle, the way out at the right-hand end.
+
+    **One class for both panels rather than one each.** The layer list and the cell tree stand on either side
+    of the drawing and are the same kind of thing, so their headings are the same heading - two rules kept in
+    step would not be, and the one that drifted would be whichever was not being looked at.
+
+    A grid rather than flex, so the title stays centered on the panel rather than on whatever is left after
+    the cross - with flex the two share the row and the word sits left of the middle by half a button. Three
+    columns of equal ends put it back where it was before there was a cross at all.
+
+    The size is in rem rather than em because the two panels are set at different sizes - the cell tree is
+    0.85em of the page and the layer list is the page - and a heading in em would come out a sixth smaller in
+    one of them than the other, which is the whole thing this class exists to prevent.
+*/
+.sidebarTitle {
+    display: grid;
+    grid-template-columns: 1.4em 1fr 1.4em;
+    align-items: center;
+
+    text-align: center;
+    font-size: 0.85rem;
+    padding-top: 0.2em;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid #d6d5d5;
+}
+
+.sidebarTitle > b {
+    grid-column: 2;
+}
+
+.sidebarTitle > .cellListClose {
+    grid-column: 3;
+}
+
+.layerSidebarControls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    /*Enough that loading and saving read as two controls rather than one run of words.*/
+    gap: 1.1em;
+    padding: 0.35em 0.2em;
+    font-size: 12px;
+}
+
+/*
+    Space under the import/template controls, and no rule.
+
+    There was a rule here to set them apart from the list. The list is inside a bordered box of its own, so
+    the two lines ran a few pixels apart and read as one thick divider drawn badly rather than as two
+    deliberate ones - the box already says where the list starts.
+*/
+#layerSidebar > .sidebarTitle + .layerSidebarControls {
+    padding-bottom: 0.45em;
+    margin-bottom: 0.25em;
+}
+
+/*
+    Load, save and clear. Plain clickable text with an icon rather than anchors: they act on what is on
+    screen and go nowhere, so the blue and the underline of a link were promising something else.
+*/
+.layerSidebarAction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.layerSidebarAction:hover {
+    text-decoration: underline;
+}
+
+/*
+    A bare word in a row of marked ones, given an outline so it reads as pressable.
+
+    No background: the row it sits in has its own, and filling this one would make the most destructive of
+    the three the loudest thing in the panel. The border is the app's own quiet gray - the same one the layer
+    swatches and the fill choices are framed in - so it reads as a control without becoming a heading.
+*/
+.layerSidebarAction.layerSidebarClear {
+    padding: 0 0.4em;
+    border: 1px solid #adb5bd;
+    border-radius: 3px;
+}
+
+.layerSidebarAction.layerSidebarClear:hover {
+    border-color: #495057;
+}
+
+.layerSidebarAction img {
+    height: 1.1em;
+}
+
+/*
+    Design rules, in the side panel where the layers are listed.
+
+    The panel shows one list or the other rather than both: they are the same shape - a list down the side
+    of the drawing with a file loaded into it - and they answer different questions about the same layout,
+    so they are never both wanted at once. What is written here is only what differs from a layer row.
+*/
+.rulesRun {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+
+    padding: 0.4em 0.5em;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/*
+    The switch travels with the button because it changes what the button means - with it on there is
+    nothing left to press. `nowrap` so the word never drops below its box on a narrow panel, which this
+    one can be dragged to be.
+*/
+.rulesContinuous {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+
+    margin: 0;
+    font-size: 0.85em;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.rulesList {
+    font-size: 0.85em;
+}
+
+.rulesEmpty {
+    padding: 0.8em 0.6em;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/*
+    One rule, one row. Laid out with the columns a deck line has: what it is called, what it measures and
+    the limit it measures against.
+*/
+.rulesRow {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+
+    padding: 0.25em 0.5em;
+    border-bottom: 1px solid #f1f3f5;
+    cursor: pointer;
+}
+
+.rulesRow:hover {
+    background: #f8f9fa;
+}
+
+.rulesNumber {
+    min-width: 1.8em;
+    color: #adb5bd;
+    text-align: right;
+}
+
+.rulesId {
+    min-width: 6em;
+    font-weight: 600;
+}
+
+.rulesCheckName {
+    color: #6c757d;
+}
+
+/*
+    The limit, pushed to the end so the numbers line up down the panel rather than landing wherever the
+    check name happened to stop.
+*/
+.rulesLimit {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+    A rule the last run found something under.
+
+    The same orange the markers are drawn in, so the row and the marks on the drawing are visibly the same
+    fact - a different attention color here would read as a second, unrelated warning.
+*/
+.rulesRowBroken {
+    background: #fff3e0;
+    border-left: 3px solid #ff6d00;
+}
+
+.rulesRowBroken:hover {
+    background: #ffe9cc;
+}
+
+.rulesCount {
+    margin-left: 0.4em;
+    padding: 0 0.4em;
+    border-radius: 0.8em;
+    background: #ff6d00;
+    color: #fff;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+    A rule the deck holds and this build cannot measure. Listed, and listed as refused - left out, the
+    panel would say the deck is smaller than it is. Not clickable, since there is nothing to go to.
+*/
+.rulesRowRefused {
+    color: #adb5bd;
+    cursor: default;
+}
+
+.rulesRowRefused:hover {
+    background: none;
+}
+
+.rulesRefusedWord {
+    margin-left: auto;
+    font-style: italic;
+}
+
+/*
+    Which cell to place into the one being edited. In the context bar, so it is as wide as the names it
+    holds rather than as wide as the bar.
+*/
+.placePicker {
+    max-width: 12em;
+    margin-left: 0.4em;
+    font-size: 0.85em;
+}
+
+/*
+    Whether the instance goes down mirrored. The box and its word travel together, since a checkbox that
+    wraps away from its label in a bar this crowded is a checkbox for nothing in particular.
+*/
+.placeMirror {
+    margin-left: 0.4em;
+    font-size: 0.85em;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.placeMirror input {
+    margin-right: 0.2em;
+    vertical-align: middle;
+}
+
+/*
+    The new name for a cell, in the context bar. Narrow, because it shares a line with the breadcrumb and a
+    cell name is a word rather than a sentence.
+*/
+.renameBox {
+    width: 8em;
+    margin-left: 0.4em;
+
+    /*
+        The crumbs' own type, not a size of its own.
+
+        It was 0.85em against their 0.75em, which is most of why the box stood a head taller than everything
+        beside it: a text field's height is its line box plus its padding plus its border, and the line box
+        was 20.4px where theirs was 18.
+    */
+    font-size: 0.75em;
+}
+
+/*
+    One height for everything in the context bar.
+
+    **Three different ones, measured.** The crumbs came out 20px, this box 26.39, and the three cell actions
+    17.8 - so the row read as a stack of mismatched things rather than as one control, and the box was the
+    worst of it because it was also the tallest.
+
+    None of the three was declared: each was whatever its own type, padding and border happened to add up to,
+    which is why they drifted apart the moment any of those changed. Saying it once is what stops the next
+    change to a font-size moving one of them again.
+
+    In rem, so it is the same height whatever each of these sets its own font-size to - the trap the draw
+    hint's own offset fell into. border-box, so the box's border counts inside it rather than on top.
+*/
+#contextBar .buttonStyle2,
+#contextBar .renameBox {
+    height: 1.25rem;
+    box-sizing: border-box;
+}
+
+/*
+    The library's cells, over the view.
+
+    A list of unknown length, so it scrolls within the view rather than growing past the bottom of it - the
+    same reason the selection panel does.
+*/
+/*
+    The list, and the drawing of whichever row is under the pointer.
+
+    The pinning moved up here from .cellList so the two can sit side by side and be placed as one thing:
+    the pair is anchored to the top right, and the picture takes the space to the left of the list rather
+    than being positioned against a width the list decides at render time.
+
+    align-items:flex-start so the frame is its own height instead of being stretched down a list of forty
+    cells, and the height cap is here rather than on the list because the list is now a child measuring
+    itself against this.
+*/
+/*
+    The library, under the book that opens it.
+
+    It was pinned to the top right of the view, which is where a panel goes when it is put away rather than
+    glanced at - and it had a cross on it to say so. Under its own button now, touching the bar so there is
+    no strip for the pointer to cross on the way down: this closes when the pointer leaves, and a gap it
+    has to jump would close it every time.
+
+    Hung from the *right* edge of the column rather than the left, because the book is the last button in
+    it - so the list lands under the book and the preview grows away to the left, over the canvas, instead
+    of the whole panel starting under the hand tool five buttons along.
+*/
+.cellPreview {
+    width: 100%;
+    height: 100%;
+}
+
+/*
+    The lens, in the frame's top right corner.
+
+    Over the drawing rather than beside it, because the frame is a square with the picture fitted inside and
+    the corners of that square are the parts of it with nothing in them - a cell's own outline is never in
+    all four. On a ground of its own so it stays legible over whatever is behind it, which is a layout in
+    whatever colors the file happens to use.
+
+    Quiet until pointed at, which is the same thing the frame's own contents do.
+*/
+.cellPreviewLens {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    z-index: 2;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 20px;
+    height: 20px;
+    padding: 0;
+
+    border: 1px solid #41464b45;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.85);
+    color: #41464b;
+    cursor: zoom-in;
+    opacity: 0.7;
+}
+
+.cellPreviewLens > svg {
+    width: 12px;
+    height: 12px;
+}
+
+.cellPreviewLens:hover,
+.cellPreviewLens:focus-visible {
+    opacity: 1;
+    background: #fff;
+    outline: none;
+}
+
+/*
+    The bigger picture, beside the panel rather than in it.
+
+    **Room borrowed, not taken.** The tree is a column and its width is the column's, so the drawing in it is
+    about as big as a thumbnail gets - enough to tell two cells apart and not enough to read one. This hangs
+    off the panel's right-hand edge over the layout, which is where the space is, and it is gone the moment
+    the pointer leaves the lens - so nothing is covered for longer than somebody is looking at it.
+
+    Its own size rather than the panel's, and bounded by the window rather than by a number alone: 440 is
+    what it takes on a screen with room for it, and on anything smaller it is whichever of the two axes runs
+    out first. A picture that grew past the window would be a picture with its own corner off the screen.
+
+    Bottom-aligned with the frame it comes out of, so the two read as one thing opening sideways rather than
+    as a second panel that happens to be nearby.
+*/
+.cellPreviewLarge {
+    position: absolute;
+    bottom: 0;
+    left: calc(100% + 0.5em);
+    z-index: 40;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-sizing: border-box;
+    width: min(440px, 38vw, 62vh);
+    height: min(440px, 38vw, 62vh);
+    padding: 8px;
+
+    border: 1px solid #41464b61;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+
+    /*It is a picture to look at, not a thing to press - and a press on it should reach the layout under it.*/
+    pointer-events: none;
+}
+
+.cellPreviewEmpty {
+    padding: 0 0.5em;
+    font-size: 0.8em;
+    text-align: center;
+    opacity: 0.6;
+}
+
+/*
+    A row of the library: the name, and the square that picks the cell up.
+
+    One line, with the name taking whatever is left. The square is only there for a cell that can go in the
+    one being edited, so most rows are the name alone and the pair must not leave a gap where the button
+    would have been.
+*/
+.cellRowPair {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+}
+
+.cellRowPair > .cellRow {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/*
+    The square that picks a cell up, beside the row that opens it.
+
+    Quiet until the row is under the pointer. The tree is read down as a list of names; a column of blue
+    squares beside them would be the first thing the eye went to, and picking a cell up is not what most
+    visits here are for.
+*/
+.cellRowPlace {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+
+    width: 22px;
+    padding: 0;
+
+    color: #1b6ec2;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    opacity: 0.45;
+    cursor: pointer;
+}
+
+.cellRowPair:hover .cellRowPlace,
+.cellRowPlace:focus-visible {
+    opacity: 1;
+    border-color: #1b6ec2b0;
+    outline: none;
+}
+
+.cellRowPlace svg {
+    width: 13px;
+    height: 13px;
+}
+
+/*What is in hand, on the bar that says which cell is being edited.*/
+.contextCarrying {
+    padding: 0 0.4em;
+    font-size: 0.85em;
+    color: #1b6ec2;
+    white-space: nowrap;
+}
+/*
+    The cell tree, docked down the left of the view.
+
+    **Full height, unlike everything else over the canvas.** The selection panel and the library are both as
+    tall as they need to be, because both hold a known handful of things. This holds a file's whole library,
+    which is one row or nine hundred, and a panel that took its height from that would be a strip in one
+    file and the whole window in the next. A column of a fixed height that scrolls inside itself is the one
+    shape that reads the same for both.
+
+    Left, and against the view rather than the window: the layer sidebar has the right, and the page's own
+    margins are the shell's business and not this panel's. See .viewWrapper, which is what `absolute` here
+    is measured from.
+
+    **One width, not a range.** A name is as long as a name is - the sky130 cells run past thirty
+    characters - so a column that fitted its longest row would be a different width in every file, and would
+    change width under the pointer as a tree was walked into. It is also the number the selection panel has
+    to step aside by, and a panel cannot step aside by a width that is decided at render time. Stated once,
+    as a variable on the wrapper, and read by both. Names past it ellipsize; see .cellRowName.
+
+    **A column of the view, not a panel over it.** It was absolute and floated over the layout, which is
+    what a thing you glance at does; this is a thing that stays open while you work, and a panel sitting on
+    top of the drawing for a whole sitting is a panel covering the drawing for a whole sitting. As a flex
+    item it takes its width out of the canvas the way the layer sidebar on the right does, and the layout
+    gets what is left.
+
+    Which works because the SVG is the only child of the wrapper that is in flow - the context bar, the
+    selection panel, the readout and the view's own buttons are all absolute, so turning this into a flex
+    row lays out exactly two things: this and the drawing.
+*/
+.viewWrapper {
+    --cell-tree: 15rem;
+
+    display: flex;
+    align-items: stretch;
+}
+
+/*
+    The drawing and its furniture, as one box the sidebar sits beside.
+
+    Positioned, because everything drawn over the layout is placed against it - see .viewCanvas in the
+    markup for why that has to be this box rather than the wrapper. min-width, or a wide layout refuses to
+    give any of its width back when the tree opens.
+*/
+.viewCanvas {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+}
+
+.viewCanvas > #gdsSVG {
+    width: 100%;
+    height: 100%;
+}
+
+.cellTree {
+    flex: none;
+    order: -1;
+
+    /*
+        For the grabber on its edge, which is absolute and would otherwise be placed against .viewWrapper -
+        the nearest positioned ancestor - and so sit at the right-hand edge of the whole view rather than at
+        this panel's. Which is a handle nobody can reach, on top of the other panel's.
+    */
+    position: relative;
+
+    display: flex;
+    flex-direction: column;
+
+    box-sizing: border-box;
+    width: var(--cell-tree);
+    padding: 0.4em;
+
+    border-right: 1px solid #41464b61;
+    background-color: #f8f9fa;
+    font-size: 0.85em;
+}
+
+/*
+    The rows take what the heading and the picture leave, and scroll inside it.
+
+    **Both ways.** Down, because a library is as long as it is; and across, because a name is as long as it
+    is and the tree indents it further with every level - a deep row of a sky130 cell is wider than any
+    column this could be, and the choice is a scrollbar or a name nobody can read the end of. Wrapping is
+    not an option: a row that wrapped would put half a name at the far left, under the guides, where it
+    reads as a child of itself.
+*/
+.cellTreeRows {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    /*
+        Off the rule under the heading, so the top row's highlight does not sit on it.
+
+        The lit row is a filled band the width of the panel, and butted against the line it covered it - the
+        heading lost its underline exactly when a cell at the top of the file was the one being edited.
+
+        A margin rather than padding: padding is inside the scroll box and travels with the content, so the
+        gap would be there at the top of the list and gone the moment it was scrolled.
+    */
+    margin-top: 4px;
+}
+
+/*
+    Which means the rows must not be squeezed to the column's width.
+
+    A flex column stretches its items to fit, so each row would shrink to the panel and the name inside it
+    would ellipsize - and nothing would ever be wide enough to scroll to. min-content lets a row be as wide
+    as its content needs and the box scroll to reach it.
+*/
+.cellTreeRows > .cellRowPair {
+    min-width: min-content;
+}
+
+.cellTreeNone {
+    padding: 0.3em 0.35em;
+    opacity: 0.6;
+}
+
+/*
+    The edge a sidebar is dragged by.
+
+    **Wider than the line it sits on.** A one-pixel border is a one-pixel target, which is a thing you hunt
+    for; six pixels is a thing you land on, and centered over the border it looks like the border until the
+    pointer is on it. Absolute, so those six pixels come out of nothing - a grabber in the flow would push
+    the panel's contents over by its own width.
+
+    Above what it covers, because it sits over the edge of a scroll box and a row that reached the border
+    would take the press meant for the drag.
+*/
+.sidebarGrabber {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+
+    width: 7px;
+    cursor: col-resize;
+
+    /*Nothing, until it is pointed at - the border it lies over is what a still pointer should see.*/
+    background: transparent;
+    transition: background-color 0.1s ease;
+}
+
+.sidebarGrabberRight {
+    right: -3px;
+}
+
+.sidebarGrabberLeft {
+    left: -3px;
+}
+
+.sidebarGrabber:hover,
+body.sidebarResizing .sidebarGrabber {
+    background-color: rgba(27, 110, 194, 0.45);
+}
+
+/*
+    While a drag is on, the whole page keeps the cursor and stops selecting.
+
+    The pointer leaves the grabber the moment the drag starts - it is capture that keeps the events coming,
+    not the pointer staying put - so without this the cursor flickers back to an arrow over the drawing and
+    the browser starts selecting whatever text the pointer sweeps across.
+*/
+body.sidebarResizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+/*
+    The guide lines that make an indented list read as a tree.
+
+    **Indentation alone is not a tree.** It says a row is under something without saying what, and by the
+    third level the eye is counting pixels to work out which parent a row belongs to. A vertical line down
+    each level answers it directly, which is what every file explorer draws and what was missing here.
+
+    One line per level, from a background that repeats every 14px - the same 14 the indent steps by - and
+    stopped at exactly the row's own indent, so a row at depth two gets two lines and a root gets none. The
+    width comes from --indent, which the row sets inline beside the padding it is the same number as.
+
+    A background rather than elements: a line per level per row is a lot of nodes for a nine-hundred-cell
+    library, and this is one paint with nothing in the tree to walk.
+*/
+.cellTree .cellRowPair {
+    position: relative;
+    padding-left: var(--indent, 0px);
+}
+
+/*
+    Drawn on a box of its own, exactly as wide as the row is indented.
+
+    The repeat has to stop somewhere, and a background on the row itself tiles the whole width - lines
+    marching on under the name and out to the panel's edge. This box is the indent and nothing else, so the
+    tiling ends where the content begins by construction rather than by a second measurement.
+*/
+.cellTree .cellRowPair::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--indent, 0px);
+
+    background-image: linear-gradient(to right, rgba(0, 0, 0, 0.16) 1px, transparent 1px);
+    background-size: 14px 100%;
+    background-position: 6px 0;
+    background-repeat: repeat-x;
+
+    pointer-events: none;
+}
+
+/*
+    The twisty, where it is a control rather than a mark.
+
+    In the library popup nothing folds and the arrow only says what has something under it. Here it opens
+    and shuts, so it is a button - which means it takes the arrow's width out of the row rather than sitting
+    beside it, and lights on hover like anything else that can be pressed.
+
+    The width is .cellRowTwisty's, which the two share so that a foldable row and a leaf line up.
+*/
+.cellRowFold {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+/*
+    Pointing right when it is shut and down when it is open, turned rather than swapped.
+
+    One drawing that rotates is one shape the eye follows through the change, where two characters swapped
+    for each other is a flicker - and it is the gesture a file tree makes, which is half of why this reads
+    as one.
+*/
+.cellRowFold > svg {
+    width: 11px;
+    height: 11px;
+    transition: transform 0.12s ease;
+}
+
+.cellRowFoldOpen > svg {
+    transform: rotate(90deg);
+}
+
+.cellRowFold:hover,
+.cellRowFold:focus-visible {
+    opacity: 1;
+    outline: none;
+}
+
+/*
+    A layer, and a shape on it: quieter than the cells above them.
+
+    The tree is read as a list of cells first - that is the level somebody navigates by - and the two levels
+    under it are detail asked for by opening something. Set smaller and lighter, they read as belonging to
+    the row above rather than competing with it.
+*/
+.treeRowLayer .cellRow,
+.treeRowShape .cellRow,
+.cellRowRest {
+    font-size: 0.92em;
+}
+
+.treeRowShape .cellRow,
+.cellRowRest {
+    opacity: 0.75;
+}
+
+/*The swatch, at the size the layer picker draws it, so a layer looks the same wherever it is named.*/
+.cellRowLayer .layerSwatch {
+    flex: none;
+    width: 0.7em;
+    height: 0.7em;
+    margin-right: 0.35em;
+    border: 1px solid #41464b61;
+    border-radius: 2px;
+}
+
+/*Not a control - it is the count of what was left out, and pressing it would do nothing.*/
+.cellRowRest {
+    display: block;
+    padding: 0.1em 0.35em;
+    font-style: italic;
+}
+
+/*
+    The cell under the pointer, at the foot of the tree.
+
+    Square, and as wide as the panel's inside - the drawing fits itself to the frame through its viewBox, so
+    a fixed square is what stops the picture jumping about the panel as the pointer goes down a library of
+    cells that are every shape and size - the library popup this panel replaced kept a fixed square for the
+    same reason, out at 300 where it had the canvas to grow into.
+
+    flex:none against the rows' flex:1, so it is the rows that give up the space rather than the panel that
+    grows - a panel that changed height when the pointer crossed it would be the pointer moving the thing it
+    is pointing at.
+*/
+.cellTreePreviewFrame {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+
+    /*For the lens in its corner, and for the larger picture that hangs off its side.*/
+    position: relative;
+
+    box-sizing: border-box;
+    width: 100%;
+    height: calc(var(--cell-tree) - 1.6em);
+    margin-top: 0.4em;
+    padding: 4px;
+
+    border: 1px solid #41464b61;
+    border-radius: 3px;
+}
+
+/*
+    The way out, on the panel rather than only in the bar.
+
+    A cross rather than a word, and quiet until it is pointed at: it is the one control here that is about
+    the panel instead of about the library, and a heading with a loud button in it reads as a button with a
+    heading beside it.
+*/
+.cellListClose {
+    flex: none;
+    padding: 0 0.25em;
+    font-size: 1.15em;
+    line-height: 1;
+    color: inherit;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.cellListClose:hover,
+.cellListClose:focus-visible {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+    outline: none;
+}
+
+/*
+    A row is a button rather than a div with a click on it, so it is reachable by keyboard and reads as
+    something that can be pressed.
+*/
+.cellRow {
+    display: flex;
+    justify-content: space-between;
+
+    /*
+        Centred, which a flex row does not do on its own.
+
+        Without this the default is stretch, and stretch has no effect on the swatch because it states its
+        own 16px height - so it landed at the top of the cross axis while the name and the count centred
+        themselves in a taller line box. A couple of pixels, and enough that a column of them read as
+        wobbling down the panel.
+    */
+    align-items: center;
+
+    gap: 1em;
+
+    padding: 0.25em 0.35em;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cellRow:hover {
+    background-color: #4781ff22;
+}
+
+.cellRowOn {
+    font-weight: 600;
+    background-color: #4781ff33;
+}
+
+/*
+    The name takes the room and gives way at its own end.
+
+    It had no rule at all, so a name longer than the row wrapped onto a second line - and a list whose rows
+    are sometimes one line and sometimes two is a list you cannot run your eye down. The counts beside it
+    are already nowrap and are the short half, so the ellipsis belongs here.
+*/
+.cellRowName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    /*The name takes the room between the twisty and the counts, rather than only what it needs.*/
+    flex: 1;
+    text-align: left;
+}
+
+/*
+    The row while it is being renamed, which is a box in the row's own place rather than a dialog.
+
+    Takes the whole width the row's name and counts had between them, so the tree does not reflow around a
+    box narrower than the text it replaced - a list that shifts sideways as you start typing is one where
+    the row you are editing is no longer where you left it.
+*/
+.cellRowNameBox {
+    flex: 1;
+    min-width: 0;
+
+    padding: 0 3px;
+    border: 1px solid #1b6ec2;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.cellRowNameBox:focus {
+    outline: none;
+}
+
+/*
+    The column in front of a name, which says whether anything is under it.
+
+    A fixed width whether or not there is a mark in it, so the names line up down a level instead of
+    stepping in and out by the width of an arrow - which is the thing that makes a tree readable at a
+    glance rather than a list with some arrows in it.
+
+    Quiet, because it is punctuation rather than a control: nothing folds, and a row that looked pressable
+    and did nothing would be worse than one that plainly is not.
+*/
+.cellRowTwisty {
+    flex: none;
+    width: 0.9em;
+    opacity: 0.55;
+    font-size: 0.9em;
+}
+
+.cellRowCounts {
+    opacity: 0.6;
+    white-space: nowrap;
+}
+
+/*
+    A small square button that is an icon and nothing else.
+
+    **The look, with no opinion about where it goes.** It was one class doing both, and the second button to
+    want the look - the full-screen one, in the toolbar - inherited `position: absolute` with it and landed
+    in the bottom corner of the *window*, eight hundred pixels from the column it belonged to. The offsets
+    live with the thing that needs offsetting now.
+*/
+.iconButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+
+    color: #333;
+    background-color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 0.4em;
+    opacity: 0.65;
+    cursor: pointer;
+}
+
+.iconButton:hover {
+    opacity: 1;
+    background-color: #fff;
+}
+
+/*
+    And the glyph in one is the size the class says, not the size each button asked for.
+
+    They were 17 and 15, so the two buttons came out 29 and 27 square - a difference nobody sees, since the
+    two are never on screen together, and one that would go on being introduced every time another icon was
+    added. Sixteen because both viewBoxes are 0 0 16 16, so the strokes land on whole pixels rather than
+    being scaled by a sixteenth either way.
+*/
+.iconButton > svg {
+    width: 16px;
+    height: 16px;
+}
+
+/*
+    Saving the picture, in the corner of the picture.
+
+    Bottom right, opposite the cursor readout and clear of the breadcrumb along the top - the one corner
+    nothing else is using.
+
+    **Legible over the layout, which is the opposite of what this used to say.** It was left faint on the
+    argument that a control at full strength over geometry is something to look past every time you read the
+    view. That was written when the view opened on bare white: at 0.65 opacity over a background that is now
+    a grid by default, the button reads as another few lines rather than as a thing to press.
+
+    Solid rather than loud. The fill goes fully opaque so no grid line shows through it, the border and the
+    glyph darken enough to hold an edge, and a small shadow lifts it off the drawing - which is what makes it
+    findable without making it shout. It is 28 pixels square in the corner; the shadow does more for it than
+    a stronger color would.
+*/
+.viewAction {
+    position: absolute;
+    right: 0.6em;
+    bottom: 0.6em;
+    z-index: 5;
+
+    opacity: 1;
+    color: #111;
+    background-color: #fff;
+    border-color: rgba(0, 0, 0, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.viewAction:hover {
+    background-color: #f2f4f7;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+}
+
+/*
+    The same floating button at the other end of the view.
+
+    `bottom` is cleared rather than left to be overridden by `top`, because a box with both set and a height
+    of its own is stretched between them - which on this one is the difference between a square button and a
+    tall thin one. Same specificity as .viewAction and after it, so source order is what decides.
+*/
+.viewActionTop {
+    top: 0.6em;
+    bottom: auto;
+}
+
+/*
+    Where the pointer is. Bottom left of the view, out of the way of the selection panel at the top and the
+    cell list at the right - and takes no pointer events, so it never gets between the cursor and a shape.
+*/
+.cursorAt {
+    position: absolute;
+    left: 0.6em;
+    bottom: 0.6em;
+    z-index: 5;
+
+    padding: 0.1em 0.5em;
+    border-radius: 0.4em;
+    background-color: rgba(255, 255, 255, 0.85);
+
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/*
+    The dialog that asks what to do with a file opened while another one is open.
+
+    A backdrop under it, which none of the other popups have: those are answers to a button that was
+    pressed and can be left open harmlessly, where this one is a question about a file that has already
+    been read and is holding two possible futures open. The dim says the page is waiting, and catching the
+    click means a press outside is an answer - cancel - rather than nothing at all.
+*/
+.importBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 989;
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
+.importDialog {
+    /*Above the backdrop, which sits one below .popupDiv's own 990.*/
+    z-index: 991;
+    max-width: min(92vw, 520px);
+}
+
+.importSummary {
+    margin: 0 0 12px 0;
+    line-height: 1.45;
+}
+
+/*
+    The things worth knowing that are not the question: a rename, a change of units. Set apart rather than
+    folded into the sentence above, because they are true whichever answer is given.
+*/
+.importNote {
+    margin: 0 0 10px 0;
+    padding-left: 10px;
+    border-left: 3px solid #d0d0d0;
+    color: #555;
+    font-size: 0.92em;
+    line-height: 1.4;
+}
+
+.importButtons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/*
+    Wide enough to read, and wrapping rather than shrinking on a narrow window - three buttons squeezed onto
+    one line is how a choice becomes a misclick.
+*/
+.importChoice {
+    flex: 1 1 auto;
+    min-width: 120px;
+    padding: 8px 14px;
+}

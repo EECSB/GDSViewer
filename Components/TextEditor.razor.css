@@ -1,8 +1,79 @@
 ﻿body {
 }
 
+/*
+    The editor with the save message under it: a column, so the strip takes what it needs and the editor
+    takes the rest. Monaco is told automaticLayout, so it refits itself when the message appears.
+*/
+.editorPane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/*
+    flex rather than -webkit-fill-available, which is what this was.
+
+    That is a non-standard property Firefox does not implement, and it was doing the job that a flex child
+    does properly - taking what the parent has left. min-height: 0, or it refuses to shrink below the
+    dump's own height and pushes the message strip off the bottom of the pane.
+*/
 #gdsTextEditor {
-    height: -webkit-fill-available;
+    flex: 1;
+    min-height: 0;
+}
+
+/*
+    What the last save had to say. Along the bottom of the editor rather than in a dialog - see the markup
+    for why.
+*/
+.editorMessage {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.editorMessageText {
+    flex: 1;
+
+    /*A refusal names a record and a reason, which is longer than one line on a narrow pane.*/
+    overflow-wrap: anywhere;
+}
+
+/*Red, and only red for the case that is actually wrong.*/
+.editorMessageError {
+    background-color: #fdecec;
+    border-top: 1px solid #d64545;
+    color: #a32020;
+}
+
+.editorMessageSaved {
+    background-color: #eef6ee;
+    border-top: 1px solid #4a934a;
+    color: #2f6b2f;
+}
+
+/*Square, like every other close control in the app - see .closeButton in app.css.*/
+.editorMessageDismiss {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: none;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.editorMessageDismiss:hover {
+    background-color: rgba(0, 0, 0, 0.08);
 }
 
 

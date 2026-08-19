@@ -1,49 +1,287 @@
-﻿@using GDSViewer.Models;
+﻿@using GdsII;
+@using GDSViewer.Models;
 
-@using Layer = GDSViewer.Models.Layer;
-@using Point = GDSViewer.Models.Element.Point;
-@using static GDSViewer.Models.GDS.Record;
+@using Layer = GdsII.Layer;
+@using Point = GdsII.Element.Point;
+@using static GdsII.GDS.Record;
 
 @inject IJSRuntime js;
 @inject NavigationManager Navigation;
 
+@implements IDisposable
+
 <div class="viewWrapper">
-    <div class="overlay row">
-        <div class="col" style="padding: 0;">
-            Layer Distance
-        </div>
-        <div class="col">
-            <input type="range" min="50" max="700" value="@userSetlayerSpacing" @oninput="sliderChanged" />
-            @*<input style="vertical-align: middle;" type="range" min="0" max="1" value="@opacity" step="0.1" @oninput="adjustOpacity" />*@
-        </div>
+    <div id="container"></div>
+
+    @*
+        The three ways of getting the layout onto something you wear or hold, together.
+
+        VR and AR are built by three.js and put in here by the interop rather than positioned one at a
+        time, which is what they used to be: two wrappers pulled back up over the canvas by an offset each,
+        so moving the pair meant editing two numbers in a JS file and hoping. This row owns where they go.
+
+        The one in the markup is ours - a headset can enter VR from the page it is already on, but a phone
+        has to be told which page, and a QR code is how. Ordered after them, since it is the fallback of
+        the three rather than the first thing to reach for.
+    *@
+    <div id="xrButtons" class="xrButtons">
+        <button type="button" id="openOnPhone" class="xrButton" @onclick="getQRCode"
+                title="Show a QR code of this page, to open the same file and view on a phone or headset">
+            <img class="xrButtonIcon" src="./resources/Images/Icons/qr.png" alt="" />
+            OPEN ON PHONE
+        </button>
     </div>
 
-    <div id="container"></div>
+    @*
+        Admire, in the corner of the thing it moves.
+
+        **It is about the view rather than about the file**, which is what everything else in the bar above
+        is - and the two controls already down here on the canvas are the other two of those. In the bar it
+        was a word among file formats and backgrounds; down here it is next to Enter VR and Open On Phone,
+        which is the company it keeps.
+
+        Bottom right rather than in their row: that row is centered on the middle of the view and holds the
+        ways of *leaving* it for a headset or a phone. This does something to the view you are in, so it
+        gets the corner opposite nothing, the same margin, and the same height.
+
+        Same look as them too - the dark panel the whole row wears, which is legible over a light scene and
+        a dark one both. Lit blue while it is running, since a still picture of a moving camera cannot say
+        whether the camera is moving.
+    *@
+    <button type="button" id="admire" class="xrButton admireButton @(cinematicViewToggle ? "admireOn" : "")"
+            @onclick="cinematicView"
+            aria-pressed="@(cinematicViewToggle ? "true" : "false")"
+            title="Slowly orbit the camera around the layout. Press again to stop">
+        @*
+            An eye, drawn as one on purpose.
+
+            The first attempt was an orbit - a ring seen edge-on with the layout at its center - and it
+            came out as an eye with something wrong inside it, because at fifteen pixels that is what a
+            ring with a dot in it is. This is the same shape drawn deliberately: a lid arched over a lid,
+            and a pupil that fills the space between them rather than floating in it. What the button does
+            is give you a look at the thing, which is what an eye says.
+        *@
+        <svg class="admireIcon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path d="M0.9 8s2.7-4.6 7.1-4.6S15.1 8 15.1 8s-2.7 4.6-7.1 4.6S0.9 8 0.9 8z"
+                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <circle cx="8" cy="8" r="2.1" fill="currentColor" />
+        </svg>
+        ADMIRE
+    </button>
+
+    @*Fixed to the window rather than to this corner of it, so it does not matter where in here it sits.*@
+    <GDSViewer.Pages.QR @ref="qrCodeComponent" />
 </div>
 
 @code {
     #region Components ***************************************
 
-    private Pages.QR qrCodeComponent;
+    //Filled in by @ref, so null until this component has rendered once.
+    private Pages.QR? qrCodeComponent;
 
     #endregion ***********************************************
 
-    #region Vraiables ****************************************
+    #region Variables ****************************************
 
     private bool isFirstRender = true;
 
-    private int userSetlayerSpacing = 10;
+    private FlattenedLayout? layout = null;
+
+    ///
+    ///The file <see cref="layout"/> and <see cref="merged"/> were built from.
+    ///
+    ///**Reference equality against the file, which is the only thing that says the geometry changed.** The
+    ///spacing slider, a layer toggle and a redraw all hand the same object back; a different object is a
+    ///different file, or a session restored. An edit mutates a library in place and so would slip past this,
+    ///which is why the 2D view re-flattens unconditionally after one - but there is no editor here, and
+    ///switching views destroys this component, so coming back from an edit rebuilds from nothing anyway.
+    ///
+    private GDS? flattenedFrom = null;
+
+    ///<summary>
+    ///Each layer's geometry merged into as few outlines as cover the same ground.
+    ///
+    ///**Because two slabs at the same height fight over which is in front.** A layer's shapes are allowed
+    ///to overlap - 171 of the 897 bundled files have a layer that does - and extruded separately their top
+    ///faces land on exactly the same plane, which is the one thing a depth buffer cannot decide. The
+    ///result flickers between the two as the camera moves. Merged, there is one face.
+    ///
+    ///Held rather than recomputed, because it depends only on the file. The spacing slider redraws the
+    ///whole scene on every step of a drag and changes no geometry, so running a clipping pass over the
+    ///layout there would be the most expensive thing in the app happening for no reason at all - which,
+    ///until <see cref="flattenedFrom"/> existed, is exactly what it did.
+    ///
+    ///**The layers are held by reference**, which is what lets the slider work at all without re-merging:
+    ///`SetStackingOffsets` writes new heights onto the very `Layer` objects these outlines point at.
+    ///</summary>
+    private List<Booleans.Outline> merged = new List<Booleans.Outline>();
+
+    ///
+    ///Where the Distance slider is, which is now also where a newly opened file gets stacked.
+    ///
+    ///**Started at the number a file actually opens at.** This was 10 - under the slider's own minimum of
+    ///50, so the browser clamped the thumb to 50 and the mismatch never showed. It shows the moment this
+    ///value is applied to a file, which is what <see cref="Render"/> does below, so it has to be the same
+    ///default the library stacks with rather than a number that only looked right while nothing read it.
+    ///
+    private int userSetlayerSpacing = AdditionalGDSInformation.DefaultLayerSpacing;
+
+    ///<summary>The scene backdrop, kept so it can be written into a session and put back.</summary>
+    private string background = "none";
     private bool cinematicViewToggle = false;
     private bool hidden = true;
     public string ModelDownloadFileType { get; set; } = ".stl";
 
+    ///<summary>
+    ///How tall a label is drawn, in layout units. Matches the 2D view's font size so the two views agree
+    ///on how big a pin name is next to the geometry it names.
+    ///</summary>
+    private const int LabelHeight = 60;
 
+
+    //Null until the shell has a file open, which is the state the view starts in.
     [Parameter]
-    public Pages.Viewer Parent { get; set; }
+    public GDS? Gds { get; set; }
     [Parameter]
-    public GDS Gds { get; set; }
+    public List<CheckboxItem>? ShowLayers { get; set; }
+
+    ///<summary>
+    ///Raised when one of this view's own controls moves, so the shell can keep the session current.
+    ///
+    ///The shell cannot see these otherwise - a slider lives in the view that owns it and re-renders only
+    ///itself - so without this an opacity or a layer spacing was written to a session solely by chance,
+    ///whenever something else happened to trigger a save afterwards.
+    ///</summary>
     [Parameter]
-    public List<CheckboxItem> ShowLayers { get; set; }
+    public EventCallback OnSettingsChanged { get; set; }
+
+
+    ///
+    ///Raised when something in this view's own toolbar has to be redrawn - the backdrop menu opening or
+    ///closing, and nothing else.
+    ///
+    ///**The bar is rendered by the shell, not by this view.** A RenderFragment handed over is drawn during
+    ///*that* component's render, so this one calling StateHasChanged draws the view and leaves the bar
+    ///exactly as it was. The 2D view learned this the same way, with a menu that opened only when
+    ///something else happened to redraw the page.
+    ///
+    [Parameter]
+    public EventCallback OnToolChanged { get; set; }
+
+    ///<summary>Names the exported model after the file on screen. All this view needs from the shell.</summary>
+    [Parameter]
+    public string FileName { get; set; } = "";
+
+    ///<summary>This view's own toolbar controls. The shell renders them; it does not know what they are.</summary>
+    public RenderFragment Toolbar => (__builder) =>
+    {
+        @*
+            **A picture of each one, because the names were guesses.** "Future Room" and "Neon" are what
+            somebody called two photographs, and no arrangement of words says what a backdrop looks like -
+            which is the whole question being asked. The menu shows them.
+
+            The pictures are 128 pixels wide and a couple of kilobytes each, generated once from the
+            backdrops and committed beside them. The backdrops themselves run to nine megabytes, so a menu
+            that showed those would fetch thirteen to open.
+
+            An icon on the button rather than the current name, the same way the grid and the pencil work:
+            what is chosen is shown by the tick in the menu, and a name in the bar is a name that has to
+            fit the longest of them.
+
+            No fence after it. It and the download beside it are the whole of what this view puts in the
+            bar, and a group fence inside a group of two reads as three groups where there is one.
+        *@
+        @*And it goes when the pointer leaves the column, the way every other panel in the bar does.*@
+        <div class="col-1 toolbarItem toolbarBackground" style="align-self: end;" @onmouseleave="OnBackgroundMenuDismissed">
+            @*
+                Opened by a press or by the pointer arriving, closed by neither - the same bargain the 2D
+                view's two menus make, and for the same reason: a press that toggled could never open one,
+                since the hover has already done it.
+            *@
+            <button id="backgroundPicker" class="buttonStyle2 toolbarButton buttonIcon fileButton"
+                    @onclick="showBackgroundMenu"
+                    @onmouseenter="showBackgroundMenu"
+                    aria-label="Background" aria-expanded="@(backgroundMenuOpen ? "true" : "false")"
+                    title="A scene to put behind the layout, instead of the plain gray">
+                @*
+                    Hills under a sky with a sun over them, which is the picture every program uses for an
+                    image - and this is a choice of image rather than a choice of color.
+                *@
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <rect x="1.4" y="2.6" width="13.2" height="10.8" rx="1.4"
+                          fill="none" stroke="currentColor" stroke-width="1.4" />
+                    <circle cx="5.4" cy="6.2" r="1.3" fill="currentColor" />
+                    <path d="M1.9 12.2 6 8.1l2.6 2.6 2.2-2.2 3.3 3.3"
+                          fill="none" stroke="currentColor" stroke-width="1.4"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+
+            @if (backgroundMenuOpen)
+            {
+                <div id="backgroundMenu" class="shapePicker backgroundMenu" role="group" aria-label="Background">
+                    @foreach ((string file, string says) in Backdrops)
+                    {
+                        <button class="shapePick backgroundPick @(background == file ? "shapePickOn" : "")"
+                                data-background="@file"
+                                @onclick="() => chooseBackground(file)">
+                            <span class="shapePickMark">@(background == file ? "✓" : "")</span>
+
+                            @*
+                                The plain scene has no photograph, so its swatch is the gray the scene
+                                actually is - which is a truer preview than a crossed-out box.
+                            *@
+                            @if (file == "none")
+                            {
+                                <span class="backgroundSwatch backgroundSwatchPlain"></span>
+                            }
+                            else
+                            {
+                                <img class="backgroundSwatch" src="./resources/Images/Background/preview/@file" alt="" />
+                            }
+
+                            <span class="backgroundName">@says</span>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @*
+            The model download and the format it writes, as one control - the same pair the shell's own
+            download makes with its .gds/.oas picker, and for the same reason: neither half means anything
+            without the other.
+
+            The icon was a PNG on a bare <img> with a cursor over it, which is what every button in this bar
+            used to be. Drawn inline on a blue square now, so it takes the button's color, stays sharp at
+            any zoom, and is reachable by keyboard - an <img> with an @@onclick never was.
+        *@
+        <div class="col-1 toolbarItem toolbarGroupEnd" style="align-self: end;">
+            <div class="joinedPair">
+                <button id="downloadModel" class="buttonStyle2 toolbarButton buttonIcon fileButton joinedStart"
+                        @onclick="download3DObject"
+                        aria-label="Download 3D model"
+                        title="Download 3D model">
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                        <path fill="none" stroke="currentColor" stroke-width="1.6"
+                              stroke-linecap="round" stroke-linejoin="round"
+                              d="M8 1.8v8.8M4.8 7.4 8 10.6l3.2-3.2M2.2 10.4v2.6a1.2 1.2 0 0 0 1.2 1.2h9.2a1.2 1.2 0 0 0 1.2-1.2v-2.6" />
+                    </svg>
+                </button>
+
+                @*value plus @@onchange rather than @@bind, so the shell hears about it and can save.*@
+                <select id="modelFormat" class="formatPicker joinedEnd" value="@ModelDownloadFileType" @onchange="changeModelFileType"
+                        aria-label="3D file type"
+                        title="Which 3D format the download button beside this saves the model in">
+                    <option value=".stl">STL</option>
+                    <option value=".obj">OBJ</option>
+                    <option value=".gltf">GLTF</option>
+                </select>
+            </div>
+        </div>
+
+        @*Admire is not here. It is on the canvas, in the corner, with the other two view controls.*@
+    };
 
     #endregion ***********************************************
 
@@ -51,74 +289,11 @@
 
     #region Initialization ***********************************
 
-    private async Task InitializeToolbar()
-    {
-        Parent.ClearToolbarItems();
-
-        RenderFragment changeBackgroundDD = (__builder) =>
-        {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <div><b>Background</b></div>
-                <div>
-                    <select @onchange="changeBackground">
-                        <option value="none" selected>No Background</option>
-                        <option value="background1.jpg">White</option>
-                        <option value="background2.jpg">White Room</option>
-                        <option value="background3.jpg">Future Room</option>
-                        <option value="background4.jpg">Neon</option>
-                    </select>
-                </div>
-            </div>
-        };
-
-        Parent.AddToolbarItem(changeBackgroundDD);
-
-
-        RenderFragment cinematicViewButton = (__builder) =>
-        {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <button @onclick="cinematicView" class="buttonStyle2">Admire</button>
-            </div>
-        };
-
-        Parent.AddToolbarItem(cinematicViewButton);
-
-
-        RenderFragment changeFileTypeDD = (__builder) =>
-        {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <div><b>File Type</b></div>
-                <div>
-                    <select @bind="ModelDownloadFileType">
-                        <option value=".stl">STL</option>
-                        <option value=".obj">OBJ</option>
-                        <option value=".gltf">GLTF</option>
-                    </select>
-                    <img @onclick="download3DObject" src="./resources/Images/Icons/download.png" style="padding-left: 0.5em;">
-                </div>
-            </div>
-        };
-
-        Parent.AddToolbarItem(changeFileTypeDD);
-
-        RenderFragment qrCodeButton = (__builder) =>
-        {
-
-            <div class="col-1 toolbarItem" style="align-items: end; display: flex;">
-                <img @onclick="getQRCode" src="./resources/Images/Icons/qr.png" style="padding-left: 2em;">
-                <GDSViewer.Pages.QR @ref="qrCodeComponent" />
-            </div>
-        };
-
-        Parent.AddToolbarItem(qrCodeButton);
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        await InitializeToolbar();
-    }
-
-    protected override async void OnAfterRender(bool firstRender)
+    //Async Task rather than async void: an exception out of a void one cannot be awaited by anything, so
+    //it never reaches Blazor's error handling and is lost as an unobserved rejection. That matters most
+    //here, where the first render sets up WebGL and a failure would otherwise leave a blank canvas and
+    //nothing in the console to say why.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         isFirstRender = firstRender;
 
@@ -127,7 +302,40 @@
             await js.InvokeVoidAsync("registerThree");
             await js.InvokeVoidAsync("startRender3DInterOp");
 
+            //Applied here rather than only in ApplySettings, because a restored session hands its settings
+            //over before this view has had its first render - so the scene did not exist to be dressed yet
+            //and that call was ignored. Everything else in a session is C# state that survives the wait;
+            //the background is the one piece that lives in the scene.
+            if (background != "none")
+                await js.InvokeVoidAsync("changeBackgroundInterOp", background);
+
+            //One listener for the life of the view rather than one per opening, which would have to be
+            //taken away again by every path that closes the menu. The 2D view hangs up its two the same way.
+            menuHandle ??= DotNetObjectReference.Create(this);
+
+            await js.InvokeVoidAsync("registerBarMenu", menuHandle, "backgroundMenu", "backgroundPicker", "OnBackgroundMenuDismissed");
+
+            //The same handle, for where the camera comes to rest. Registered before the draw, so a turn of
+            //the wheel during a slow one is still heard.
+            await js.InvokeVoidAsync("registerCamera", menuHandle);
+
             await Render(Gds, ShowLayers);
+        }
+
+        //
+        //And the camera goes back where a session left it, once there is a viewer to move.
+        //
+        //Here rather than in ApplySettings for the same reason the backdrop is: a restored session hands its
+        //settings over *before* this view has had its first render, so there was nothing to point yet. The
+        //3D view frames nothing of its own - the camera opens at a fixed distance and stays there - so
+        //unlike the 2D box this is not competing with a fit, and can land whenever it is ready.
+        //
+        if (cameraToRestore.Length > 0)
+        {
+            string camera = cameraToRestore;
+            cameraToRestore = "";
+
+            await js.InvokeVoidAsync("applyCameraInterOp", camera);
         }
     }
 
@@ -139,41 +347,314 @@
 
     private void getQRCode()
     {
-        qrCodeComponent.GenerateQRCode($"{Navigation.BaseUri}");
+        //Only reachable from a button inside this component's own markup, so the @ref is filled by now.
+        if (qrCodeComponent is null)
+            return;
+
+        //The whole address, not just the base: it carries ?view=3d, so scanning this on a headset or phone
+        //opens the 3D view rather than dropping you in the 2D one to navigate again.
+        qrCodeComponent.GenerateQRCode(Navigation.Uri);
+    }
+
+    ///<summary>Coalesces a drag across the spacing slider; see <see cref="Settling"/>.</summary>
+    private readonly Settling settlingSpacing = new Settling();
+
+    ///
+    ///Where each layer sits in the stacking order, by pair.
+    ///
+    ///Built once per draw and handed over with each shape, so the slider can restack what is on screen
+    ///without another marshal - see <see cref="restackLayers"/>. Rebuilt rather than kept, because a file
+    ///opening or an edit can add a layer and shift everything above it.
+    ///
+    private Dictionary<LayerKey, int> stackingOrder = new Dictionary<LayerKey, int>();
+
+    private int stackedAt(LayerKey key)
+    {
+        if (stackingOrder.TryGetValue(key, out int at))
+            return at;
+
+        return 0;
+    }
+
+    ///
+    ///Notes where each layer sits in the order, before anything is described by it.
+    ///
+    ///Called at the top of a draw rather than only from the slider, because the index goes over *with* each
+    ///shape - built afterwards, every shape would have gone over as layer nought and a restack would have
+    ///moved the whole scene to one height.
+    ///
+    private void takeStackingOrder()
+    {
+        stackingOrder = new Dictionary<LayerKey, int>();
+
+        if (Gds is null)
+            return;
+
+        var ordered = Gds.AdditionalInformation.OrderedLayers();
+
+        for (int at = 0; at < ordered.Count; at++)
+            stackingOrder[ordered[at].Key] = at;
+    }
+
+    ///
+    ///Moves the layers already in the scene, rather than building it again.
+    ///
+    ///**This is what makes the slider live.** It was settled instead - one redraw once the drag stopped -
+    ///because a redraw hands three.js the whole scene: measured at 7.6 seconds per step on a
+    ///twenty-thousand-element layout, so applying every step made a drag a minute and a half of frozen tab.
+    ///The debounce was the right answer to that cost and the wrong answer to the question, which is that
+    ///moving a layer up the stack is a Y translation on geometry that is already built.
+    ///
+    ///So the offsets go over on their own - one number per layer, tens of them, no geometry - and the view
+    ///sets the height of each mesh and each label it already has. The settled full redraw stays behind it,
+    ///because the session still has to be written and a layer that has just become visible still has to be
+    ///built; what has moved off the drag is the part that cost seconds.
+    ///
+    private async Task restackLayers()
+    {
+        if (Gds is null)
+            return;
+
+        takeStackingOrder();
+
+        var ordered = Gds.AdditionalInformation.OrderedLayers();
+
+        var offsets = new int[ordered.Count];
+
+        for (int at = 0; at < ordered.Count; at++)
+            offsets[at] = ordered[at].Value.Offset;
+
+        await js.InvokeVoidAsync("restackLayers", offsets);
+    }
+
+    ///
+    ///How far apart the layers are stacked.
+    ///
+    ///**Split in two rather than settled.** This is bound `@oninput` and every step used to hand three.js the
+    ///whole scene again: measured at 7.6 seconds per step on a twenty-thousand-element layout, so a drag
+    ///across the control was a minute and a half of frozen tab, and the answer at the time was to apply it
+    ///once the drag stopped. Caching the merge behind it - see <see cref="flattenedFrom"/> - took a large
+    ///part of the per-step cost off and nowhere near all of it, because what was left was the marshal and the
+    ///rebuild rather than anything computed here.
+    ///
+    ///What was wrong with that answer is that moving a layer up the stack is a Y translation on geometry that
+    ///is already built, so the cheap half now runs every step and only the redraw and the session write are
+    ///settled - see <see cref="restackLayers"/> and <see cref="sliderChanged"/>.
+    ///
+    ///<summary>
+    ///How far apart the layers are stacked, for the sidebar - which renders the slider now, and has no other
+    ///way to read where it should sit.
+    ///</summary>
+    public int LayerSpacing
+    {
+        get { return userSetlayerSpacing; }
+    }
+
+    ///<summary>Public for the same reason: the control lives in the shell's sidebar and reports back here.</summary>
+    public async Task AdjustLayerSpacing(ChangeEventArgs e)
+    {
+        await sliderChanged(e);
     }
 
     private async Task sliderChanged(ChangeEventArgs e)
     {
-        userSetlayerSpacing = Convert.ToInt32(e.Value);
+        userSetlayerSpacing = Convert.ToInt32(e.Value, CultureInfo.InvariantCulture);
 
-        var orderedLayers = Gds.AdditionalInformation.Layers.OrderBy(x => x.Value.Number);
+        //The slider is only reachable with a file on screen, but nothing in the type system says so.
+        if (Gds is null)
+            return;
 
-        int layerOffset = 0;
-        foreach (var layer in orderedLayers)
+        //
+        //Every step, because this is the part that has to keep up with the thumb.
+        //
+        //One step per layer, which is the rule the initial stacking uses too - hence calling into it rather
+        //than repeating the walk here, where the two could come to disagree about what a step is.
+        //
+        Gds.AdditionalInformation.SetStackingOffsets(userSetlayerSpacing);
+
+        await restackLayers();
+
+        //And the expensive half once the drag stops: the session write, and a redraw so anything the scene
+        //does not already hold - a layer switched on mid-drag - is built. See restackLayers for why the
+        //cheap half is no longer behind this.
+        await settlingSpacing.After(async () =>
         {
-            layer.Value.Offset = userSetlayerSpacing * layerOffset;
+            await Render(Gds, ShowLayers);
 
-            layerOffset += 1;
-        }
-
-        await Render(Gds, ShowLayers);
+            await OnSettingsChanged.InvokeAsync();
+        });
     }
 
-    private async Task changeBackground(ChangeEventArgs e)
+    ///
+    ///The backdrops, in the order the menu lists them, with what each is called.
+    ///
+    ///The names are somebody's, and are kept: they are what a returning user recognizes. What they are not
+    ///is a description, which is why each row shows the thing itself.
+    ///
+    private static readonly (string File, string Says)[] Backdrops = new[]
     {
-        await js.InvokeVoidAsync("changeBackgroundInterOp", e.Value.ToString());
+        ("none", "No Background"),
+        ("background1.jpg", "White"),
+        ("background2.jpg", "White Room"),
+        ("background3.jpg", "Future Room"),
+        ("background4.jpg", "Neon")
+    };
+
+    ///<summary>Whether the backdrop menu is showing. Not saved: it is a panel being open.</summary>
+    private bool backgroundMenuOpen = false;
+
+    ///<summary>Held so the dismissal listener can call back into this component. Disposed with the view.</summary>
+    private DotNetObjectReference<Viewer3D>? menuHandle;
+
+    ///<summary>Where the camera is, as its position and what it orbits, or empty until it has been moved.</summary>
+    private string cameraSeen = "";
+
+    ///<summary>The one a session carried, applied once there is a viewer to move. Cleared as it is used.</summary>
+    private string cameraToRestore = "";
+
+    ///
+    ///Where the camera came to rest, kept so the session can put it back.
+    ///
+    ///Reported on settle rather than per frame - an orbit is a stream of events and only the last of them is
+    ///worth keeping - and never while Admire is running, since that turns the camera itself and what it
+    ///would save is an arbitrary point on a circle. See reportCameraWhenStill for both.
+    ///
+    ///Unchanged is not a change: putting the camera back through the controls raises the same event that
+    ///reports it, and without this that would be one session write for every restore.
+    ///
+    [JSInvokable]
+    public async Task OnCameraSettled(double x, double y, double z, double atX, double atY, double atZ)
+    {
+        //Invariant, because a session written where decimals are commas has to be readable where they are not.
+        string where = string.Join(' ',
+            x.ToString(CultureInfo.InvariantCulture),
+            y.ToString(CultureInfo.InvariantCulture),
+            z.ToString(CultureInfo.InvariantCulture),
+            atX.ToString(CultureInfo.InvariantCulture),
+            atY.ToString(CultureInfo.InvariantCulture),
+            atZ.ToString(CultureInfo.InvariantCulture));
+
+        if (where == cameraSeen)
+            return;
+
+        cameraSeen = where;
+
+        await OnSettingsChanged.InvokeAsync();
+    }
+
+    private async Task showBackgroundMenu()
+    {
+        if (backgroundMenuOpen)
+            return;
+
+        backgroundMenuOpen = true;
+
+        await OnToolChanged.InvokeAsync();
+    }
+
+    ///
+    ///A press somewhere else puts it away, through the listener the 2D view's menus share.
+    ///
+    ///Public and JSInvokable because that listener is in JS: it hears every press in the page and reports
+    ///the ones that landed outside this menu and its button.
+    ///
+    [JSInvokable]
+    public async Task OnBackgroundMenuDismissed()
+    {
+        if (!backgroundMenuOpen)
+            return;
+
+        backgroundMenuOpen = false;
+
+        await OnToolChanged.InvokeAsync();
+    }
+
+    ///<summary>Chosen from the menu, which then goes: the question it opened for has been answered.</summary>
+    private async Task chooseBackground(string file)
+    {
+        backgroundMenuOpen = false;
+
+        //The bar is the shell's, so closing the menu is only real once the shell redraws - which is true
+        //whether or not the backdrop itself changed.
+        await OnToolChanged.InvokeAsync();
+
+        if (file == background)
+            return;
+
+        background = file;
+
+        await js.InvokeVoidAsync("changeBackgroundInterOp", background);
+
+        await OnSettingsChanged.InvokeAsync();
+    }
+
+    private async Task changeModelFileType(ChangeEventArgs e)
+    {
+        ModelDownloadFileType = e.Value?.ToString() ?? ".stl";
+
+        await OnSettingsChanged.InvokeAsync();
+    }
+
+    ///<summary>
+    ///The four controls this view owns, the camera among them.
+    ///
+    ///It was not, once, and the reasoning against it was that an orbit is where you happen to be looking
+    ///rather than a setting. What settled it the other way is that a view somebody has turned to see
+    ///between two layers is a view they *arranged*, and handing it back is the whole reason to have looked.
+    ///Coming back to the opening angle instead throws that away every time.
+    ///</summary>
+    public void WriteSettings(SavedSession session)
+    {
+        session.LayerSpacing = userSetlayerSpacing;
+        session.Background = background;
+        session.ModelFileType = ModelDownloadFileType;
+        session.View3DCamera = cameraSeen;
+    }
+
+    ///<summary>
+    ///Applied before the first draw, so the stack is already spread and the scene already dressed rather
+    ///than jumping to it. The background is the one that has to reach JS, since the scene owns it.
+    ///</summary>
+    public async Task ApplySettings(SavedSession session)
+    {
+        userSetlayerSpacing = session.LayerSpacing;
+        background = session.Background;
+        ModelDownloadFileType = session.ModelFileType;
+
+        //Held rather than applied: there is no viewer yet on the path this arrives by. See the end of
+        //OnAfterRenderAsync, where it lands.
+        cameraToRestore = session.View3DCamera;
+
+        if (Gds is not null)
+            Gds.AdditionalInformation.SetStackingOffsets(userSetlayerSpacing);
+
+        //Only worth the interop when it is not the default the scene starts at.
+        if (background != "none")
+            await js.InvokeVoidAsync("changeBackgroundInterOp", background);
+    }
+
+    ///<summary>
+    ///Puts the whole stack back in the middle of the window, however far it has been orbited away from.
+    ///
+    ///Straight through to JS, because everything the answer depends on is there: where the meshes actually
+    ///ended up, how wide the window is, and what angle the camera sees through. None of that is knowable
+    ///from here, and a C# guess at it would be a second opinion about a scene it cannot see.
+    ///</summary>
+    public async Task CenterView()
+    {
+        await js.InvokeVoidAsync("centerCameraInterOp");
     }
 
     private async Task download3DObject()
     {
-        await js.InvokeVoidAsync("download3DModelInterOp", Parent.CurrentlySelectedFileName, ModelDownloadFileType);
+        await js.InvokeVoidAsync("download3DModelInterOp", FileName, ModelDownloadFileType);
     }
 
     private async Task cinematicView()
     {
         cinematicViewToggle = !cinematicViewToggle;
 
-        playSound(cinematicViewToggle);
+        await playSound(cinematicViewToggle);
 
         await js.InvokeVoidAsync("cinematicViewInterOp", cinematicViewToggle);
     }
@@ -185,7 +666,7 @@
         StateHasChanged();
     }
 
-    public async Task Render(GDS gds, List<CheckboxItem> showLayers)
+    public async Task Render(GDS? gds, List<CheckboxItem>? showLayers, FlattenedLayout? prepared = null)
     {
         //Save if needed for re-render on layer spacing change.
         if (gds is not null)
@@ -197,87 +678,151 @@
         if (Gds is null || ShowLayers is null)
             return;
 
-        List<Element> elements = new List<Element>();
-
-        foreach (var structure in gds.StreamFormat.Structures)
+        //
+        //Resolving the hierarchy and merging each layer only depend on the file, so both are done once per
+        //file rather than on every layer-spacing change.
+        //
+        //**Against the file itself, not against whether one was passed.** This said `gds is not null`, and
+        //every caller passes the field it already has - `sliderChanged` hands over `Gds`, and so does the
+        //shell on a layer toggle - so the condition was true every time and the comment above it was simply
+        //untrue. The Layer Distance slider is bound `@oninput`, which made a drag across it one flatten and
+        //one *merge* per pixel: measured at 5.2 seconds each on a half-million-element layout, for a change
+        //that moves no geometry at all.
+        //
+        //The same mistake, and the same fix, as Viewer2DSvg - see the note there, which was written when the
+        //opacity slider was found doing this.
+        //
+        if (!ReferenceEquals(Gds, flattenedFrom))
         {
-            foreach (var elementModel in structure.Elements)
-            {
-                if (elementModel.Element is not GDS.IHasLayer)
-                    continue;
+            //
+            //**The slider's value, onto the file that has just arrived.**
+            //
+            //Spacing is not an argument to the draw the way the 2D view's opacity is - it is written onto
+            //the Layer objects themselves, by SetStackingOffsets, and a new file brings new ones. Layer
+            //discovery stacks them at the library's default and nothing put the slider's value back, so
+            //opening a second file with the Distance set to 700 drew it at 50 while the control still read
+            //700. Nudging the slider was the only thing that ever applied it, which is what made it look
+            //like the control had stopped working rather than never having been consulted.
+            //
+            //Here rather than at the top of the method because this is the one branch that means "a file
+            //this view has not drawn yet". A layer toggle and a spacing change both come back through here
+            //with the same file, and neither should re-stack anything - a height typed in by hand would be
+            //the thing lost. SetStackingOffsets is absolute and skips the layers that carry their own
+            //height, so running it once per file is both enough and safe.
+            //
+            Gds.AdditionalInformation.SetStackingOffsets(userSetlayerSpacing);
 
-                GDS.IHasLayer elementLayer = elementModel.Element as GDS.IHasLayer;
-                GDS.ElementType element = elementModel.Element;
-
-                short layer = elementLayer.LAYER.Data;
-
-                try //Temp
-                {
-                    if (!isRenderableElement(elementLayer.LAYER.Type))
-                        continue;
-
-                    short layerNumber = elementLayer.LAYER.Data;
-
-                    //Skip current element if the layer it is on is disabled.
-                    if (!ShowLayers.Where(x => x.Id == layerNumber).First().IsSelected)
-                        continue;
-
-
-                    var newElement = new Element();
-                    newElement.Layer = Gds.AdditionalInformation.Layers[layerNumber];
-                    //newElement.Layer.Offset += userSetlayerSpacing;
-
-                    int[] rawPoints = element.XY.Data;
-                    for (int j = 0; j < rawPoints.Length; j = j + 2)
-                    {
-                        var newPoint = new Element.Point(rawPoints[j], rawPoints[j + 1]);
-                        newElement.Points.Add(newPoint);
-                    }
-
-                    //TODO: add support for other element types like TEXT, STRING, etc.
-                    if (rawPoints.Length < 3)
-                    {
-                        Console.WriteLine("C# Error: polygon should have more than 3 points.");
-                    }
-                    else
-                    {
-                        elements.Add(newElement);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("C# Error while iterating layers: " + ex.Message);
-                }
-            }
+            //Handed over by the shell when it has one; see IRenderable.
+            layout = prepared ?? GdsFlattener.Flatten(Gds);
+            merged = Booleans.MergeByLayer(layout.Elements);
+            flattenedFrom = Gds;
         }
 
-        await js.InvokeVoidAsync("drawInterOp", new { elements = elements });
+        if (layout is null)
+            return;
+
+        List<object> elements = new List<object>();
+        List<object> labels = new List<object>();
+
+        //One set each for the whole pass, rather than searching the list once per element. Shared with the
+        //2D view so both agree on what "visible" and "labeled" mean.
+        var visible = CheckboxItem.VisibleLayers(ShowLayers);
+        var labeled = CheckboxItem.LabeledLayers(ShowLayers);
+
+        //Before the shapes are described, since each one carries its layer.s place - see takeStackingOrder.
+        takeStackingOrder();
+
+        foreach (var outline in merged)
+        {
+            if (!visible.Contains(outline.Layer.Key))
+                continue;
+
+            //An extrusion needs a closed outline, which takes at least three corners.
+            if (outline.Boundary.Count < 3)
+                continue;
+
+            elements.Add(shapeFor(outline));
+        }
+
+        //Labels come off the layout rather than the merge: a TEXT element is an anchor and a string, and
+        //there is nothing about it to merge.
+        foreach (var element in layout.Elements)
+        {
+            if (element.Text is null || !visible.Contains(element.Layer.Key))
+                continue;
+
+            if (labeled.Contains(element.Layer.Key) && element.Text.Length > 0 && element.Points.Count > 0)
+                labels.Add(labelFor(element));
+        }
+
+        await js.InvokeVoidAsync("drawInterOp", new { elements = elements, labels = labels });
+    }
+
+    ///<summary>
+    ///One merged shape, as the scene needs it.
+    ///
+    ///**The holes go over as holes.** A three.js Shape takes them directly, which is what its triangulator
+    ///wants - the alternative is the keyhole a GDSII file has to use, a channel whose two edges lie on top
+    ///of each other, and that is the case an ear-clipper is worst at. Fifty-five of them come out of
+    ///merging the bundled corpus, so this is not a hypothetical.
+    ///
+    ///The layer goes over as the three things drawing it needs rather than as the whole object, which
+    ///carried a name, a key and two flags across the interop on every redraw for nothing.
+    ///</summary>
+    private object shapeFor(Booleans.Outline outline)
+    {
+        return new
+        {
+            points = outline.Boundary,
+            holes = outline.Holes,
+            layer = new
+            {
+                color = outline.Layer.Color,
+                offset = outline.Layer.Offset,
+                depth = outline.Layer.Depth,
+
+                //Where this layer sits in the ordered list, so the spacing slider can move what is already
+                //drawn instead of handing the scene over again. One integer, and the only thing on the wire
+                //that is about restacking rather than about drawing - see restackLayers.
+                at = stackedAt(outline.Layer.Key)
+            }
+        };
+    }
+
+    ///<summary>
+    ///Reduces a label to what the scene needs. The justification goes over as a name rather than an enum
+    ///ordinal so the interop reads the same from either side, and the anchor is the only point a text
+    ///element has.
+    ///</summary>
+    private object labelFor(Element element)
+    {
+        var anchor = element.Points[0];
+
+        return new
+        {
+            text = element.Text,
+            x = anchor.X,
+            y = anchor.Y,
+            height = LabelHeight,
+            color = element.Layer.Color,
+            offset = element.Layer.Offset,
+            depth = element.Layer.Depth,
+            at = stackedAt(element.Layer.Key),
+            horizontal = element.Presentation.Horizontal.ToString(),
+            vertical = element.Presentation.Vertical.ToString()
+        };
+    }
+
+    ///
+    ///Lets go of the handle the backdrop menu's dismissal calls back through.
+    ///
+    ///Unlike the shell's, this view is unmounted every time somebody switches away from it - so a handle
+    ///left open here is one per visit, each pinning a component that has otherwise been thrown away.
+    ///
+    public void Dispose()
+    {
+        menuHandle?.Dispose();
     }
 
     #endregion ***********************************************
-
-    private bool isRenderableElement(RecordType type)
-    {
-        //temp
-        return true;
-
-        switch (type)
-        {
-            case RecordType.BOUNDARY: return true;
-            //case RecordType.BOUNDARY: return true;
-            //case RecordType.BOUNDARY: return true;
-            //todo: add all other types
-
-            default: return false;
-        }    
-    
-    }
-
-    #region Models ************************************
-
-
-
-
-
-    #endregion ****************************************
 }

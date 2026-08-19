@@ -1,0 +1,171 @@
+#sky130A - a starter design-rule deck for GDS Viewer.
+#
+#NOT A SIGNOFF DECK, AND NOT AFFILIATED WITH SKYWATER. This is a hand-transcribed subset for catching
+#obvious mistakes while looking at a layout. The foundry signs off against Calibre, not against this.
+#
+#Layer numbers are from sky130/layers.py in OtherResources/Sky130/skywater130-main.zip, which carries all
+#432 pairs. Rule values are transcribed from the public rule documentation at
+#https://skywater-pdk.readthedocs.io/en/main/rules/periphery.html
+#
+#TWO THINGS TO KNOW BEFORE TRUSTING A NUMBER HERE
+#
+#The two documentation pages disagree about rule numbering. rules/summary.html calls the diffusion rules
+#diff.1, diff.2 and the metal rules metal1.1, metal1.2; rules/periphery.html calls the same layer difftap
+#and numbers poly.2 as a spacing where the summary numbers it as a width. This file follows periphery.html,
+#the detailed page. The identifier is a label and nothing else - the checker keys on it for the marker text
+#and never for the check - so a wrong id misnames a violation but cannot change what was measured.
+#
+#Values are DATABASE UNITS, which for sky130 is nanometers: the micron figure in the documentation times
+#1000. Areas are square nanometers, so 0.265 um2 is 265000. Nothing is scaled and nothing is rounded.
+
+#Drawn layers ***********************************************************************
+
+layer nwell  64/20
+layer diff   65/20
+layer tap    65/44
+layer poly   66/20
+layer licon  66/44
+layer nsdm   93/44
+layer psdm   94/20
+layer npc    95/20
+layer li1    67/20
+layer mcon   67/44
+layer met1   68/20
+layer via    68/44
+layer met2   69/20
+layer via2   69/44
+layer met3   70/20
+layer via3   70/44
+layer met4   71/20
+layer via4   71/44
+layer met5   72/20
+layer hvtp   78/44
+layer lvtn  125/44
+
+#Derived layers *********************************************************************
+#
+#Not optional, and not an advanced feature. difftap.8 is an enclosure of P+ diffusion, which is a layer
+#nobody draws, and poly.4 is a spacing for poly ON FIELD - poly with the gate taken out of it.
+#
+#Three of these - gate, ndiff, ptap - are read by no rule below, because the rules that would have read them
+#are in the "deliberately NOT here" list at the foot of this file. They are kept because they are correct
+#and because a rule may arrive for them. Nothing is spent meanwhile: a derivation no rule reaches is never
+#computed. fieldpoly IS read now, by poly.4, which the edge engine made expressible.
+
+derive gate      = poly and diff
+derive fieldpoly = poly not diff
+derive pdiff     = diff and psdm
+derive ndiff     = diff and nsdm
+derive ptap      = tap and psdm
+derive ntap      = tap and nsdm
+
+#Rules ******************************************************************************
+#
+#id           check      operands        value   description
+
+#N-well
+rule nwell.1    width      nwell             840   "N-well width"
+rule nwell.2    space      nwell            1270   "N-well spacing"
+
+#Diffusion and tap
+rule difftap.1  width      diff              150   "Diffusion width"
+rule difftap.3  width      tap               150   "Tap width"
+rule difftap.4  space      tap               130   "Tap spacing"
+rule difftap.8  enclosure  pdiff  nwell      180   "N-well enclosure of p+ diffusion"
+rule difftap.10 enclosure  ntap   nwell      180   "N-well enclosure of n+ tap"
+
+#Implants
+rule nsdm.1     width      nsdm              380   "N+ implant width"
+rule nsdm.2     space      nsdm   diff       130   "N+ implant spacing to diffusion"
+
+#Poly
+rule poly.1a    width      poly              150   "Poly width"
+rule poly.2     space      poly              210   "Poly spacing"
+
+#And the one this deck could not express until there was an edge engine.
+#
+#"Spacing of poly on field to diff, PARALLEL EDGES ONLY" - and the qualifier is the whole rule. Measured
+#any way that counts corners, every corner approach in a cell is a violation and the real ones are buried
+#among them. `parallel` puts the rule on the edge engine, which asks which edges actually run alongside
+#each other; a pair whose spans do not overlap when projected is not a pair.
+#
+#On fieldpoly rather than poly, which is the other half of the rule: poly with the gate taken out of it.
+rule poly.4     space      fieldpoly          75   parallel  "Poly on field to diff, parallel edges only"
+
+#Nitride poly cut
+rule npc.1      width      npc               270   "Npc width"
+rule npc.2      space      npc                90   "Npc spacing"
+
+#Local interconnect and contacts
+rule licon.1    width      licon             170   "Licon width"
+rule li1.1      width      li1               170   "Li1 width"
+rule li1.2      space      li1               170   "Li1 spacing"
+rule mcon.1     width      mcon              170   "Mcon width"
+
+#Metal stack
+rule met1.1     width      met1              140   "Met1 width"
+rule met1.2     space      met1              140   "Met1 spacing"
+rule via.1      width      via               150   "Via width"
+rule met2.1     width      met2              140   "Met2 width"
+rule met2.2     space      met2              140   "Met2 spacing"
+rule via2.1     width      via2              280   "Via2 width"
+rule met3.1     width      met3              360   "Met3 width"
+
+#Implant marker areas. holearea is a rule on the holes in a merged layer rather than on the layer, which
+#is a distinction the documentation makes explicitly and which MergeByLayer already hands back separately.
+rule hvtp.5     area       hvtp           265000   "Hvtp min area"
+rule hvtp.6     holearea   hvtp           265000   "Hvtp min hole area"
+rule lvtn.13    area       lvtn           265000   "Lvtn min area"
+rule lvtn.14    holearea   lvtn           265000   "Lvtn min hole area"
+
+#Every coordinate against the manufacturing grid, which on sky130 is 5nm.
+#
+#The value is stated rather than read back off the file, and that is not an oversight. Grid.Of recovers the
+#coarsest grid a library's coordinates all sit on - their greatest common divisor - which is exactly right
+#for snapping and circular for checking: one coordinate at 3nm among a file of multiples of 5 drags that
+#divisor to 1, and nothing is ever off a grid of 1. The stray coordinate defines away the grid meant to
+#catch it. So the grid is PDK data here, like every other number in this file.
+rule grid.1     offgrid    *                   5   "Coordinate off the 5nm manufacturing grid"
+
+#Rules deliberately NOT here *********************************************************
+#
+#These are real sky130 rules that the size-and-boolean engine cannot express, listed so that their absence
+#is a decision on the record rather than an oversight. A deck that quietly approximated them would report
+#a clean cell that is not clean, which is worse than reporting that it did not look.
+#
+#poly.2   as written excludes certain adjacent poly pairs. What is checked above is the unqualified
+#         spacing, so it can over-report where the exclusion would have applied.
+#difftap.2 "Diffusion spacing" 0.340. Taken out after it fired on a signed-off sky130 standard cell, and
+#         worth the longest note here because the fault was not where it looked.
+#
+#         The geometry is real: a 295nm gap between two diffusions, and KLayout's own engine finds the same
+#         one on the same cell - so this is not a case of two tools disagreeing, and there is a test that
+#         pins them agreeing. What is wrong is the rule as transcribed. sky130's difftap.2 is about two
+#         diffusions of the SAME type; the gap in that cell is between n-type and p-type across a well
+#         boundary, which a different rule governs at a different distance. Written unqualified it reports
+#         the ordinary structure of every standard cell ever drawn.
+#
+#         Distinguishing the two needs the implants: n+ diffusion is `diff and nsdm`, p+ is `diff and psdm`,
+#         and both derivations are already in this file. What is missing is the rule's own qualification -
+#         same-type spacing is not "the spacing of a layer to itself" once the layer has been split in two,
+#         it is two separate checks plus a third across the boundary. That is transcription work against the
+#         rule manual rather than anything the engine cannot do, and it is not done.
+#
+#poly.7   "Extension of diff beyond poly (min drain)" 0.250, and
+#poly.8   "Extension of poly beyond diffusion (endcap)" 0.130. Both are DIRECTIONAL, and both were in this
+#         deck until it was run against the bundled transistor. Measured in every direction - which is all
+#         a region-based check can do - poly.8 reports the two SIDES of the channel, where the endcap it
+#         means is the two ENDS. Every violation the pair produced was the axis the rule does not care
+#         about, and not one was the axis it does. `extension` is refused at the door for the same reason.
+#
+#The parser is expected to REFUSE an unsupported check by name rather than skip it quietly.
+
+#Why there is no notch rule here ****************************************************
+#
+#sky130 states one, x.6: "all intra-layer separation checks will include a notch check". It carries no
+#value, because it is not a separate measurement - it says every spacing limit already written applies
+#inside a shape as well as between two.
+#
+#Every `space` rule above already does that. A closing fills an internal gap and an external one alike, so
+#x.6 is satisfied without a line of its own. The `notch` check exists for a deck that wants the two apart,
+#giving an internal gap a different limit from an external one; sky130 does not, so nothing here uses it.

@@ -1,0 +1,98 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The GDSII format on its own: reading a file into an object model, writing one back out, validating
+    what it holds, the text dump in both directions, resolving the hierarchy into flat geometry, and the
+    layer bookkeeping that goes with it.
+
+    Nothing here touches a browser, a renderer or a UI framework, which is what makes it worth separating
+    from the app it grew up in - the app is one consumer of it, and a command-line tool is another.
+  -->
+  <PropertyGroup>
+    <!--The same net10.0 the app is on. This started at net8.0 to reach further as a dependency, which was
+        worth something while 8 was the current LTS - but it goes out of support in November 2026, and the
+        floor was costing a .NET 8 install on every machine that opens the solution for a reach nobody had
+        asked for yet. If someone does ask, the answer is to multi-target rather than to drop back.-->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GdsII</RootNamespace>
+    <AssemblyName>GdsII</AssemblyName>
+
+    <!--Public API, so the XML comments that explain the format's traps travel with it.-->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!--The comments here are prose about the format rather than doc-comment markup, and several of them
+        legitimately talk about things like <see cref> targets that are not resolvable from a summary.-->
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Published to NuGet. The version, the author and the repository links come from Directory.Build.props.
+
+    Worth publishing because of what is not on the shelf: a search for "gdsii" returns three packages, one
+    of them write-only and abandoned in 2020, one commercial and Windows-only, and one small library with
+    a single maintainer. This reads and writes GDSII, OASIS and DXF, keeps the hierarchy, resolves it when
+    asked, and does booleans - and depends on nothing.
+  -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>GdsII</PackageId>
+    <Title>GdsII</Title>
+    <Description>Read, write, validate and convert GDSII, OASIS and DXF layout files. Full record coverage, byte-exact round trip, hierarchy flattening with transforms, boolean operations, SVG rendering and an ASCII record dump that reads back. No dependencies.</Description>
+    <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;klayout;sky130</PackageTags>
+
+    <!--
+      Two licenses, because two bodies of code ship in the one assembly.
+
+      Ours is the Unlicense. Clipper2 is vendored as source under GdsII/Clipper2 and compiled straight in,
+      so the Boost license travels with the binary rather than arriving as a dependency - which is what
+      makes it part of this package's terms rather than a note about somebody else's.
+    -->
+    <PackageLicenseExpression>Unlicense AND BSL-1.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!--
+      The listing's icon. Packed in rather than linked: PackageIconUrl is deprecated, and an icon fetched
+      from a URL is one a broken link takes away from a page that is already published.
+
+      The app's own icon, so the two packages and the viewer are recognisably one thing on a search page.
+      It is one file referenced twice rather than a copy per project - see the include below.
+    -->
+    <PackageIcon>icon.png</PackageIcon>
+
+    <!--So a stack trace from a consumer's machine points at a line of source rather than at an offset.-->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--The readme beside this project rather than the repository's, which is about the app and is full of
+        links relative to a path nuget.org does not have.-->
+    <None Include="README.md" Pack="true" PackagePath="\" />
+
+    <!--
+      The icon, renamed into the package root so PackageIcon above can name it without a path.
+
+      The app's 192-pixel PWA icon, which nuget.org scales to the 128 it asks for. Referenced where it
+      already lives rather than copied here: one image, one place to change it, and the package and the
+      installed app cannot come to show different pictures.
+    -->
+    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" />
+
+    <!--Both license texts in the package, since the expression above names two.-->
+    <None Include="..\UNLICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\docs\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <!--
+      Into a folder that names it, rather than renamed into the root.
+
+      pack will not rename a file that has no extension - it reads the package path for one of those as a
+      directory to put it in, whatever the path looks like and whether or not Link says otherwise, so both
+      attempts at CLIPPER2-LICENSE.txt produced a directory of that name with a LICENSE inside it. A folder
+      it is, then, and one whose name says whose license this is.
+    -->
+    <None Include="Clipper2\LICENSE" Pack="true" PackagePath="licenses\clipper2\" />
+  </ItemGroup>
+
+</Project>

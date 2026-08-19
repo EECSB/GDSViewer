@@ -1,0 +1,86 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A command-line front end for the GdsII library: read a file, say what is in it, dump its records,
+    read them back, validate, list layers, export SVG, extrude a 3D model.
+
+    Cross-platform without doing anything special - it is a portable .NET console app with no native
+    dependency and nothing platform-specific in it. `dotnet tool install` works the same on Windows,
+    macOS and Linux, and `dotnet run` works anywhere the SDK does. The two packages below are managed
+    code as well, so that stays true.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--Matches the library, which now matches the app.-->
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!--And runs on whatever comes after it. A tool built against one major refuses to start on a machine
+        that has only a later one - which is exactly how this was found, as a net8.0 build on a .NET 10
+        machine - so rolling forward is what keeps an installed copy working across the next release
+        instead of failing on an upgrade nobody connected to this.-->
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GdsII.Cli</RootNamespace>
+    <AssemblyName>gds</AssemblyName>
+
+    <!--Installable with `dotnet tool install`, which is what makes it one command on every platform.-->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>gds</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <PackageId>GdsII.Cli</PackageId>
+    <Title>gds</Title>
+    <Description>Command-line tool for GDSII, OASIS and DXF layout files: inspect, dump, validate, convert between any two, run booleans, trace nets, measure, and export SVG or a 3D model.</Description>
+    <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;cli;dotnet-tool</PackageTags>
+
+    <!--
+      Four licenses, because `dotnet tool install` ships a bundle rather than a reference: the tool's
+      package carries GdsII.dll - which has Clipper2 compiled into it - alongside the two package
+      dependencies' own assemblies. Everything physically in the .nupkg is named here, which is not what
+      an expression usually has to do and is what packing as a tool makes true.
+
+      The version, author and repository links come from Directory.Build.props.
+    -->
+    <PackageLicenseExpression>Unlicense AND BSL-1.0 AND SGI-B-2.0 AND MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!--The same icon the library and the app carry, so all three are one thing on a search page.-->
+    <PackageIcon>icon.png</PackageIcon>
+
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+    <!--No InvariantGlobalization: a layer name out of a layermap can be any text, and the tool should
+        not be the reason it comes back wrong.-->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" />
+    <None Include="..\UNLICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\docs\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GdsII\GdsII.csproj" />
+  </ItemGroup>
+
+  <!--
+    Both of these are for `gds model`, and both stop here: GdsII itself stays dependency-free, which is
+    the property that makes it worth depending on.
+
+    They earn their place by doing what a console has no three.js for. LibTessDotNet triangulates the
+    caps, and a GDSII boundary is regularly concave - sky130 carries eight, twelve and fourteen-point
+    outlines that a fan from one corner turns inside out. SharpGLTF writes the glTF, which is JSON
+    alongside a binary buffer with accessors, byte strides and alignment rules.
+
+    STL and OBJ are written by hand instead. Both are a triangle list with a header, a few dozen lines
+    each, and a dependency for that would be more to keep current than to write. Argument parsing is
+    hand-rolled for the same reason, which also avoids pinning anyone to a command-line library's
+    opinions about how a flag should look.
+  -->
+  <ItemGroup>
+    <PackageReference Include="LibTessDotNet" Version="1.1.15" />
+    <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.6" />
+  </ItemGroup>
+
+</Project>

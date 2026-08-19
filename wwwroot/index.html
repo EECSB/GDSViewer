@@ -14,6 +14,18 @@
                 base.setAttribute('href', window.location.pathname);
             }
         </script>
+        <!-- three.js and its addons are vendored under wwwroot/lib/three (no bundler). The addon files
+             import three by bare specifier as well, so the map is not just for js/ThreeInterop.js.
+             This has to come after the <base href> is set above: the map's relative URLs resolve
+             against the document base URL as it is parsed. -->
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "./lib/three/three.module.min.js",
+                    "three/addons/": "./lib/three/addons/"
+                }
+            }
+        </script>
         <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
         <link href="css/app.css" rel="stylesheet" />
         <link rel="icon" type="image/png" href="favicon.png" />
@@ -34,14 +46,17 @@
 
         <div id="blazor-error-ui">
             An unhandled error has occurred.
-            <a href="" class="reload">Reload</a>
-            <a class="dismiss">🗙</a>
+            <a href="" class="reload" title="Reload the page. Anything not saved into the file is lost, but the last session is restored">Reload</a>
+            <a class="dismiss" title="Hide this message and carry on. The app may not behave correctly until it is reloaded">🗙</a>
         </div>
 
-        <script src="js/9.2.0_konva.min.js"></script>
-        <script src="js/KonvaInterop.js"></script>
+        <!--First, because the two below read window.viewGeometry from it. It is a plain script with no DOM or three.js dependency, which is what lets jstests/ require it under Node.-->
+        <script src="js/viewGeometry.js"></script>
+        <script src="js/sidebars.js"></script>
+        <script src="js/StorageInterop.js"></script>
         <script src="js/JavaScriptInterOp.js"></script>
-        <script src="js/webpack-bundle/index.bundle.js"></script>
+        <script src="js/MonacoInterop.js"></script>
+        <script type="module" src="js/ThreeInterop.js"></script>
 
         <script src="_framework/blazor.webassembly.js"></script>
         <script>navigator.serviceWorker.register('service-worker.js');</script>

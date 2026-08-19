@@ -1,32 +1,59 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
-    <RunAOTCompilation>false</RunAOTCompilation>
+
+    <!--Ahead-of-time compilation, on publish only - `dotnet build` and `dotnet run` are untouched, so the
+        edit-and-refresh loop and the whole test suite still need nothing but the SDK. Publishing needs the
+        `wasm-tools` workload:
+
+            dotnet workload install wasm-tools
+
+        What it buys and what it costs are measured, not assumed - see DOCUMENTATION.md. In short: opening
+        twenty thousand elements goes from 1,366 ms to 748 ms, the payload roughly doubles, and the publish
+        takes minutes instead of seconds. Editing and panning do not move, because those are the browser
+        laying out nodes rather than anything C# does.
+
+        Set to false to get all three back - but delete obj\Release first. An incremental publish across
+        the switch reuses intermediates built for the other mode and produces an app that dies on boot
+        with a mono interpreter assertion, rather than anything that looks like a build error.-->
+    <RunAOTCompilation>true</RunAOTCompilation>
   </PropertyGroup>
 
+  <!--The other three projects all sit under this one's directory, so keep their sources out of the app's
+      default globs. GdsII is referenced below as a project; the CLI and the tests reference inward.
+
+      Their obj folders matter as much as their sources: a generated AssemblyInfo.cs swept up from one of
+      them collides with this project's own, and the error names this project's file rather than the one
+      that was picked up.-->
   <ItemGroup>
-    <Compile Remove="wwwroot\js\webpack-bundle\**" />
-    <Content Remove="wwwroot\js\webpack-bundle\**" />
-    <None Remove="wwwroot\js\webpack-bundle\**" />
-    <EmbeddedResource Remove="wwwroot\js\webpack-bundle\**" />
-    
-    <Compile Remove="wwwroot\Node\**" />
-    <Content Remove="wwwroot\Node\**" />
-    <None Remove="wwwroot\Node\**" />
-    <EmbeddedResource Remove="wwwroot\Node\**" />
+    <Compile Remove="GdsII\**" />
+    <Content Remove="GdsII\**" />
+    <EmbeddedResource Remove="GdsII\**" />
+    <None Remove="GdsII\**" />
+
+    <Compile Remove="GdsII.Cli\**" />
+    <Content Remove="GdsII.Cli\**" />
+    <EmbeddedResource Remove="GdsII.Cli\**" />
+    <None Remove="GdsII.Cli\**" />
+
+    <Compile Remove="tests\**" />
+    <Content Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <None Remove="tests\**" />
+  </ItemGroup>
+
+  <!--The GDSII format itself: reading, writing, validating, flattening. The app is one consumer of it.-->
+  <ItemGroup>
+    <ProjectReference Include="GdsII\GdsII.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Models\KonvaJsInterop.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.11" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.11" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" PrivateAssets="all" />
     <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="2.0.6" />
   </ItemGroup>
 
@@ -39,9 +66,31 @@
     <Folder Include="wwwroot\css\fonts\" />
   </ItemGroup>
 
-  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="npm install" WorkingDirectory="NpmJS" />
-    <Exec Command="npm run build" WorkingDirectory="NpmJS" />
+  <!--The example picker is driven by a manifest of the bundled sample files rather than a list written
+      into the markup, so dropping a .gds into the folder is all it takes to offer it.
+
+      The manifest is generated here and also checked in. Generated, so it cannot go stale; checked in,
+      because the SDK globs wwwroot at project evaluation - before any target runs - and a file that
+      only appears during the build would not be picked up as a static asset until the build after.
+      WriteOnlyWhenDifferent leaves the file, and the incremental build, alone when nothing changed.
+
+      Mosfet.gds is excluded because the picker lists it separately, above the sky130 cells.-->
+  <Target Name="GenerateExampleGdsManifest" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <ExampleGdsFile
+        Include="wwwroot\resources\GDS Files\Sky130 GDS\*.gds"
+        Exclude="wwwroot\resources\GDS Files\Sky130 GDS\Mosfet.gds" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <ExampleGdsManifest>[%0A@(ExampleGdsFile->'  &quot;%(Filename)%(Extension)&quot;', ',%0A')%0A]</ExampleGdsManifest>
+    </PropertyGroup>
+
+    <WriteLinesToFile
+      File="wwwroot\resources\GDS Files\examples.json"
+      Lines="$(ExampleGdsManifest)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true" />
   </Target>
 
 </Project>

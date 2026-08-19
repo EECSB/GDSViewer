@@ -6,16 +6,77 @@
     background-color: whitesmoke;
 }
 
-#viewContainer {
-    height: 55em;
+/*
+    The chain that fits the app to the window.
+
+    Each of these is a flex column that hands its height down, and each carries min-height: 0 - a flex
+    item will not shrink below its contents without it, which is exactly how a fixed-height view ends up
+    pushing the page taller than the screen instead of being made to fit.
+*/
+.viewerPage {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+/*
+    nowrap, and that is the part that actually makes this fit.
+
+    Bootstrap's .row is flex-wrap: wrap, which makes it a *multi-line* flex container - and a flex line
+    takes the height of its tallest item and is never compressed to fit the container. So the row was
+    correctly squeezed to the space available while the column inside it stayed at its content height and
+    hung out of the bottom. Single-line, align-items: stretch gives the item the container's height, which
+    is what everything above this was arranging for.
+*/
+.viewerPageRow {
+    flex: 1;
+    min-height: 0;
+    flex-wrap: nowrap;
 }
 
 #mainAppContainer {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     max-width: 80%;
 }
 
+/*
+    Whatever is left once the toolbar above it has taken its share.
+
+    This was 55em, a height picked to look right on one screen: taller than a laptop, so the page grew a
+    scrollbar and the view ran off the bottom of it, and short of a large monitor, where it left a band of
+    empty page underneath.
+*/
+#viewContainer {
+    flex: 1;
+    min-height: 0;
+
+    /*Single-line for the same reason as .viewerPageRow: the view and the sidebar take this row's height.*/
+    flex-wrap: nowrap;
+}
+
+/*
+    The view itself, and the sidebar, filling the row rather than sizing to what is drawn in them.
+
+    Positioned, so the center button is placed against this box. It has to be this one rather than either
+    view's own wrapper: the button is the shell's, drawn beside whichever view is up, and a shared control
+    cannot be laid out against a box that only exists in one of them.
+*/
+.viewPane {
+    position: relative;
+
+    min-height: 0;
+    overflow: hidden;
+}
+
+/*
+    The frame around the toolbar and the view under it. One pixel rather than two: at two it was the
+    heaviest line on the page, drawn around the part that is meant to be looked through.
+*/
 .viewBorderBackground {
-    border: 2px solid #41464b61;
+    border: 1px solid #41464b61;
     background-color: whitesmoke;
 }
 
@@ -30,10 +91,11 @@
         justify-content: normal !important;
     }
 
-    #viewContainer {
-        height: 45em;
-    }
-
+    /*
+        No height override here any more. It was 45em against the 55em above - a second guess at how tall
+        a screen is, for screens the first guess was wrong about. The view takes what the window has left
+        at any size now, so there is nothing left to guess.
+    */
     #mainAppContainer {
         max-width: 90%;
     }

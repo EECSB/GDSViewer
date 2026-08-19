@@ -1,0 +1,13 @@
+{
+  "name": "gdsviewer-jstests",
+  "private": true,
+  "description": "Browser-JS tests: unit tests for the pure helpers (built-in node:test runner, no dependencies) and Playwright e2e tests for the rendered app. Nothing here is part of the app build - dotnet build stays the whole build, and no dependency reaches wwwroot.",
+  "scripts": {
+    "test": "node --test \"jstests/**/*.test.js\"",
+    "test:e2e": "playwright test",
+    "screenshots": "playwright test --config playwright.screenshots.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0"
+  }
+}

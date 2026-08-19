@@ -3,10 +3,13 @@
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
         <FocusOnNavigate RouteData="@routeData" Selector="h1" />
     </Found>
+    @*Reachable now that MainLayout renders @Body instead of naming the viewer directly.*@
     <NotFound>
         <PageTitle>Not found</PageTitle>
         <LayoutView Layout="@typeof(MainLayout)">
-            <p role="alert">Sorry, there's nothing at this address.</p>
+            <p role="alert">
+                Sorry, there's nothing at this address. <a href="">Open the viewer</a> instead.
+            </p>
         </LayoutView>
     </NotFound>
 </Router>

@@ -37,7 +37,6 @@ bld/
 .vs/
 # Uncomment if you have tasks that create the project's static files in wwwroot
 #wwwroot/
-wwwroot/js/webpack-bundle/
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
@@ -362,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Playwright e2e artifacts (the specs themselves are tracked; these are per-run output).
+/test-results/
+/playwright-report/
+/playwright/.cache/

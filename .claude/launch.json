@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "//": "Pinned to one URL rather than using a launch profile, so this stays fixed at the port the e2e config expects whatever the profiles are changed to.",
+      "name": "gdsviewer",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--no-launch-profile",
+        "--project",
+        "GDSViewer.csproj",
+        "--urls",
+        "http://localhost:5105"
+      ],
+      "port": 5105
+    }
+  ]
+}

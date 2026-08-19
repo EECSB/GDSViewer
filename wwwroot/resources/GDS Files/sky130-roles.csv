@@ -1,0 +1,66 @@
+#A layermap for the bundled sky130 examples, written so Trace net has something to work with.
+#
+#Nothing in a GDSII file says which of its numbers are metal - that is PDK data, which is why every tool
+#reads it from a file like this one. Tracing a net needs exactly three answers per layer: does it carry a
+#net along itself (conductor), does it join whatever it overlaps (via), or does it take no part (blank).
+#
+#Load it with Import in the Layers sidebar, then choose a shape on li1 or met1 and press Trace net.
+#
+#Every pair below is from sky130's own layers.py - the gdsfactory sky130 package, vendored in this repo at
+#OtherResources/Sky130/skywater130-main.zip. Four rows of the first version of this file were wrong: 69/20
+#was called "via" and given a via's role when it is met2, which would have shorted every met2 shape to
+#whatever it happened to overlap; 70/20 was called met2 when it is met3; 64/44 was called nsdm when it is
+#pwell; and 95/20 was called text when it is npc. The whole via stack above met1 was missing. None of it
+#showed, because every bundled example is a standard cell that stops at met1.
+#
+#The columns are layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize - everything
+#past the third is optional, so the blanks below are heights and colors this file has no opinion about, and
+#the two that say how a fill is drawn are left off entirely.
+#layer,datatype,name,color,height,thickness,role,fill
+#
+#The wells and implants. Named so the sidebar reads as a process rather than as numbers, and given no role:
+#none of them carries a signal, and a layer nothing says anything about takes no part in a trace.
+64,20,nwell,,,,,
+64,44,pwell,,,,,
+93,44,nsdm,,,,,
+94,20,psdm,,,,,
+95,20,npc,,,,,
+#
+#Diffusion and poly, which do carry one: a source/drain is a net node and so is a gate.
+65,20,diff,,,,conductor,
+65,44,tap,,,,,
+66,20,poly,,,,conductor,
+#
+#The contact from poly and diffusion up into local interconnect.
+66,44,licon1,,,,via,
+67,20,li1,,,,conductor,
+#
+#**No fill patterns here, on purpose.** They were in this file to show the feature off, and then this file
+#started being laid over every bundled example - which made a documented property of the app false: a layout
+#opens with every layer solid, and that covers downloaded SVGs and the cell-tree thumbnails as well as the
+#view. Four specs said so and were right. A pattern is a display choice somebody makes in the layer settings,
+#or carries in a layermap of their own; it is not a fact about sky130 the way a name and a role are.
+#
+#And the metal stack, each level joined to the next by its own via. This is the part a real net climbs.
+67,44,mcon,,,,via,
+68,20,met1,,,,conductor,
+68,44,via,,,,via,
+69,20,met2,,,,conductor,
+69,44,via2,,,,via,
+70,20,met3,,,,conductor,
+70,44,via3,,,,via,
+71,20,met4,,,,conductor,
+71,44,via4,,,,via,
+72,20,met5,,,,conductor,
+#
+#The pin and label purposes of li1 and met1, which the bundled cells carry. **No role on purpose.** A pin
+#shape sits exactly on the metal it names, so calling it a conductor would put a second copy of every pin
+#into the net it is already part of. A label needs no role at all: the name of a traced net is read from
+#whatever text lands on it, whatever that layer is said to be.
+67,5,li1.label,,,,,
+67,16,li1.pin,,,,,
+68,5,met1.label,,,,,
+68,16,met1.pin,,,,,
+#
+#Where a name goes when it belongs to the drawing rather than to a layer.
+83,44,text,,,,,

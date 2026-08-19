@@ -1,9 +1,38 @@
-﻿.svgContainer {
-    width: 100%;
-    max-width: 30em;
+﻿/*
+    A size of its own, because nothing around it has one any more.
+
+    It was width: 100% of a popup that was 80% of the window - so the code was as big as the screen was
+    wide. The popup is sized to what it holds now, which makes 100% circular: it asked its parent, its
+    parent asked back, and the answer both settled on was 125px. This is the one number here that is not
+    measured from something else.
+
+    **Off the height of the view, because that is what it has to fit inside.** A QR code is a thing you
+    point a phone at from across a desk, so what decides its size is the room. The view is the window less
+    the header, the bar and what sits under it - 224px at every window height, fixed chrome, measured rather
+    than assumed - and the popup is asked to fill 88% of that.
+
+    The subtraction is what is left after the code: the popup's own padding, the heading row and the margin
+    under it, which comes to 104. Written as a subtraction rather than folded into the fraction because
+    those are two different things, and the chrome does not scale with the window.
+
+    **The first attempt at this took a fraction of the view and stopped**, at 0.6 with the chrome ignored -
+    which came to 405px on a 900px window where 490 fits. Both were an improvement on the 320 before them
+    and neither was the size that was asked for.
+
+    A square code and a heading cannot fill a landscape box: at 88% of the height it is about half the width
+    of the view, and asking for more of the width means asking for more height than there is. Height is the
+    binding constraint and this takes all of it.
+
+    Capped, because past 640 it stops being about scanning and starts being a wall.
+*/
+.svgContainer {
+    width: min(calc((100vh - 224px) * 0.88 - 104px), 640px);
+    max-width: 100%;
 }
 
+    /*auto, so the code stays square off its own viewBox rather than off a parent with no height to give.*/
     .svgContainer > svg {
+        display: block;
         width: 100%;
-        height: 100%;
+        height: auto;
     }

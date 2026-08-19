@@ -1,0 +1,86 @@
+# Publishes the two packages, on a v* tag.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# The tag decides the version. Directory.Build.props carries the same number so a local `dotnet pack`
+# produces what the release would, and the two are checked against each other below rather than trusted:
+# tagging v0.2.0 without bumping the file is the mistake this exists to catch, and it is one that would
+# otherwise publish a package whose version nobody chose.
+#
+# Needs a NUGET_API_KEY secret. Without one the job fails at the push step, having already built and
+# tested - which is the right order for a step that cannot be undone: a version on nuget.org can be
+# unlisted but never replaced.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Pack and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The tag without its v, which is what the version has to be.
+      - name: Read the version off the tag
+        id: version
+        run: echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag and the build agree
+        run: |
+          declared=$(grep -oPm1 '(?<=<Version>)[^<]+' Directory.Build.props)
+          tagged="${{ steps.version.outputs.number }}"
+          if [ "$declared" != "$tagged" ]; then
+            echo "The tag says $tagged and Directory.Build.props says $declared."
+            echo "Bump the file, or tag the version that is in it."
+            exit 1
+          fi
+          echo "Both say $declared."
+
+      - run: dotnet restore
+
+      - run: dotnet build --configuration Release --no-restore
+
+      # The same filter CI uses, and for the same reason - see ci.yml.
+      - name: Test
+        run: dotnet test --configuration Release --no-build --filter "Needs!=KLayout"
+
+      - name: Pack
+        run: dotnet pack --configuration Release --no-build --output ./artifacts
+
+      # Last, because it is the only step here that cannot be taken back.
+      - name: Push to NuGet
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Release on GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/*
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            The library:
+
+            ```
+            dotnet add package GdsII --version ${{ steps.version.outputs.number }}
+            ```
+
+            The command-line tool:
+
+            ```
+            dotnet tool install -g GdsII.Cli --version ${{ steps.version.outputs.number }}
+            ```
+
+            Both are public domain — [The Unlicense](https://github.com/EECSB/GDSViewer/blob/master/UNLICENSE).
+            The `.nupkg` files below are the same ones on nuget.org.

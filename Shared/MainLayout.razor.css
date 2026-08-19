@@ -1,11 +1,42 @@
+/*
+    At least the height of the window, so the app reaches the bottom of it.
+
+    Without the minimum this column is only as tall as what is in it, and on a window taller than the
+    layout that left a strip of bare page under everything - the app appearing to stop partway down.
+*/
+/*
+    The height of the window, definitely - not merely at least it.
+
+    min-height leaves the height indefinite, and flex: 1 divides free space rather than imposing a size:
+    with nothing definite to divide, an over-tall child just made this taller and the page grew a
+    scrollbar instead of the view being made to fit. A definite height is what gives the min-height: 0
+    chain below something to shrink against.
+
+    dvh after vh, so a phone measures the window it actually has rather than the one it has with the
+    address bar hidden. The vh line stays as the fallback where dvh is not understood.
+*/
 .page {
     position: relative;
     display: flex;
     flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
 }
 
+/*
+    Takes what the top row leaves, and passes it on.
+
+    A column as well as a flex child, because filling the page is a chain and it only reaches as far as
+    the last link: main stretched to the bottom while the article inside it stayed as tall as its own
+    contents, so the height stopped one element short and left the rest of the window bare.
+*/
 main {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    /*Or it refuses to shrink below its contents, and the app pushes the page taller than the window.*/
+    min-height: 0;
 }
 
 .sidebar {
@@ -21,6 +52,12 @@ main {
     align-items: center;
     
 }
+
+/*
+    The rule that sets this dialog's heading and its closing notice apart is .popupDivider, in app.css.
+    It was here, as .aboutDivider, until the Examples popup wanted the same line - scoped styles do not
+    reach another component, so that copy silently got the browser's own inset <hr> instead.
+*/
 
 #logoText, #logoIcon {
     width: auto;

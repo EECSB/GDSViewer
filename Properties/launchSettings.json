@@ -1,4 +1,6 @@
 {
+  "//": "No LAN address is hard-coded here. One used to be, and Kestrel fails on any machine that does not happen to own it - SocketException 10049, 'The requested address is not valid in its context' - which is every machine but the one it was written on. Use the LAN profiles below to reach the app from a phone or a headset.",
+  "//iis": "This app is a standalone Blazor WebAssembly project and is run by its own host: dotnet run, or one of the four profiles below. There is no IIS Express profile and no iisSettings block, which the template left here and nothing ever used - Playwright and .claude/launch.json both pass --no-launch-profile and pin the port themselves. They were also a second web-server registration beside the self-host one, which is what Visual Studio was complaining about with \"An element with the same key but a different value already exists. Key: Microsoft.WebTools.ProjectSystem.WebServer.SelfHostWebServer\".",
   "profiles": {
     "http": {
       "commandName": "Project",
@@ -8,7 +10,7 @@
       },
       "dotnetRunMessages": true,
       "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
-      "applicationUrl": "http://localhost:5105;http://192.168.1.2:5105"
+      "applicationUrl": "http://localhost:5105"
     },
     "https": {
       "commandName": "Project",
@@ -18,23 +20,29 @@
       },
       "dotnetRunMessages": true,
       "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
-      "applicationUrl": "https://localhost:7246;http://localhost:5105;https://192.168.1.2:7246;http://192.168.1.2:5105"
+      "applicationUrl": "https://localhost:7246;http://localhost:5105"
     },
-    "IIS Express": {
-      "commandName": "IISExpress",
-      "launchBrowser": true,
+    "http (LAN)": {
+      "//": "Listens on every interface, so a phone or headset on the same network can reach it at http://<this machine's IP>:5105 - whatever that address happens to be. No browser is launched, since 0.0.0.0 is not somewhere to browse to.",
+      "commandName": "Project",
+      "launchBrowser": false,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}"
-    }
-  },
-  "iisSettings": {
-    "windowsAuthentication": false,
-    "anonymousAuthentication": true,
-    "iisExpress": {
-      "applicationUrl": "http://localhost:29854",
-      "sslPort": 44328
+      "dotnetRunMessages": true,
+      "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
+      "applicationUrl": "http://0.0.0.0:5105"
+    },
+    "https (LAN)": {
+      "//": "The same over HTTPS, which is what WebXR needs on a headset: an XR session is refused on an insecure origin unless it is localhost. Expect a certificate warning, since the dev certificate is issued for localhost rather than for this machine's address.",
+      "commandName": "Project",
+      "launchBrowser": false,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": true,
+      "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
+      "applicationUrl": "https://0.0.0.0:7246;http://0.0.0.0:5105"
     }
   }
 }

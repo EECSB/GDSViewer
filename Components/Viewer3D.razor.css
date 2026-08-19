@@ -7,8 +7,172 @@
     display: block;
 }
 
-.overlay {
+/*
+    The row that holds Enter VR, Enter AR and Open On Phone.
+
+    fit-content and centered on the middle rather than stretched across, because everything under here is
+    the canvas and the orbit controls read their drags off it - a full-width bar would swallow every drag
+    across this band of the view whether or not there was a button under the pointer.
+
+    Nothing sits under it now. The layer-distance slider used to, as an .overlay pinned to the bottom of the
+    scene - the same mistake the 2D view's opacity slider was: a control laid over the very thing it changes,
+    in a view whose whole surface is a drag target. It is a row under the layer list in the sidebar now,
+    where the 2D view keeps its own, and that rule went with it.
+
+    So the row comes down with it. The five ems were the height of the slider it had to clear, and with
+    that gone they were five ems of nothing - the buttons floated in the middle of the lower half of a view
+    they are meant to sit at the foot of. One em is the same margin the download camera keeps in 2D.
+*/
+.xrButtons {
     position: absolute;
-    bottom: 3%;
-    left: calc(50% - 7em);
+    bottom: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+
+    display: flex;
+    align-items: stretch;
+    gap: 1em;
+    width: fit-content;
+}
+
+/*
+    Ours, made to match the two three.js builds beside it.
+
+    These values are three.js's own stylizeElement, repeated rather than shared: they are inline styles on
+    elements a library creates, so there is nothing to inherit from and no hook to hang a rule on. The
+    width matches the disabled state of the other two, which is the width they have on a desktop - the
+    only place this button is worth pressing, since a headset can just open the page it is already on.
+*/
+.xrButton {
+    width: 150px;
+    padding: 12px 6px;
+    border-radius: 4px;
+    text-align: center;
+    outline: none;
+    cursor: pointer;
+
+    /*
+        **Out of the way, and still readable.**
+
+        three.js's own are white on a tenth of black at half opacity, which reads on a dark scene and
+        vanishes on a light one - and the default scene here is light gray, so these were a smudge until
+        the pointer found them. A solid dark panel fixed that and overcorrected: four filled slabs across
+        the foot of the view are the loudest thing on screen, and what they are is three ways out of it
+        and a camera toggle.
+
+        So: barely there, but drawn in ink rather than in white. The wash is enough to keep dark text off
+        a dark backdrop, and the border and the text carry the legibility that the fill used to.
+    */
+    border: 1px solid rgba(0, 0, 0, 0.55);
+    background: rgba(255, 255, 255, 0.42);
+    color: #16181c;
+
+    /*
+        The weight three.js uses, kept. A heavier one reads better and does not fit: "VR NOT SUPPORTED" is
+        the longest label any of these four carries and it wraps to two lines at 600, which makes one
+        button in a row of four taller than the rest. What these needed was contrast, not weight, and the
+        panel behind them is where that comes from - so nowrap as well, since the next label somebody adds
+        will be longer than this one.
+    */
+    font: normal 13px sans-serif;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+
+    /*So the icon sits on the middle of the text rather than on its baseline.*/
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+}
+
+.xrButton:hover {
+    background: rgba(255, 255, 255, 0.75);
+    border-color: rgba(0, 0, 0, 0.8);
+}
+
+/*
+    Open On Phone, not offered on a phone.
+
+    The button shows a QR code of this page so a desktop can hand the layout to a phone or a headset. On the
+    phone itself it is a code pointing at the page you are already reading, which is the one device it can
+    do nothing for - and it is the widest of the three buttons on the narrowest screen they have to fit on.
+
+    hover: none *and* pointer: coarse, not either alone. A touchscreen laptop has a coarse pointer and a
+    mouse, and would lose a button it can use; the pair is the test for touch being the only way in. Enter
+    VR and Enter AR stay, because a phone genuinely can do AR.
+
+    CSS rather than a check in code: it is which controls to show at a size, which is what a media query is,
+    and the alternative is interop reporting the device back to Blazor to render one button differently.
+    The three.js interop finds this button by id to insert the other two before it, and getElementById does
+    not care that it is not displayed - so nothing there changes.
+*/
+@media (hover: none) and (pointer: coarse) {
+    #openOnPhone {
+        display: none;
+    }
+}
+
+/*
+    The icon is drawn black, and is left that way.
+
+    It was inverted to white, for the lettering three.js's own buttons use - which was right until these
+    went back to a pale wash with dark text on it, at which point the one white thing left on them was
+    invisible. Taking the filter off is the whole fix: the file was already the right color.
+*/
+.xrButtonIcon {
+    width: 15px;
+    height: 15px;
+}
+
+/*
+    Admire, in the far corner rather than in the row.
+
+    It takes .xrButton's look whole - the same white outline over almost nothing, the same height, the same
+    margin off the edge - and changes only where it is and how wide. The row it is beside is centered and
+    holds the ways of leaving this view for a headset or a phone; this does something to the view you are
+    in, so it goes where nothing else is.
+
+    Sized to the word rather than to the 150px the other three share, because that width is what makes three
+    buttons of different names line up as a set and this is not one of them.
+*/
+.admireButton {
+    position: absolute;
+    z-index: 9999;
+
+    /*
+        rem, not em. The other buttons' row is 1em off the edge at the page's own 16px, and this button
+        carries a 13px font from .xrButton - so 1em here is 13, and the two end up three pixels apart on a
+        line they are meant to share. The root's em is the one that means what the row meant.
+    */
+    bottom: 1rem;
+    right: 1rem;
+
+    width: auto;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+/*
+    Running, said as the one button down here that is not a dark panel.
+
+    The picture cannot say it - the icon is a still drawing of a moving camera either way - and the camera
+    moving is easy to miss on a layout with no landmarks in it. A color rather than a brightness, because
+    the buttons are legible at rest now and "slightly brighter" is not a state anybody notices.
+*/
+.admireButton.admireOn {
+    background: rgba(45, 108, 223, 0.85);
+    border-color: rgba(0, 0, 0, 0.55);
+    color: #fff;
+}
+
+.admireButton.admireOn:hover {
+    background: rgba(45, 108, 223, 0.95);
+    border-color: rgba(0, 0, 0, 0.8);
+}
+
+/*So the orbit sits on the middle of the word, like the QR code beside it.*/
+.admireIcon {
+    width: 15px;
+    height: 15px;
 }

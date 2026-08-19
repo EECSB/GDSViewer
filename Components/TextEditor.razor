@@ -1,27 +1,94 @@
-﻿@using GDSViewer.Models;
-
-@*@using BlazorMonaco;
-@using BlazorMonaco.Editor;
-@using BlazorMonaco.Languages;*@
+﻿@using GdsII;
+@using GDSViewer.Models;
 
 @inject IJSRuntime JSR;
 
-<div id="gdsTextEditor"></div>
-@*<textarea class="numbered" @bind="GdsAsText">@GdsAsText</textarea>*@
+@*
+    The editor, and under it whatever the last save had to say.
+
+    A strip rather than a dialog. What a refused save reports is a line number and what was wrong with it,
+    and an alert is the worst place to put that: it covers the text you need to look at, it is gone the
+    moment you dismiss it, and you cannot read it and edit at the same time. Down here it stays until the
+    next save, next to the editor it is about.
+*@
+<div class="editorPane">
+    <div id="gdsTextEditor"></div>
+
+    @if (saveMessage.Length > 0)
+    {
+        @*role=alert, so a screen reader announces it - nothing else on the page says a save was refused.*@
+        <div class="editorMessage @(saveFailed ? "editorMessageError" : "editorMessageSaved")" role="alert">
+            <span class="editorMessageText">@saveMessage</span>
+
+            <button class="editorMessageDismiss" @onclick="dismissSaveMessage" title="Dismiss">&times;</button>
+        </div>
+    }
+</div>
 
 
 @code {
-    #region Vraiables ****************************************
+    #region Variables ****************************************
 
-    private bool isFirstRender = true;
+    ///<summary>Whether Monaco exists yet, which is what says the dump can be pushed into it.</summary>
+    private bool isEditorReady = false;
+
+    ///<summary>
+    ///The dump Monaco was last given, so a render that changes nothing does not push over what is on
+    ///screen - and so that a dump arriving before the editor did is not lost.
+    ///</summary>
+    private string editorText = "";
 
     public string GdsAsText { get; set; } = "";
 
-    [Parameter]
-    public Pages.Viewer Parent { get; set; }
+    ///<summary>
+    ///What the last save had to say, and whether it was a refusal. Empty until one has been tried.
+    ///</summary>
+    private string saveMessage = "";
+    private bool saveFailed = false;
 
+    //Null until the shell has a file open, which is the state the view starts in.
     [Parameter]
-    public GDS Gds { get; set; }
+    public GDS? Gds { get; set; }
+
+    ///<summary>
+    ///Raised after a save has changed the file, so the shell can re-read the layers and redraw. An event
+    ///rather than a reference back to the shell, the same way the toolbar goes the other direction: this
+    ///view announces what happened and does not decide what it means.
+    ///</summary>
+    [Parameter]
+    public EventCallback OnFileChanged { get; set; }
+
+    ///<summary>This view's own toolbar controls. The shell renders them; it does not know what they are.</summary>
+    public RenderFragment Toolbar => (__builder) =>
+    {
+        @*
+            A blue square with a white floppy on it, like everything else in this bar.
+
+            It was a black PNG on a button with its padding and border taken away - the last control in the
+            app that was a picture of a button rather than one, sitting in a row that had since become
+            squares of one size. Drawn inline like the rest, so it takes the button's own color and stays
+            sharp at any zoom.
+        *@
+        <div class="col-1 toolbarItem toolbarGroupEnd" style="align-self: end;">
+            <button id="saveGdsText" class="buttonStyle2 toolbarButton buttonIcon fileButton" @onclick="saveChanges"
+                    aria-label="Save"
+                    title="Read these records back into the loaded file. All or nothing - a line that cannot be read is reported by number and the file is left as it was">
+                @*
+                    The shape of the thing: a cut corner where the write-protect notch is, the shutter across
+                    the top and the label across the bottom. Three parts is all that survives at fifteen
+                    pixels, and they are the three that make it a floppy rather than a square.
+                *@
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"
+                          d="M2.2 2.2h8.6l3 3v8.6H2.2z" />
+                    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"
+                          d="M5 2.2v3.6h4.8V2.2" />
+                    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"
+                          d="M4.4 13.8V9.2h7.2v4.6" />
+                </svg>
+            </button>
+        </div>
+    };
 
     #endregion ***********************************************
 
@@ -29,37 +96,50 @@
 
     #region Initialization ***********************************
 
-    private async Task InitializeToolbar()
-    {
-        Parent.ClearToolbarItems();
-
-        RenderFragment saveButton = (__builder) =>
-        {
-            <div class="col-1 toolbarItem" style="align-self: end;">
-                <button @onclick="saveChanges" style="padding: 0; border: none;">
-                    <img style="width: 25px;" src="./resources/images/icons/save.png" />
-                </button>
-            </div>
-        };
-
-        Parent.AddToolbarItem(saveButton);
-    }
-
     protected override async Task OnInitializedAsync()
     {
         await Render(Gds, null);
-
-        await InitializeToolbar();
     }
 
-    protected override async void OnAfterRender(bool firstRender)
+    //Async Task rather than async void: an exception out of a void one cannot be awaited by anything, so
+    //it never reaches Blazor's error handling and is lost as an unobserved rejection.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        isFirstRender = firstRender;
-
         if (firstRender)
         {
-            await JSR.InvokeVoidAsync("InitializeMonaco", GdsAsText, "GDS");
+            //Captured before the await, not after. Monaco is fetched lazily through its own AMD loader,
+            //so this call is pending for a second or more - and a link that opens straight into this view
+            //loads its file during exactly that gap. Reading GdsAsText afterwards would record the new
+            //dump as the one Monaco was given, when it was handed the empty one.
+            string initial = GdsAsText;
+
+            await JSR.InvokeVoidAsync("InitializeMonaco", initial, "GDS");
+
+            isEditorReady = true;
+            editorText = initial;
+
+            //Nothing renders again after this, so if the file did arrive during the wait, this is the
+            //only chance to put it in.
+            if (GdsAsText != editorText)
+            {
+                editorText = GdsAsText;
+
+                await loadEditor(GdsAsText);
+            }
+
+            return;
         }
+
+        //Every push goes through here rather than through Render, because the file and the editor can
+        //arrive in either order. Opening a link straight into this view builds the editor first, with
+        //nothing loaded, so InitializeMonaco is handed an empty dump and the real one turns up a render
+        //later - which is exactly the case that used to leave the editor blank.
+        if (!isEditorReady || GdsAsText == editorText)
+            return;
+
+        editorText = GdsAsText;
+
+        await loadEditor(GdsAsText);
     }
 
     #endregion ***********************************************
@@ -68,25 +148,82 @@
 
     #region Methods ******************************************
 
-    private async Task saveCurrent()
-    {
-        await saveChanges();
-    }
-
     private async Task loadEditor(string text)
     {
         await JSR.InvokeVoidAsync("SetMonacoContent", text);
     }
 
+    ///<summary>
+    ///Reads the buffer back into the loaded file. A text that will not parse leaves the file untouched -
+    ///Deserialize is all or nothing - so the message is all that is needed to recover: fix the line it
+    ///names and save again.
+    ///</summary>
     private async Task saveChanges()
     {
         GdsAsText = await JSR.InvokeAsync<string>("GetMonacoContent");
 
-        Gds.Deserialize(GdsAsText);
+        //Nothing to save the edit back into until a file is open.
+        if (Gds is null)
+            return;
+
+        try
+        {
+            Gds.Deserialize(GdsAsText);
+        }
+        catch (Exception ex)
+        {
+            //One line rather than the two the dialog used. The message names the record and what was wrong
+            //with it, and it now sits beside the text it is about rather than over the top of it.
+            report($"This text could not be read as GDSII, so the file is unchanged. {ex.Message}", failed: true);
+
+            return;
+        }
+
+        //Set before the callback, not after. OnFileChanged renders the shell and comes back through
+        //Render, and reporting afterwards would be reporting into a component that has already redrawn.
+        report($"Saved. The file now holds {Gds.Records.Count} records.", failed: false);
+
+        //An edit can add or remove a layer, so the shell's sidebar and the other views are out of date
+        //until it re-reads the file. Without this the saved change appears not to have happened.
+        await OnFileChanged.InvokeAsync();
     }
 
-    public async Task Render(GDS gds, List<CheckboxItem> showLayers)
+    private void report(string message, bool failed)
     {
+        saveMessage = message;
+        saveFailed = failed;
+
+        StateHasChanged();
+    }
+
+    private void dismissSaveMessage()
+    {
+        saveMessage = "";
+    }
+
+    ///<summary>
+    ///Nothing to remember. What this view edits is the file itself, and that is saved as the file rather
+    ///than as a setting - so restoring a session brings the edit back through the bytes, not through here.
+    ///</summary>
+    public void WriteSettings(SavedSession session)
+    {
+    }
+
+    public Task ApplySettings(SavedSession session)
+    {
+        return Task.CompletedTask;
+    }
+
+    public async Task Render(GDS? gds, List<CheckboxItem>? showLayers, FlattenedLayout? prepared = null)
+    {
+        //A different file, so the last save's message is about something that is no longer on screen.
+        //
+        //By instance rather than by the text, which cannot tell the two apart: a save that succeeds also
+        //changes the dump, and Deserialize edits the file in place - so the same object coming back is
+        //this file being redrawn, and a new one is a different file being opened.
+        if (gds is not null && !ReferenceEquals(gds, this.Gds))
+            dismissSaveMessage();
+
         //Save if needed for re-render.
         if (gds is not null)
             this.Gds = gds;
@@ -97,9 +234,8 @@
 
         GdsAsText = Gds.AsText();
 
-        if (!isFirstRender)
-            await loadEditor(GdsAsText);
-
+        //Rendering is what pushes it into Monaco, in OnAfterRenderAsync - so this does not have to know
+        //whether the editor exists yet.
         StateHasChanged();
     }
 

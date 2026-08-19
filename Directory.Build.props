@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    What the projects here have in common, so it is written once.
+
+    The version above all. It was in three places: GdsII.Cli.csproj, the string the tool prints when asked
+    for its version, and whatever a package would have carried. Three copies of a number that has to agree
+    is two copies too many, so everything now takes it from here - including the tool's own output, which
+    reads it off its assembly rather than off a constant somebody has to remember to change.
+
+    Nothing here makes anything packable. That is decided per project, because two of the four should
+    never be pushed anywhere: the app is a website and the tests are tests.
+  -->
+  <PropertyGroup>
+    <!--
+      1.0.0 because the API is one worth committing to, not because nothing will be added to it.
+
+      A first package at 0.x says "expect this to move under you", and the parts a consumer touches -
+      reading a file, walking the model, flattening, writing either format - have been settled for a
+      while and are pinned by 827 tests against 897 real layouts. Anything that would break them is a 2.0,
+      which is what the number is for.
+    -->
+    <Version>1.0.0</Version>
+
+    <Authors>EECSB</Authors>
+    <Copyright>Public domain (The Unlicense)</Copyright>
+
+    <PackageProjectUrl>https://github.com/EECSB/GDSViewer</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/EECSB/GDSViewer</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!--Off by default; the two that are meant to be published turn it back on.-->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

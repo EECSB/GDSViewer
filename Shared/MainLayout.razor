@@ -1,7 +1,22 @@
 ﻿@inherits LayoutComponentBase
 
+@using GDSViewer.Models
+
+@inject NavigationManager Navigation
+
 <div class="page">
     <main>
+        @*
+            The title bar, unless the page hosting this asked for it gone.
+
+            An embed is already inside somebody's site, under their own header - a second banner saying what
+            the app is called is a band of somebody else's branding across the middle of their page. banner=
+            false takes it, and About goes with it, since About lives in it.
+
+            Left out rather than hidden, so nothing in it is tabbable.
+        *@
+        @if (showBanner)
+        {
         <div class="top-row px-4 chipGradient2">
 
             <div style="width: -webkit-fill-available;">
@@ -11,28 +26,70 @@
             </div>
 
             <div>
-                <div style="height: 100%; padding: 0.4em; font-weight: 600; color: white;" @onclick="() => { showAbout = true; }">
+                <div style="height: 100%; padding: 0.4em; font-weight: 600; color: white; cursor: pointer;" title="What this app is, who made it, and the terms it is offered under" @onclick="() => { showAbout = true; }">
                     About
                 </div>
 
                 @if (showAbout)
                 {
-                    <div class="popupDiv popupZIndex_0" style="height: fit-content; width: 80%; left: 10%;">
+                    @*
+                        No inline placement. It used to carry left: 10% and width: 80% - and .popupDiv had
+                        already pulled it back half its own width, so a tenth of the way in came out as a
+                        tenth in *minus half a popup* and it sat off to one side of the window. The class
+                        centers it; the width it worked out for itself all along, since the cap was under 80%
+                        of any window this is read on. The same two lines were on the QR code.
+                    *@
+                    <div class="popupDiv popupZIndex_0">
                         <div class="col">
 
-                            <div class="row mb-5">
-                                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold; color: white;">
+                            @*
+                                The heading was white on a white popup, so the only thing at the top of this
+                                was the close button and a gap where a title should be.
+                            *@
+                            <div class="row">
+                                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
                                     About
                                 </div>
 
                                 <div class="col d-flex justify-content-end">
-                                    <button class="buttonStyle2" @onclick="() => { showAbout = false; }">X</button>
+                                    <button class="buttonStyle2 closeButton" @onclick="() => { showAbout = false; }" title="Close">&times;</button>
                                 </div>
                             </div>
 
-                            <div class="row mb-5">
-                                <p>This is a free and open source online GDSII file viewer/editor. It allows you to view GDS files in 2D/3D, edit them in 2D or directly via a text editor.</p>
-                                <p>Link to the <a href="https://github.com/EECSB/GDSViewer" target="_blank">Github repository</a>. Find out more about the project in my blog post <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank">here</a>.</p>
+                            @*Bracketing the heading off from the body, the way the one further down brackets the caveat.*@
+                            <hr class="popupDivider" />
+
+                            <div class="row">
+                                <p>This is a free and open source online layout viewer/editor. It allows you to view a chip layout in 2D/3D, edit it in 2D or directly via a text editor.</p>
+
+                                @*
+                                    What it opens and what it writes, which are not the same list.
+
+                                    Worth saying out loud rather than leaving to be discovered at the Open
+                                    dialog: it read GDSII and nothing else for most of its life, and
+                                    somebody who has a drawing in another format has no reason to try.
+
+                                    DXF is on one side only, and that is a fact about the app rather than an
+                                    oversight - the reader exists and the writer does too, but a DXF that
+                                    came in is GDSII in memory by the time anything is written, so what
+                                    comes out under a .dxf name is a conversion rather than the file back.
+                                *@
+                                <p class="mb-1"><b>Opens</b> GDSII (.gds), OASIS (.oas) and DXF (.dxf), in both the ASCII and binary flavors of the last.</p>
+                                <p><b>Writes</b> GDSII, OASIS and DXF, plus SVG images of the 2D view and STL, OBJ or GLTF models of the 3D one.</p>
+
+                                <p>Your files stay on your machine - nothing is uploaded anywhere.</p>
+
+                                @*
+                                    Two lines rather than one sentence with two links in it. They go to
+                                    different places for different reasons - the code, and the write-up -
+                                    and run together they read as one aside with a link buried at each end.
+                                *@
+                                <p class="mb-1">Link to the <a href="https://github.com/EECSB/GDSViewer" target="_blank">Github repository</a>.</p>
+                                <p>Find out more about the project in my blog post <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank">here</a>.</p>
+
+                                <hr class="popupDivider" />
+
+                                <p><b>Use it at your own discretion.</b> There is no guarantee that what you see here is correct - it may have bugs, and it may read or draw a file differently to the tool that wrote it. Please double-check anything that matters against other software before relying on it.</p>
                             </div>
 
                         </div>
@@ -41,14 +98,95 @@
             </div>
 
         </div>
+        }
 
 
-        <article class="content px-4">
-            <GDSViewer.Pages.Viewer></GDSViewer.Pages.Viewer>
-        </article>
+        @*Whatever the Router resolved, rather than the viewer named directly - which is what let the Router resolve nothing and made NotFound unreachable.*@
+        @*
+            The layout itself, handed to whatever it wraps.
+
+            The banner is the layout's and the button that hides it is the page's - a switch about how much
+            room the drawing gets, which is where the full-screen one already is. A cascade rather than a
+            parameter, because a layout takes none.
+        *@
+        <CascadingValue Value="this" IsFixed="true">
+            <article class="content px-4">
+                @Body
+            </article>
+        </CascadingValue>
     </main>
 </div>
 
 @code {
     private bool showAbout = false;
+
+    ///
+    ///Whether to draw the title bar at all.
+    ///
+    ///Read straight off the address here rather than passed down from the page, because this is the layout -
+    ///it wraps whatever the router resolved and has no parameters of its own. One parse of one value.
+    ///
+    ///On unless the address says otherwise, which is what an app that is not embedded should be.
+    ///
+    ///
+    ///Viewer-only takes it too, unless the address says otherwise.
+    ///
+    ///"Just the canvas" is what that mode was asked for, and a band of branding across the top of somebody
+    ///else's page is not the canvas. banner=true still puts it back, so the two are separable for anyone
+    ///who wants the header and nothing else.
+    ///
+    private bool showBanner
+    {
+        get
+        {
+            if (bannerHiddenByHand)
+                return false;
+
+            return BannerCanShow;
+        }
+    }
+
+    ///<summary>
+    ///Whether the banner is the page's to show at all, which is what a button that toggles it needs to know.
+    ///
+    ///Not the same question as <see cref="BannerShowing"/>. That one is false while somebody has it put
+    ///away and true again the moment they bring it back; this is false only where the address said no
+    ///banner - a state no press can change, and so a state the button should not be offered in. The bar had
+    ///only the first to ask, so an embed that said banner=false got a switch with one position.
+    ///</summary>
+    public bool BannerCanShow
+    {
+        get
+        {
+            var settings = Embedding.ReadFrom(Navigation.Uri);
+
+            if (settings.Banner is bool asked)
+                return asked;
+
+            return settings.Mode != AppMode.Viewer;
+        }
+    }
+
+    ///
+    ///Whether somebody has put the banner away, which beats what the address says.
+    ///
+    ///One way round only: pressing the button hides it and pressing again shows it, but "shown" still means
+    ///whatever the address decided - so an embed that asked for no banner does not grow one because a button
+    ///was pressed twice. See BannerShowing, which is what the button is lit by.
+    ///
+    private bool bannerHiddenByHand = false;
+
+    ///<summary>Whether the banner is on screen, for the button that toggles it.</summary>
+    public bool BannerShowing
+    {
+        get { return showBanner; }
+    }
+
+    ///<summary>Puts the banner away, or brings it back. Called by the page; see the cascade above.</summary>
+    public void ToggleBanner()
+    {
+        bannerHiddenByHand = !bannerHiddenByHand;
+
+        StateHasChanged();
+    }
 }

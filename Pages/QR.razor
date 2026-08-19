@@ -5,20 +5,25 @@
 
 @if (!string.IsNullOrEmpty(QrCodeSVG))
 {
-    <div class="popupDiv popupZIndex_0" style="height: fit-content; width: 80%; left: 10%;">
+    <div class="popupDiv popupZIndex_0 popupInView">
         <div class="col">
 
-            <div class="row mb-5">
+            @*
+                mb-3 rather than mb-5, twice. Three rems above the code and three below it is 96 pixels of
+                nothing in a popup whose whole job is to be as big as the view will allow - and every pixel
+                of it came off the code, since what decides the code's size is the height left over.
+            *@
+            <div class="row mb-3">
                 <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
                     QR Code
                 </div>
 
                 <div class="col d-flex justify-content-end">
-                    <button class="buttonStyle2" @onclick="() => { QrCodeSVG = string.Empty; }">X</button>
+                    <button class="buttonStyle2 closeButton" @onclick="() => { QrCodeSVG = string.Empty; }" title="Close the QR code">&times;</button>
                 </div>
             </div>
 
-            <div class="row mb-5">
+            <div class="row mb-3">
                 <div class="d-flex justify-content-center">
                     <div class="svgContainer">
                         @((MarkupString)QrCodeSVG)
