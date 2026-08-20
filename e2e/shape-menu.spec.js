@@ -176,7 +176,7 @@ test.describe('raising it', () => {
         //Where the last shape was added, which is the one point known to be inside the selection.
         //
         //Not where the first was: Control toggles, and these shapes overlap, so a second click aimed at a
-        //neighbour can land on the first one again and take it back out. The right-click then falls on a
+        //neighbor can land on the first one again and take it back out. The right-click then falls on a
         //shape that is genuinely not chosen, which correctly replaces the selection - and the test reads
         //that as the rule being broken. It did, first time.
         //
@@ -477,7 +477,7 @@ test.describe('how long it is', () => {
         //Everything the band crosses, which is as wide as a selection gets.
         //
         //Not Control-clicking each shape in turn: Control *toggles*, and these shapes overlap, so a click
-        //aimed at one lands on a neighbour already in the selection and takes it back out. How many were
+        //aimed at one lands on a neighbor already in the selection and takes it back out. How many were
         //chosen at the end of that loop depended on the order they happened to be drawn in, which is a test
         //that passes and fails on its own.
         //

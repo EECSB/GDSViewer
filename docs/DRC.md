@@ -13,6 +13,8 @@ Phases 1 to 7 are built. What follows is the design and the reasoning behind it,
 - [What this engine cannot check](#what-this-engine-cannot-check)
 - [Antenna rules](#antenna-rules)
 - [Order of work](#order-of-work)
+- [The panel](#the-panel)
+- [What the comparison against KLayout said](#what-the-comparison-against-klayout-said)
 - [What it costs](#what-it-costs)
 - [Testing](#testing)
 
@@ -158,6 +160,9 @@ own boundary. A test on two solid blocks side by side caught it.
 
 ## The deck format
 
+**To actually write one, see [WRITING-A-DECK.md](../wwwroot/resources/WRITING-A-DECK.md)** - the same grammar as a reference you
+can hand to an AI along with a PDK document. What follows is why it has this shape.
+
 Line-based, `#` comments, read as far as it parses — the same shape and the same failure behavior as
 [`LayerNames`](../GdsII/LayerNames.cs), which is deliberate: a user who has already written a layermap for
 this app should recognize the file.
@@ -264,7 +269,7 @@ ground, same distances, coalesced there and not here. Closing it means merging p
 other along a boundary, which changes the shape of the answer rather than its correctness. Pinned by a test
 so it stays a known limit rather than a surprise.
 
-### What it costs
+### What the edge engine costs
 
 **Faster than sizing, not slower.** On the 320,000-element generated layout, one width rule over 96,000
 shapes: **5.2 seconds** against the sizing engine's 26.4. Sizing pays for a merge, an opening and a boolean
@@ -348,8 +353,16 @@ keeps `ElementSource` so a flat shape can still name the cell it came from.
 
 ## The panel
 
-**The layer panel showing something else**, rather than a second panel beside it. The Rules button in the
-toolbar switches it; the title changes with it, and the layer button switches back.
+**The layer panel showing something else**, rather than a second panel beside it. **Both names sit in the
+heading and the one in force is lit** — press "Rules" and the rules come up, press "Layers" and they go
+back. Pressing the name you are already on leaves you there, because the pair names both lists rather than
+describing a swap.
+
+It went through two worse shapes first. A third button in the toolbar said nothing about which panel it
+would change, in a bar that was already crowded. A single heading that swapped its own word fixed that but
+could not say a second list existed at all — it needed arrows and a tooltip to hint, and anyone who never
+hovered never found out. Two words say so in the first glance. Outside the 2D view it goes back to being a
+plain heading, since there is nothing to switch to.
 
 They are the same shape — a list down the side of the drawing with a file loaded into it — and they answer
 different questions about the same layout, so they are never both wanted at once. Import and Export keep
@@ -358,8 +371,13 @@ the text that came in rather than the parse printed out, because a deck round-tr
 would come back without its comments, its blank lines and any rule this build refused, and Export would
 quietly be a way of losing part of your own file.
 
-Under the controls sit **Check** and **continuous**. The switch is beside the button rather than in a
-settings menu because it changes what the button means: with it on there is nothing left to press, and the
+**The starter deck is offered in the empty list, not in that row.** It used to sit beside Import and
+Export, which meant it was still there with thirty rules on screen — spending width in a crowded row to
+offer a deck you already have. In the empty state it is the only thing to press, which is exactly when
+somebody wants it.
+
+Under a rule sit **DRC Check** and **continuous DRC check**. The switch is beside the button rather than in
+a settings menu because it changes what the button means: with it on there is nothing left to press, and the
 button says so by going disabled. Turning it on runs a check straight away — the switch claims the panel is
 current, and a stale result underneath it would say otherwise.
 
@@ -413,7 +431,11 @@ about the code.
 ## What it costs
 
 Measured with `gds bench` over a generated layout of **320,000 elements**, checking one width rule against
-the busiest layer's 96,000 shapes.
+the busiest layer's 96,000 shapes. **Both rows are historical**: the violations in the second are the
+round-trip artifacts the sizing fix later removed, so that row describes an engine state that no longer
+exists and cannot be re-measured. The nearest current invocation is
+`gds bench --shapes 20000 --columns 4 --rows 4 --corners 8`, whose busiest layer holds 40,896 shapes -
+the original run's exact arguments were not recorded, which is why these two shapes differ.
 
 | | Before | After |
 |---|---|---|
@@ -434,9 +456,11 @@ instead of a walk.
 for a merge, an opening and a boolean over 96,000 shapes. Halving it would mean tiling the work or not
 doing it flat, both of which are the hierarchical question below.
 
-`gds bench` runs both cases — a limit nothing violates and a limit a great deal does — because a single
-timing over a clean layout reports none of this. A run that finds nothing never attributes anything, and
-that is exactly the run somebody would think to measure.
+`gds bench` still runs both decks, and **the loud one finds nothing any more**: its limit sits under every
+shape's bounding box, and the sliver violations it used to catch were exactly the round-trip artifacts the
+sizing fix removed. Since then no instrument exercises attribution at all - a run that finds nothing never
+attributes anything - so the 1.5-second cost above is pinned by nothing and would drift silently if the
+grid regressed. The bench's violation leg needs a deck that real geometry actually fails.
 
 ## Testing
 

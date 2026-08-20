@@ -169,8 +169,19 @@
                 two - it is about the gesture in progress - and the result comes back the moment the shape
                 is finished, which is also when it would have been rechecked anyway.
             *@
-            <div id="drcNotice" class="drawHint @(NoticeIsFault ? "drawHintFault" : "drawHintClear")">
-                @Notice
+            <div id="drcNotice" class="drawHint viewNotice @(NoticeIsFault ? "drawHintFault" : "drawHintClear")">
+                <span>@Notice</span>
+
+                @*
+                    A way to put it away, which the drawing hints above do not need.
+
+                    Those come and go with the tool in hand - stop drawing and the line goes. This one is
+                    about a run that has finished, so nothing else is going to take it off the drawing, and
+                    it sits over the layout somebody may now want to look at. The markers stay: this closes
+                    the sentence, not the result. Clear in the panel is what takes the marks off.
+                *@
+                <button id="drcNoticeClose" class="viewNoticeClose" @onclick="dismissNotice"
+                        aria-label="Close this message" title="Close">&times;</button>
             </div>
         }
 
@@ -1687,6 +1698,17 @@
     ///</summary>
     [Parameter]
     public bool NoticeIsFault { get; set; }
+
+    ///<summary>
+    ///Raised when the cross on that notice is pressed. The shell holds the text, so it is what clears it.
+    ///</summary>
+    [Parameter]
+    public EventCallback OnNoticeDismissed { get; set; }
+
+    private async Task dismissNotice()
+    {
+        await OnNoticeDismissed.InvokeAsync();
+    }
 
     ///<summary>
     ///Raised when one of this view's own controls moves, so the shell can keep the session current.

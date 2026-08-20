@@ -245,6 +245,8 @@ GDSViewer/
     DOCUMENTATION.md            # This file
     FEATURES-DEMO.md            # Every feature, in pictures
     CLI.md, NUGET.md            # The command-line tool, and the package
+    DRC.md                      # Design rule checking: the engine and what it cannot do
+    (the two authoring guides live in wwwroot/resources, so the app can hand them out)
     THIRD-PARTY-NOTICES.md      # Everyone else's terms, carried along
     images/                     # The screenshots the two above are built from
   CLAUDE.md                     # Code style guidelines
@@ -4119,9 +4121,9 @@ Three layers, because they catch different things:
 
 | Layer | Where | Run with | Count | Needs |
 |---|---|---|---|---|
-| C# unit and corpus | [`tests/`](../tests) | `dotnet test` | 1,687 | nothing |
+| C# unit and corpus | [`tests/`](../tests) | `dotnet test` | 1,952 | nothing |
 | Browser-JS unit | [`jstests/`](../jstests) | `npm test` | 41 | Node only, no packages |
-| End-to-end | [`e2e/`](../e2e) | `npm run test:e2e` | 743 | `npm install` and a browser |
+| End-to-end | [`e2e/`](../e2e) | `npm run test:e2e` | 801 | `npm install` and a browser |
 
 On CI the C# run is 1,663: the twenty-four tests marked `Needs=KLayout` use it as a second implementation to
 check this one against, and it is a desktop EDA tool that is not on a runner.
@@ -4425,7 +4427,7 @@ accepts. The view simply stopped drawing, with nothing in the console.
 
 [`e2e/`](../e2e) drives a real browser with **Playwright**, against the app served by
 [`playwright.config.js`](../playwright.config.js) — which starts `dotnet run` itself, with
-`--no-launch-profile` for the same reason the manual instructions use it. 743 specs across launch, the 2D
+`--no-launch-profile` for the same reason the manual instructions use it. 801 specs across launch, the 2D
 and 3D views, the text editor and its save path, the URL state, everything that leaves the app, the 3D
 view's own controls, naming and coloring layers, the process stack, opening an OASIS file, how the app fits
 the window, the title bar and the two sidebars, the cell tree, the fill patterns and how they are colored and
@@ -4507,9 +4509,9 @@ Two habits the specs are written with, both learned by getting them wrong first:
 ```bash
 dotnet run           # the app, on http://localhost:5105
 
-dotnet test          # 1,731 C# unit and corpus tests
+dotnet test          # 1,952 C# unit and corpus tests
 npm test             # 41 browser-JS units, Node's own runner, nothing to install
-npm run test:e2e     # 743 Playwright end-to-end specs; it starts the app itself
+npm run test:e2e     # 801 Playwright end-to-end specs; it starts the app itself
 npm run screenshots  # retakes the documentation's screenshots
 ```
 

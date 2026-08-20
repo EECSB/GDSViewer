@@ -116,7 +116,7 @@ test.describe('hiding the title bar', () => {
         expect(pair.gap).toBeGreaterThan(2);
         expect(pair.gap).toBeLessThan(12);
 
-        //The same square as its neighbour, on one line with it.
+        //The same square as its neighbor, on one line with it.
         expect(pair.sizes[0]).toBeCloseTo(pair.sizes[1], 1);
         expect(pair.tops[0]).toBeCloseTo(pair.tops[1], 1);
     });

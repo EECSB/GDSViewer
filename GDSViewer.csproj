@@ -6,11 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
 
-    <!--Ahead-of-time compilation, on publish only - `dotnet build` and `dotnet run` are untouched, so the
-        edit-and-refresh loop and the whole test suite still need nothing but the SDK. Publishing needs the
-        `wasm-tools` workload:
+    <!--Ahead-of-time compilation. The AOT *step* runs on publish only, so `dotnet build` and `dotnet run`
+        stay as quick as they were and the whole test suite still runs against an ordinary build.
+
+        The `wasm-tools` workload is a different matter: it is required the moment this project is
+        evaluated, not when it is published.
 
             dotnet workload install wasm-tools
+
+        Without it `dotnet restore` fails with NETSDK1147 before anything is compiled - which is what CI
+        did on the first push, on a runner that had the SDK and not the workload. Both workflows install
+        it now; this comment and those steps say the same thing so neither can quietly stop being true.
 
         What it buys and what it costs are measured, not assumed - see DOCUMENTATION.md. In short: opening
         twenty thousand elements goes from 1,366 ms to 748 ms, the payload roughly doubles, and the publish

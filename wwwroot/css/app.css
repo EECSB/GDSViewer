@@ -595,7 +595,7 @@ a, .btn-link {
     It matches both rules above - it is the first child and it is the last - and the later one wins outright,
     which left Array and Trace net square down their left-hand side for no reason anybody could see. The
     exact bug .toolGroup hit when the merge switch was alone in its group, and the same fix: a lone button
-    has no neighbour to butt against.
+    has no neighbor to butt against.
 */
 .selectionActions > .buttonStyle2.selectionAction:only-child {
     border-radius: 3px;
@@ -612,7 +612,7 @@ a, .btn-link {
 }
 
 /*
-    A hairline between neighbours, so a strip does not read as one wide button.
+    A hairline between neighbors, so a strip does not read as one wide button.
 
     Drawn on the buttons rather than between them: they are one solid color butted together, and without
     this the four of them are a blue rectangle with four pictures on it. Light rather than dark, because it
@@ -1200,7 +1200,7 @@ a, .btn-link {
     A row of controls in the panel, held off the ones above and below it.
 
     The line box alone spaces a row of *text*; a row with a box or a button in it is taller than its line
-    and ends up touching its neighbours. A quarter em either side is what separates the two rows of numbers
+    and ends up touching its neighbors. A quarter em either side is what separates the two rows of numbers
     from each other and from the reading over them.
 */
 .selectionRow {
@@ -1532,6 +1532,50 @@ a, .btn-link {
 }
 
 /*
+    A notice from the shell, in the drawing hint's box.
+
+    Sits in .viewPane, which is already the relative box the Center button positions against - so this
+    lands over whichever view is mounted rather than only over the 2D one, which is what a download
+    notice needs: the download button is in the toolbar and every view has it.
+
+    Above the hint's z-index, because the two are only ever both up by coincidence and this is the one
+    that is news. It takes clicks, unlike the hint, since it carries the control that dismisses it.
+*/
+.viewNotice {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    z-index: 6;
+    pointer-events: auto;
+
+    /*The hint is one short line and centers; this is a sentence, so it reads from the left.*/
+    text-align: left;
+}
+
+/*
+    The dismiss, inside the pill rather than in a column beside it.
+
+    A bar could afford a button of its own at the end of the row. A pill is as wide as its sentence, and a
+    second box on the end would make it wider than the thing it is reporting on.
+*/
+.viewNoticeClose {
+    flex: none;
+
+    padding: 0 0.15em;
+    border: none;
+    background: none;
+    color: inherit;
+    font-size: 1.25em;
+    line-height: 1;
+    opacity: 0.75;
+    cursor: pointer;
+}
+
+.viewNoticeClose:hover {
+    opacity: 1;
+}
+
+/*
     What was picked out, in the corner of the view.
 
     In the view rather than in the toolbar because it comes and goes, and a control in a bar that appears
@@ -1667,7 +1711,7 @@ a, .btn-link {
 }
 
 /*
-    A seam between neighbours, for a group whose buttons can be on at the same time.
+    A seam between neighbors, for a group whose buttons can be on at the same time.
 
     The same hairline the panel's action strip uses, and here for the same reason: two buttons of one color
     butted together are one wide button with two pictures on it. Which is not a problem for the tools or the
@@ -1686,7 +1730,7 @@ a, .btn-link {
 
     It matched both of the rules above - it is the first child and the last - and the later one won outright,
     which left the merge switch square down its left-hand side for no reason anybody could see. A lone button
-    has no neighbour to butt against.
+    has no neighbor to butt against.
 */
 .toolGroup > .buttonStyle2.toolButton:only-child {
     border-radius: 3px;
@@ -2410,7 +2454,7 @@ a, .btn-link {
 }
 
 /*
-    A control held apart from its neighbours, rather than sitting in the run of them: Admire, which does
+    A control held apart from its neighbors, rather than sitting in the run of them: Admire, which does
     something to the view rather than setting anything, and the QR icon.
 
     46 leaves a visible gap of 56 either side, since the item next to it carries 10 of its own. That was
@@ -2512,14 +2556,20 @@ a, .btn-link {
     border-left: none;
 
     /*
-        Its width, which the grabber sets and which fits its content until somebody drags it.
+        Its width, which the grabber sets and which is the same whichever list is showing.
 
-        fit-content as the fallback, which is what it always was - so the panel is whatever the widest layer
-        row needs and no more, until a drag says otherwise. `position: relative` for the grabber, which is
-        placed against this edge.
+        **A fixed default rather than fit-content.** It used to size to its own content, which is fine
+        while there is one list in it and wrong the moment there are two: the layer rows wanted 207 pixels
+        and the rule rows 250, so the panel jumped sideways every time somebody pressed Layers or Rules,
+        and the drawing beside it reflowed for a switch that changed nothing about the drawing.
+
+        The number holds a rule row - a number, an id, what it measures and a limit - without a horizontal
+        scrollbar, which is the wider of the two lists. A layout whose layer names run past it scrolls in
+        the list rather than pushing the view over, and the grabber is still there for anyone who wants
+        the room. `position: relative` for that grabber, which is placed against this edge.
     */
     position: relative;
-    width: var(--layer-sidebar, fit-content);
+    width: var(--layer-sidebar, 16em);
     flex: none;
 
     /*
@@ -2539,6 +2589,16 @@ a, .btn-link {
     */
     padding-left: 4px;
     padding-right: 4px;
+
+    /*
+        And the same underneath, which it never had.
+
+        The sides came to six pixels - four here and two off the list's own margin - and the bottom to
+        three, so the list sat against the foot of the panel while standing clear of both edges. It reads
+        as the list having been cut off rather than as a box with a margin, and it is worse in the rule
+        panel than the layer one because thirty rules always reach the bottom.
+    */
+    padding-bottom: 4px;
 }
 
 
@@ -2770,8 +2830,13 @@ body:has(.viewerPageFull) #mainAppContainer {
 
         Below 1024 the sidebar drops under the view and the line stops holding; the cap is under the room
         there rather than over it, which is the safe side to be wrong on.
+
+        **Re-fitted when the sidebar stopped sizing itself.** It was 368.7 against a fit-content sidebar,
+        which came to about 207px on the bundled example; a fixed 16em is 256, and the fifty pixels it
+        gained came straight off this room. The popup hung 35px over at 1024 and 44 at 1600 before the
+        constant was moved to match. If the sidebar width changes again, this moves with it.
     */
-    max-width: calc(80vw - 380px);
+    max-width: calc(80vw - 435px);
 }
 
 /*
@@ -2790,7 +2855,7 @@ body:has(.viewerPageFull) #mainAppContainer {
 */
 @media (max-width: 1024px) {
     .popupDiv.popupUnder {
-        max-width: 430px;
+        max-width: 380px;
     }
 }
 
@@ -2917,7 +2982,7 @@ popupZIndex_0 {
 
     The bar's buttons are sized by their words and these have none, so they need both dimensions given
     back: a width, or they collapse to their padding, and a line-height, or they come out shorter than
-    every button beside them. An icon button that is three pixels short of its neighbours reads as a
+    every button beside them. An icon button that is three pixels short of its neighbors reads as a
     mistake even to somebody who could not say what was wrong.
 */
 /*
@@ -3403,7 +3468,7 @@ popupZIndex_0 {
     color: #fff;
 }
 
-/*The seam again, now that one side is blue: the border it lost has to come from its neighbour.*/
+/*The seam again, now that one side is blue: the border it lost has to come from its neighbor.*/
 .colorTarget.colorTargetOn:last-child {
     border-left: 1px solid #1b6ec2;
 }
@@ -3712,6 +3777,144 @@ popupZIndex_0 {
     grid-column: 2;
 }
 
+/*
+    The name pair and the information icon, sharing the heading's middle column.
+
+    A wrapper because the title is a three-column grid - a space, the name, the cross - and two things
+    cannot occupy one cell without one.
+*/
+.sidebarTitleMiddle {
+    grid-column: 2;
+
+    /*The nudge under the icon is placed against this.*/
+    position: relative;
+
+    display: inline-flex;
+    align-items: center;
+    justify-self: center;
+    gap: 0.45em;
+}
+
+/*
+    Quieter than the names beside it. It is there for the first visit and in the way on every one after,
+    so it reads as a mark rather than as a third button until it is pointed at.
+*/
+.sidebarInfoButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0.15em;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: #adb5bd;
+    cursor: pointer;
+}
+
+.sidebarInfoButton:hover,
+.sidebarInfoButtonOn {
+    color: #0d6efd;
+    background: #e7f1ff;
+}
+
+/*
+    The explanation itself, in the middle of the window.
+
+    .popupDiv already centers and caps its own size; what is added here is the reading width. Left at the
+    popup's own 980px a paragraph runs the width of a monitor, which is about twice as far as prose stays
+    readable across.
+*/
+.infoPopup {
+    max-width: min(92vw, 34em);
+    text-align: left;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
+.infoPopupHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+
+    margin-bottom: 0.6em;
+    padding-bottom: 0.5em;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 1.1em;
+}
+
+.infoPopup p {
+    margin: 0 0 0.85em 0;
+}
+
+/*
+    The line that has to survive being skimmed. Everything above it explains a feature; this one says what
+    the feature is not, and it is the sentence somebody who reads nothing else should still land on.
+*/
+.infoPopupWarn {
+    padding: 0.5em 0.7em;
+    border-left: 3px solid #d81b60;
+    background: #fff5f8;
+}
+
+/*
+    The two list names, in the heading's place, with the one you are on lit.
+
+    A segmented pair rather than one word that swaps. A switch showing only its current state cannot say
+    what it would do - the single heading needed arrows and a tooltip to hint that a second list existed,
+    and somebody who never hovered it never found out. Two words say so at a glance.
+
+    Sized off the title's own font rather than set here, so it stays the same weight and height as the
+    plain heading it replaces in the other views.
+*/
+.sidebarPanelPick {
+    grid-column: 2;
+
+    display: inline-flex;
+    align-items: stretch;
+    justify-self: center;
+
+    border: 1px solid #ced4da;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.sidebarPanelChoice {
+    padding: 0.1em 0.7em;
+    border: none;
+    background: #f8f9fa;
+    color: #6c757d;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+/*A hairline between the two, drawn by the second so the outer border is not doubled.*/
+.sidebarPanelChoice + .sidebarPanelChoice {
+    border-left: 1px solid #ced4da;
+}
+
+.sidebarPanelChoice:hover {
+    background: #e9ecef;
+    color: #212529;
+}
+
+/*
+    The one in force. Filled rather than merely darker, because the pair sits on the panel's own light
+    background and a weight difference alone is not enough to say which of two words is the live one.
+*/
+.sidebarPanelChoiceOn {
+    background: #0d6efd;
+    color: #fff;
+}
+
+.sidebarPanelChoiceOn:hover {
+    background: #0b5ed7;
+    color: #fff;
+}
+
 .sidebarTitle > .cellListClose {
     grid-column: 3;
 }
@@ -3783,19 +3986,50 @@ popupZIndex_0 {
     of the drawing with a file loaded into it - and they answer different questions about the same layout,
     so they are never both wanted at once. What is written here is only what differs from a layer row.
 */
+/*
+    Running the deck, fenced off above and below.
+
+    Three different things stack down this panel - what to load, what to run, and what the deck says - and
+    without the rule above this one the run controls read as a second line of the Import row. They are not:
+    that row is about which deck is in hand, and this is about setting it going.
+*/
 .rulesRun {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.6em;
+    flex-wrap: wrap;
+    row-gap: 0.45em;
 
-    padding: 0.4em 0.5em;
+    padding: 0.5em;
+    border-top: 1px solid #dee2e6;
     border-bottom: 1px solid #dee2e6;
+}
+
+/*
+    Rounded, like the Clear beside them. .buttonStyle2 is square and squared corners are right in the
+    toolbar, where the buttons abut; loose in a panel they read as unfinished next to a control that has
+    them.
+*/
+.rulesButton {
+    border-radius: 3px;
 }
 
 /*
     The switch travels with the button because it changes what the button means - with it on there is
     nothing left to press. `nowrap` so the word never drops below its box on a narrow panel, which this
     one can be dragged to be.
+*/
+/*
+    The switch sits on the button's line.
+
+    It was put on its own line when the label read "continuous DRC check", which made the row 266 pixels
+    wide - the widest thing in a panel that was sized by its content, so the sidebar grew every time
+    somebody switched to the rules. "check on edit" is short enough that the pair fits the panel's width
+    with room to spare, and a switch beside the button it disables is the clearer arrangement of the two.
+
+    `flex-wrap` is still on the row: if the panel is dragged narrow the label drops below rather than
+    running off the edge.
 */
 .rulesContinuous {
     display: flex;
@@ -3812,10 +4046,26 @@ popupZIndex_0 {
     font-size: 0.85em;
 }
 
+/*
+    The panel with no deck in it, and the offer to fix that.
+
+    A column so the button sits under the sentence that explains it rather than beside it: the panel is as
+    wide as a layer row and there is no room for both on a line. Centered, because this is the only state
+    where the list has nothing to align to.
+*/
 .rulesEmpty {
-    padding: 0.8em 0.6em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7em;
+
+    /*Capped so one long sentence cannot stretch a panel that is sized by its content.*/
+    max-width: 13em;
+
+    padding: 1em 0.6em;
     color: #6c757d;
     font-style: italic;
+    text-align: center;
 }
 
 /*
@@ -3825,7 +4075,7 @@ popupZIndex_0 {
 .rulesRow {
     display: flex;
     align-items: baseline;
-    gap: 0.4em;
+    gap: 0.3em;
 
     padding: 0.25em 0.5em;
     border-bottom: 1px solid #f1f3f5;
@@ -3842,8 +4092,15 @@ popupZIndex_0 {
     text-align: right;
 }
 
+/*
+    Wide enough to line the check names up into a column, and no wider.
+
+    It was 6em, which padded a short id like `hvtp.6` out far enough to push the longest row twelve pixels
+    past the panel and put a horizontal scrollbar under a list that otherwise fits. The column still lines
+    up at 5em; what it stops doing is reserving room nothing uses.
+*/
 .rulesId {
-    min-width: 6em;
+    min-width: 5em;
     font-weight: 600;
 }
 
@@ -4762,4 +5019,75 @@ body.sidebarResizing {
     flex: 1 1 auto;
     min-width: 120px;
     padding: 8px 14px;
+}
+
+/*
+    The popup's own buttons, wrapped rather than in a row.
+
+    Two of them and both with a sentence for a label, in a box capped at reading width - side by side they
+    would each be half a sentence wide.
+*/
+.infoPopupActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+/*
+    The one that loads a deck built to fail. Outlined rather than filled, because it is a demonstration
+    beside a real download and should not read as the main thing to press.
+*/
+.infoPopupDemo {
+    background: none;
+    border: 1px solid #0d6efd;
+    color: #0d6efd;
+}
+
+.infoPopupDemo:hover {
+    background: #e7f1ff;
+    color: #0a58ca;
+}
+
+/*
+    The nudge that says the icon is worth pressing.
+
+    Under the heading and centered on the panel rather than on the icon, because the panel is narrow and a
+    box anchored to a control near its right edge hangs off the side. `pointer-events: none` so it cannot
+    be hovered itself - it would sit over the very button it is describing and swallow the click.
+
+    z-index above the list below it, which scrolls under this.
+*/
+.sidebarInfoHint {
+    position: absolute;
+    top: calc(100% + 0.45em);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    pointer-events: none;
+
+    width: max-content;
+    max-width: 15em;
+    padding: 0.35em 0.6em;
+
+    border-radius: 0.35em;
+    background: rgba(33, 37, 41, 0.94);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/*The little point up at the icon, so it reads as belonging to it rather than floating under the heading.*/
+.sidebarInfoHint::before {
+    content: "";
+
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+
+    border: 5px solid transparent;
+    border-bottom-color: rgba(33, 37, 41, 0.94);
 }

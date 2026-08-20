@@ -32,15 +32,6 @@ I updated the UI and added more features, and the functionality is now also avai
 **Three views over the same file.** The 2D editor, the layout extruded into 3D, and the raw records — every
 one of them editable, and every one built from the same parse.
 
-What goes in, and what you can get back out of it:
-
-```mermaid
-flowchart LR
-    FileIn["Your file<br>.gds, .oas or .dxf"] --> Read["Read in the browser tab, never uploaded.<br>Which format it is comes off the front of the file<br>rather than off its name, so a renamed file still opens"]
-    Read --> Views["Three views over the one parse:<br>the 2D editor, the 3D view, the raw records"]
-    Views --> Out["And back out again as<br>.gds, .oas or .dxf<br>the picture as .svg<br>the model as .stl, .obj or .gltf"]
-```
-
 The 2D editor: the layout as SVG, layers named from a layermap, the file's cells down the left and its layers
 down the right.
 
@@ -349,6 +340,7 @@ the web app is one consumer of it, and the command line is another.
 | **[DOCUMENTATION.md](docs/DOCUMENTATION.md)** | How to build, run and test it, and a walkthrough of every subsystem |
 | **[CLI.md](docs/CLI.md)** | The `gds` command line |
 | **[DRC.md](docs/DRC.md)** | Design rule checking: the deck format, the checks, and what they were measured against |
+| **[WRITING-A-DECK.md](wwwroot/resources/WRITING-A-DECK.md)** | How to write a rule deck for your own PDK — a grammar you can hand to an AI |
 | **[NUGET.md](docs/NUGET.md)** | Using the format library from your own code |
 
 

@@ -92,6 +92,45 @@ var grown = Booleans.Offset(gate, 50);
 is the difference density is computed from. `Picking.At` answers which element is under a point, and `Nets`
 traces a connected net through vias.
 
+## Design rule checking
+
+A deck of rules is a small text file you supply — there is no standard one to download, because design
+rules have no interchange format. [WRITING-A-DECK.md](../wwwroot/resources/WRITING-A-DECK.md) is the whole grammar, written so
+it can be handed to an AI along with a PDK's rule document.
+
+```csharp
+var deck = DrcDeck.Parse(File.ReadAllText("sky130A.drc"));
+var result = Drc.Check(deck, GdsFlattener.Flatten(gds));
+```
+
+**Read `Complete` before `Violations`.** A count of faults is only an answer when every rule actually ran,
+and a deck can name checks this build cannot measure. Those are refused by name rather than skipped in
+silence, which is the one behavior the whole format exists to guarantee:
+
+```csharp
+//What did not run comes first, or "no violations" is a sentence that is not true.
+if (!result.Complete)
+    Console.WriteLine($"Not fully checked: {string.Join("; ", result.NotRun.Concat(result.Problems))}");
+
+if (result.Clean)
+    Console.WriteLine("No violations.");
+else
+{
+    foreach (var violation in result.Violations)
+        Console.WriteLine($"{violation.RuleId}: {violation.Description} at {violation.Bounds}");
+}
+```
+
+`Clean` is `Violations.Count == 0 && Complete`, so it is false when nothing was found but something did
+not run. Each `DrcViolation` carries its rule id, description, the outline to draw as a marker, its
+bounds, the measured value where there is one, and an `ElementSource` naming the cell instance at fault —
+so a report can point at the cell to edit rather than only at a coordinate.
+
+To re-check after an edit, flatten again and call `Check` again: the layout is the input, and there is no
+cached state to invalidate.
+
+`DrcReport.Write` produces a KLayout `.lyrdb` for comparing against another tool's answer.
+
 ## Layers, names and the process stack
 
 A GDSII file carries only numbers, so what `65/20` means comes from outside it. `LayerNames` is that:
@@ -180,15 +219,21 @@ git tag v1.0.0 && git push origin v1.0.0
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds it, runs the tests, packs both,
 pushes to nuget.org and opens a GitHub Release with the same `.nupkg` files attached. It refuses to run if the
 tag and `Directory.Build.props` disagree about the version, which is the mistake that would otherwise publish
-a number nobody chose. It needs a `NUGET_API_KEY` secret on the repository; the push is the last step, because
-a version on nuget.org can be unlisted but never replaced.
+a number nobody chose.
+
+**No API key is stored.** It authenticates by Trusted Publishing: GitHub issues a short-lived signed OIDC
+token naming this repository and this workflow file, nuget.org checks it against a policy registered there,
+and hands back a key that lives an hour. The only secret on the repository is `NUGET_USER`, the nuget.org
+profile name. The policy is keyed to the workflow file's name, so renaming `release.yml` stops publishing
+until the policy is edited to match - and the failure reads as a credentials problem rather than a rename.
+The push is the last step, because a version on nuget.org can be unlisted but never replaced.
 
 [`ci.yml`](../.github/workflows/ci.yml) beside it runs on every push: build, the C# tests, the JS units, the
 end-to-end run, and a pack — so a broken license expression or a missing package readme fails on the commit
 rather than on the tag.
 
-**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 1,663 of the 1,687 run there.
-Twenty-four use KLayout as a second implementation to check this one against, and it is a desktop EDA tool that
+**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 1,919 of the 1,952 run there.
+Thirty-three use KLayout as a second implementation to check this one against, and it is a desktop EDA tool that
 is not on a runner. Locally, with it installed, `dotnet test` runs every one.
 
 The short readmes that ship *inside* each package are [`GdsII/README.md`](../GdsII/README.md) and

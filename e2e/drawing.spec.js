@@ -10,7 +10,7 @@ const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, ch
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 
@@ -195,7 +195,7 @@ test.describe('drawing', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await page.locator('#fileUpload').setInputFiles(path);
 
         await openedOnItsOwn(page);
 
@@ -619,7 +619,7 @@ test.describe('joining as you draw', () => {
     ///**A short drag, where the shape ends up overlapping where it started.**
     ///
     ///What the search must not find is the shape being moved. Its own record still holds the coordinates it
-    ///had before the drag, so a nudge onto a neighbour leaves the old footprint sitting under the new one -
+    ///had before the drag, so a nudge onto a neighbor leaves the old footprint sitting under the new one -
     ///and a shape that finds itself goes into the union twice and is deleted twice. A long drag never
     ///notices, which is why this one is short.
     ///
@@ -667,7 +667,7 @@ test.describe('joining as you draw', () => {
     ///**One press, not two.**
     ///
     ///The union is folded into the move rather than written after it, so undoing puts back two shapes with
-    ///the dragged one where it started - rather than leaving it landed on its neighbour and un-joined.
+    ///the dragged one where it started - rather than leaving it landed on its neighbor and un-joined.
     ///
     test('the joined move costs one press of undo', async ({ page }) => {
         await twoApart(page);

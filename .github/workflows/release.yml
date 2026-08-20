@@ -7,17 +7,40 @@
 # tagging v0.2.0 without bumping the file is the mistake this exists to catch, and it is one that would
 # otherwise publish a package whose version nobody chose.
 #
-# Needs a NUGET_API_KEY secret. Without one the job fails at the push step, having already built and
-# tested - which is the right order for a step that cannot be undone: a version on nuget.org can be
-# unlisted but never replaced.
+# Authenticated by Trusted Publishing, so no API key is stored anywhere. GitHub issues a short-lived signed
+# OIDC token describing this repository and this workflow file; nuget.org checks it against a policy
+# registered there and hands back a key that lives one hour. Nothing to rotate, nothing to leak.
+#
+# ─── One-time setup on nuget.org ─────────────────────────────────────────────────────────────────────
+#   Sign in → your username → Trusted Publishing → add a policy:
+#       Package Owner    : EECSB
+#       Repository Owner : EECSB
+#       Repository       : GDSViewer
+#       Workflow File    : release.yml          (file name only, no path)
+#       Environment      : (leave empty - this workflow declares none)
+#       Scopes           : Push → "Push new packages and package versions"
+#       Glob             : GdsII*               (both ids; neither package exists yet, so a pattern is
+#                                                required rather than an existing package to attach to)
+#
+# ─── One-time setup on GitHub ────────────────────────────────────────────────────────────────────────
+#   NUGET_USER = the nuget.org username, the profile name rather than the sign-in email.
+#
+# **The policy is keyed to this file's name.** Renaming this file stops publishing working until the
+# policy is edited to match, and the failure reads as a credentials problem rather than as a rename.
+#
+# The push is still the last step, because it is the one that cannot be undone: a version on nuget.org can
+# be unlisted but never replaced.
 name: Release
 
 on:
   push:
     tags: ['v*']
 
+# `contents` for the GitHub Release at the end; `id-token` is what lets the job ask GitHub for the OIDC
+# token that the NuGet login below trades for a key.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -25,11 +48,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
+
+      # GDSViewer.csproj sets RunAOTCompilation, and that is a workload requirement the moment the project
+      # is evaluated rather than only when it is published - so `dotnet restore` fails here with NETSDK1147
+      # and every step after it is a step that never ran. It reads as a test failure in the summary and is
+      # nothing of the kind: the build never happened.
+      #
+      # The same line is in that csproj's own comment, for somebody setting a machine up to publish by
+      # hand. Both places say it so neither can quietly stop being true.
+      - name: Install the wasm-tools workload
+        run: dotnet workload install wasm-tools
 
       # The tag without its v, which is what the version has to be.
       - name: Read the version off the tag
@@ -58,9 +91,30 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
 
+      # As late as possible, immediately before the push: the key this hands back is good for one hour, and
+      # each token buys exactly one of them.
+      - name: NuGet login (OIDC, for a short-lived key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       # Last, because it is the only step here that cannot be taken back.
       - name: Push to NuGet
-        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      #
+      # The symbols package, pushed by name rather than left to be inferred.
+      #
+      # `*.nupkg` above does not match `GdsII.1.0.0.snupkg` - the glob wants a literal `.nupkg` on the end
+      # and that file ends `.snupkg`. NuGet does usually push a sibling symbols package alongside its own,
+      # but "usually" is the wrong thing to rest on for the file that decides whether a consumer's stack
+      # trace stops at the assembly boundary. Tolerated if it fails: symbols are worth having and not worth
+      # failing a release over, and the packages are already up by this point.
+      #
+      - name: Push symbols
+        continue-on-error: true
+        run: dotnet nuget push "./artifacts/*.snupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Release on GitHub
         uses: softprops/action-gh-release@v2

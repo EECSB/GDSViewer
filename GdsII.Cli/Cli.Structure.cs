@@ -116,7 +116,7 @@ namespace GdsII.Cli
         ///of its numbers carry a net and which join what they overlap - that is PDK data, so without
         ///`--layermap` no layer takes part and the honest answer is that the question cannot be asked yet.
         ///That is the failure this command will hit most often, so it is the one worded most carefully; the
-        ///app greys its own button out for the same reason.
+        ///app grays its own button out for the same reason.
         ///
         ///One net, from one point, rather than every net in the file. That is what
         ///<see cref="Nets.Reaching"/> does and it is deliberate on the library's side: a full extraction over
@@ -344,7 +344,7 @@ namespace GdsII.Cli
         ///An `x,y` in database units.
         ///
         ///Whole numbers, because that is what a coordinate in this format is - a fractional one would be
-        ///somebody thinking in microns, and rounding it silently would put the trace on a neighbouring shape
+        ///somebody thinking in microns, and rounding it silently would put the trace on a neighboring shape
         ///and answer the wrong question. Invariant, so a comma-decimal machine does not read `1,5` as one and
         ///a half and then find one field where it wanted two.
         ///

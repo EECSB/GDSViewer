@@ -134,7 +134,9 @@ test('a DXF download says where the layer numbers went', async ({ page }) => {
 
     await started;
 
-    await expect(page.locator('.inlineNotice')).toContainText('L<layer>D<datatype>');
+    //Over the drawing in the hint's box now, rather than as a bar that pushed the view down.
+    await expect(page.locator('#downloadNotice')).toContainText('L<layer>D<datatype>');
+    await expect(page.locator('#downloadNotice')).toHaveClass(/drawHint/);
 });
 
 ///

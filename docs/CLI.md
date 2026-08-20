@@ -317,7 +317,8 @@ ships three separately maintained decks; KLayout's is a Ruby program and Magic's
 technology file, and nothing converts between them. So the format is this tool's own, and a deck is a file
 you supply — the same arrangement as a layermap, and for the same licensing reason. A starter deck for
 sky130 is in [`wwwroot/resources/GDS Files/sky130A.drc`](../wwwroot/resources/GDS%20Files/sky130A.drc) and
-[DRC.md](DRC.md) says how to write one.
+[WRITING-A-DECK.md](../wwwroot/resources/WRITING-A-DECK.md) is the grammar, written so it can be handed to an AI along with your
+PDK's rule document. [DRC.md](DRC.md) is the reasoning behind it and what the engine cannot check.
 
 ```
 layer  met1 68/20

@@ -980,7 +980,7 @@ namespace GdsII
 
             if (fill == LayerFill.Grid)
             {
-                //Two lines on the tile's own edges, which meet their neighbours' and make one mesh.
+                //Two lines on the tile's own edges, which meet their neighbors' and make one mesh.
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "<path d=\"M0 0H{0}M0 0V{0}\" fill=\"none\" stroke=\"{1}\" stroke-width=\"{2}\" />",
@@ -1009,7 +1009,7 @@ namespace GdsII
             //And the three hatches, which are the same two strokes in some combination.
             //
             //**One line per tile, plus a stub across each corner it passes through.** A 45-degree line drawn
-            //corner to corner meets its neighbour's only at that corner, so the join is a point and the hatch
+            //corner to corner meets its neighbor's only at that corner, so the join is a point and the hatch
             //reads as a row of separate strokes; the stubs carry it over the boundary. The first attempt drew
             //three full lines per tile instead, which is the same picture at three times the density - beside
             //the dots and the grid the hatches came out as a fine tone rather than as lines you could count.

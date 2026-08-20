@@ -1,0 +1,41 @@
+# A deliberately failing deck, for seeing what a violation looks like.
+#
+# The bundled sky130 cells are signed-off layout: a correct deck finds nothing in them, which is the right
+# answer and a poor demonstration. This one is the same rules with the limits tightened past what the
+# layout actually is, so every check has something to report.
+#
+# **Nothing here is a real sky130 rule.** Do not measure a design against it. It exists to show the
+# markers, the counts and the panel working. The real deck is sky130A.drc beside this file.
+
+layer nwell  64/20
+layer diff   65/20
+layer tap    65/44
+layer poly   66/20
+layer licon  66/44
+layer li1    67/20
+layer mcon   67/44
+layer met1   68/20
+layer nsdm   93/44
+layer psdm   94/20
+layer npc    95/20
+
+derive gate = poly and diff
+
+# Widths set wider than the drawn shapes, so every shape on the layer is "too thin".
+rule demo.1  width  poly    400   "Poly must be 0.40 um wide (it is drawn at 0.15)"
+rule demo.2  width  li1     400   "Local interconnect must be 0.40 um wide"
+rule demo.3  width  met1    500   "Metal 1 must be 0.50 um wide"
+rule demo.4  width  gate    400   "Gate must be 0.40 um wide"
+
+# Spacings set wider than the drawn gaps, so neighbors are "too close".
+rule demo.5  space  licon  1000   "Contacts must be 1.00 um apart"
+rule demo.6  space  mcon   1000   "Metal contacts must be 1.00 um apart"
+
+# An enclosure nothing satisfies.
+rule demo.7  enclosure  diff  nwell  2000  "N-well must surround diffusion by 2.00 um"
+
+# An area floor above what the small shapes are.
+rule demo.8  area  licon  100000  "Every contact must be 0.10 um^2"
+
+# A grid finer than the layout is drawn on.
+rule demo.9  offgrid  *  7   "Everything must sit on a 7 unit grid"

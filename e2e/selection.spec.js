@@ -804,7 +804,7 @@ test.describe('the shape of the panel', () => {
         expect(run.insideSquare).toBe(true);
         expect(run.touching).toBe(true);
 
-        //A hairline between neighbours, so a strip does not read as one wide button.
+        //A hairline between neighbors, so a strip does not read as one wide button.
         expect(run.seamed).toBe(true);
 
         //And the pair: rounded on the outside of the pair, square on the seam.

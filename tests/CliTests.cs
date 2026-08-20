@@ -1429,7 +1429,7 @@ public class CliTests : IDisposable
 
     ///<summary>
     ///A point is two whole numbers of database units. A fractional one is somebody thinking in microns, and
-    ///rounding it silently would trace from a neighbouring shape and answer a different question.
+    ///rounding it silently would trace from a neighboring shape and answer a different question.
     ///</summary>
     [Theory]
     [InlineData("1200")]

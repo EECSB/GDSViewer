@@ -339,16 +339,47 @@ test.describe('carrying one in', () => {
 
         await page.locator('.cellRowPlace[data-place="LEAF"]').click();
 
+        //
+        //Wait for the carry to have started before moving, which carryLeafIn above already does.
+        //
+        //Without it this reads #carriedCell in a race with the click that creates it, and the race is won
+        //or lost on how long the layout took to settle - so it passed for a year and then started failing
+        //when an unrelated panel changed width. A null transform there says nothing about whether the
+        //cell follows the pointer, which is what this test is for.
+        //
+        await expect(page.locator('#carryingCell')).toBeVisible();
+
         const view = await page.locator('#gdsSVG').boundingBox();
 
-        //Both points on the right of the view. The tree has the left of it and the selection panel the rest,
-        //and a pointer move that lands on either never reaches the layout at all - which reads as the cell
-        //refusing to follow rather than as a test aiming at the wrong place. It did, the first time.
-        await page.mouse.move(view.x + (view.width * 0.6), view.y + (view.height * 0.3));
+        //
+        //Two points clear of whatever is floating over the view, worked out rather than guessed.
+        //
+        //The tree has the left of the window and the selection panel floats over the top-left of the
+        //drawing, and a pointer move landing on either never reaches the layout at all - which reads as
+        //the cell refusing to follow rather than as a test aiming at the wrong place.
+        //
+        //It used to aim at 60% and 85% of the width, which cleared the panel by a margin that depended on
+        //how wide the view happened to be. The layer sidebar going to a fixed width took fifty pixels off
+        //the view, the panel's share of it grew, and 60% landed on the panel. Measured from the panel's
+        //own right edge there is no fraction to get wrong.
+        //
+        const clear = await page.evaluate(() => {
+            const panel = document.getElementById('selectionPanel');
+
+            if (panel === null)
+                return 0;
+
+            return panel.getBoundingClientRect().right;
+        });
+
+        const from = Math.max(view.x + (view.width * 0.6), clear + 30);
+        const to = Math.max(view.x + (view.width * 0.85), clear + 90);
+
+        await page.mouse.move(from, view.y + (view.height * 0.3));
 
         const first = await page.locator('#carriedCell').getAttribute('transform');
 
-        await page.mouse.move(view.x + (view.width * 0.85), view.y + (view.height * 0.6));
+        await page.mouse.move(to, view.y + (view.height * 0.6));
 
         const second = await page.locator('#carriedCell').getAttribute('transform');
 

@@ -36,7 +36,7 @@ namespace GdsII
         ///<summary>
         ///How wide one shape is, in database units, and how far apart they sit.
         ///
-        ///The pitch is a little *less* than the width on purpose, so neighbours on a row overlap. A layer of
+        ///The pitch is a little *less* than the width on purpose, so neighbors on a row overlap. A layer of
         ///shapes that never touch is a layer `Booleans.MergeByLayer` finishes instantly, which would make the
         ///one measured cliff in the app disappear from the very benchmark meant to find it. Overlap is also
         ///the common case: 171 of the 897 bundled cells have a layer whose shapes overlap.
@@ -54,7 +54,7 @@ namespace GdsII
         ///places it once as an `AREF`, so the file stays tiny however much it draws.
         ///
         ///<paramref name="layers"/> shapes are spread over that many layer numbers, a row at a time rather
-        ///than a shape at a time - so neighbours along a row share a layer and overlap, which is what gives
+        ///than a shape at a time - so neighbors along a row share a layer and overlap, which is what gives
         ///the merge something to do.
         ///
         ///<paramref name="corners"/> is how many corners each shape has. Four is a rectangle, which is most
@@ -148,7 +148,7 @@ namespace GdsII
                 int column = i % across;
                 int row = i / across;
 
-                //By row rather than by shape, so neighbours along a row share a layer and their overlap is
+                //By row rather than by shape, so neighbors along a row share a layer and their overlap is
                 //real overlap on one layer rather than two layers crossing.
                 short layer = (short)(64 + (row % layers));
 

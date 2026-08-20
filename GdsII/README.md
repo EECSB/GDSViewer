@@ -27,6 +27,9 @@ File.WriteAllBytes("cell.oas", OasisWriter.Write(gds));
   magnification and rotation, at any depth, and outlines `PATH` centerlines into polygons.
 - **Boolean operations and sizing** over layout geometry — AND, OR, NOT, XOR and offset, via a vendored
   Clipper2.
+- **Design rule checking** against a deck you supply - a small text file of width, spacing, enclosure,
+  area, density and off-grid rules. `DrcDeck.Parse` reads it, `Drc.Check` runs it, and a rule this build
+  cannot measure is refused by name rather than skipped, so a clean report is either complete or says so.
 - **Renders to SVG**, and dumps every record as text that reads back into an identical file — which is
   what makes an editor possible on top of it.
 - **Streaming.** `GDS.FromStream` and `FromStreamAsync` read straight off a handle rather than holding the

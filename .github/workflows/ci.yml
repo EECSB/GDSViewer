@@ -26,11 +26,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
+
+      # GDSViewer.csproj sets RunAOTCompilation, and that is a workload requirement the moment the project
+      # is evaluated rather than only when it is published - so `dotnet restore` fails here with NETSDK1147
+      # and every step after it is a step that never ran. It reads as a test failure in the summary and is
+      # nothing of the kind: the build never happened.
+      #
+      # The same line is in that csproj's own comment, for somebody setting a machine up to publish by
+      # hand. Both places say it so neither can quietly stop being true.
+      - name: Install the wasm-tools workload
+        run: dotnet workload install wasm-tools
 
       - run: dotnet restore
 
@@ -46,7 +56,7 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packages
           path: ./artifacts/*
@@ -57,11 +67,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
+
+      # GDSViewer.csproj sets RunAOTCompilation, and that is a workload requirement the moment the project
+      # is evaluated rather than only when it is published - so `dotnet restore` fails here with NETSDK1147
+      # and every step after it is a step that never ran. It reads as a test failure in the summary and is
+      # nothing of the kind: the build never happened.
+      #
+      # The same line is in that csproj's own comment, for somebody setting a machine up to publish by
+      # hand. Both places say it so neither can quietly stop being true.
+      - name: Install the wasm-tools workload
+        run: dotnet workload install wasm-tools
 
       - uses: actions/setup-node@v4
         with:
@@ -82,7 +102,7 @@ jobs:
       - name: End-to-end tests
         run: npm run test:e2e
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report

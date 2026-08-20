@@ -667,36 +667,6 @@
                                               d="M8 1.6 1.8 4.8 8 8l6.2-3.2zM1.8 8.4 8 11.6l6.2-3.2M1.8 11.8 8 15l6.2-3.2" />
                                     </svg>
                                 </button>
-
-                                @*
-                                    The rules, in the same panel and beside the same switch.
-
-                                    **One sidebar with two things in it rather than two sidebars.** The
-                                    layers and the rules are read the same way - a list down the side of the
-                                    drawing, with a file loaded into it - and they are never both wanted at
-                                    once, since one says what is drawn and the other what it is allowed to
-                                    be. Two panels would take the width twice over for lists that alternate.
-
-                                    Off in the other views, like the cell tree beside it: the markers are
-                                    drawn over the 2D drawing and nowhere else.
-                                *@
-                                <button id="rulesToggle" class="buttonStyle2 toolbarButton toolButton buttonIcon @(layersOpen && sidebarShows == SidebarPanel.Rules ? "toolButtonOn" : "")"
-                                        @onclick="showRules"
-                                        disabled="@(view != ViewType.View2DSvg)"
-                                        aria-pressed="@(layersOpen && sidebarShows == SidebarPanel.Rules ? "true" : "false")"
-                                        aria-label="Rules"
-                                        title="@(view != ViewType.View2DSvg ? "Design rules are checked against the 2D drawing" : "Design rules: load a deck and check the layout against it")">
-                                    @*
-                                        A ruler with a tick on it. A checkmark alone is every "done" button
-                                        ever drawn, and a warning triangle says a fault has already been
-                                        found - this is the thing that goes looking for one.
-                                    *@
-                                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                                        <path fill="none" stroke="currentColor" stroke-width="1.4"
-                                              stroke-linecap="round" stroke-linejoin="round"
-                                              d="M1.6 4.4h12.8v4.2H1.6zM4.6 4.4v2M7.4 4.4v2.6M10.2 4.4v2M9.2 12.6l2 2 3.2-4.2" />
-                                    </svg>
-                                </button>
                             </div>
                         </div>
                     }
@@ -786,20 +756,6 @@
             }
 
             @*
-                What the last download could not carry, in the page rather than in an alert. Only ever
-                shown after a download that left something behind, which for nearly every file is never.
-            *@
-            @if (downloadNotice.Length > 0)
-            {
-                <div id="downloadNotice" class="row inlineNotice">
-                    <div class="col">@downloadNotice</div>
-                    <div class="col-auto">
-                        <button class="buttonStyle2 closeButton" @onclick="dismissDownloadNotice" title="Dismiss">&times;</button>
-                    </div>
-                </div>
-            }
-
-            @*
                 What went wrong with a layermap the address asked for.
 
                 Only ever shown when one was named and could not be used, which for an ordinary visit is
@@ -852,7 +808,7 @@
                             {
                                 case ViewType.ViewText: <TextEditor @ref="viewer" Gds="gds" OnFileChanged="onFileEdited"></TextEditor>;
                                     break;
-                                case ViewType.View2DSvg: <Viewer2DSvg @ref="viewer" Gds="gds" Prepared="preparedLayout" ShowLayers="checkboxItems" Markers="@drcMarkers" Notice="@drcNotice" NoticeIsFault="@drcNoticeIsFault" History="editHistory" ReadOnly="noEditing" CellTreeOpen="cellTreeOpen" OnCellTreeClosed="toggleCellTree" OnSettingsChanged="saveSession" OnToolChanged="redrawToolbar" OnFileChanged="onFileEdited" OnLayerRenamed="renamed => applyLayerName(renamed.Key, renamed.Name)"></Viewer2DSvg>;
+                                case ViewType.View2DSvg: <Viewer2DSvg @ref="viewer" Gds="gds" Prepared="preparedLayout" ShowLayers="checkboxItems" Markers="@drcMarkers" Notice="@drcNotice" NoticeIsFault="@drcNoticeIsFault" OnNoticeDismissed="dismissDrcNotice" History="editHistory" ReadOnly="noEditing" CellTreeOpen="cellTreeOpen" OnCellTreeClosed="toggleCellTree" OnSettingsChanged="saveSession" OnToolChanged="redrawToolbar" OnFileChanged="onFileEdited" OnLayerRenamed="renamed => applyLayerName(renamed.Key, renamed.Name)"></Viewer2DSvg>;
                                     break;
                                 case ViewType.View3D: <Viewer3D @ref="viewer" Gds="gds" ShowLayers="checkboxItems" FileName="@CurrentlySelectedFileName" OnSettingsChanged="saveSession" OnToolChanged="redrawToolbar"></Viewer3D>;
                                     break;
@@ -881,6 +837,32 @@
                         a button that did nothing on a third of the views would be worse than one that is
                         not there - see centerView for the same reasoning in C#.
                     *@
+                    @*
+                        What the last download could not carry, over the drawing rather than above it.
+
+                        **The same box the drawing hint uses**, because it is the same kind of statement: a
+                        line about what just happened, that appears and goes away. As a bar across the page
+                        it pushed the whole view down to say something most files never need said, and the
+                        layout jumped under the pointer at the moment somebody was reading about it.
+
+                        Here in the pane rather than inside a view, for the reason the Center button below
+                        gives: a download happens from the toolbar in every view, so a notice living in the
+                        2D component would be a notice the 3D and text views could not show.
+
+                        Above the view's own hint if they ever coincide. This is news and that is
+                        reference - and only one of the two can be up at a time in there anyway, since the
+                        drawing hint and the rule result share one chain.
+                    *@
+                    @if (downloadNotice.Length > 0)
+                    {
+                        <div id="downloadNotice" class="drawHint viewNotice">
+                            <span>@downloadNotice</span>
+
+                            <button class="viewNoticeClose" @onclick="dismissDownloadNotice"
+                                    aria-label="Dismiss this notice" title="Dismiss">&times;</button>
+                        </div>
+                    }
+
                     @if (view == ViewType.View2DSvg || view == ViewType.View3D)
                     {
                         <button id="centerView" class="iconButton viewAction viewActionTop" @onclick="centerView"
@@ -935,7 +917,86 @@
                             list is the thing in the way.
                         *@
                         <div class="sidebarTitle">
-                            <b>@(sidebarShows == SidebarPanel.Rules ? "Rules" : "Layers")</b>
+                            @*
+                                Both names, and the one you are on is lit.
+
+                                **A switch that shows only the current state cannot say what it would do.**
+                                A single heading reading "Layers" had to carry arrows and a tooltip to hint
+                                that a second list existed at all, and somebody who never hovered it never
+                                found out. Two words side by side say there are two lists in the first
+                                glance, and pressing the unlit one is an obvious thing to try.
+
+                                Where a toolbar button for the rules used to be, and better than one: this
+                                sits on the panel it changes rather than in a bar across the page.
+
+                                Only where the rules can be checked. Outside the 2D view there is nothing to
+                                switch to, so it goes back to being a plain heading rather than a control
+                                that does nothing.
+                            *@
+                            @if (view == ViewType.View2DSvg)
+                            {
+                                <div class="sidebarTitleMiddle">
+                                    <div class="sidebarPanelPick" role="group" aria-label="Which list this panel shows">
+                                        <button id="sidebarPanelLayers"
+                                                class="sidebarPanelChoice @(sidebarShows == SidebarPanel.Layers ? "sidebarPanelChoiceOn" : "")"
+                                                @onclick="() => showPanel(SidebarPanel.Layers)"
+                                                aria-pressed="@(sidebarShows == SidebarPanel.Layers ? "true" : "false")"
+                                                title="What is drawn, and how">Layers</button>
+
+                                        <button id="sidebarPanelRules"
+                                                class="sidebarPanelChoice @(sidebarShows == SidebarPanel.Rules ? "sidebarPanelChoiceOn" : "")"
+                                                @onclick="() => showPanel(SidebarPanel.Rules)"
+                                                aria-pressed="@(sidebarShows == SidebarPanel.Rules ? "true" : "false")"
+                                                title="What it is allowed to be, and whether it is">Rules</button>
+                                    </div>
+
+                                    @*
+                                        What this panel is for, since neither answer is guessable.
+
+                                        **A layermap and a rule deck are both files the user has to supply**, and
+                                        nothing on screen says why - a viewer that simply drew the file would need
+                                        neither. The explanation is a few paragraphs, which is too much for a
+                                        tooltip and not enough for a page, so it is a panel you open and a guide
+                                        you can take away.
+
+                                        **Opened by clicking, not by hovering.** A box that size arriving over the
+                                        middle of the screen because the pointer crossed a corner of the sidebar is
+                                        something you have to get rid of rather than something you asked for. What
+                                        hovering does is say the icon is worth clicking, which is all a hover
+                                        should have to carry.
+                                    *@
+                                    <button id="sidebarInfo" class="sidebarInfoButton @(infoOpen ? "sidebarInfoButtonOn" : "")"
+                                            @onclick="toggleInfo"
+                                            @onmouseenter="showInfoHint" @onmouseleave="hideInfoHint"
+                                            aria-label="@(sidebarShows == SidebarPanel.Rules ? "About design rules" : "About layers")">
+                                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                            <circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.4" />
+                                            <circle cx="8" cy="4.6" r="0.95" fill="currentColor" />
+                                            <path d="M8 7.1v4.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                                        </svg>
+                                    </button>
+
+                                    @*
+                                        The nudge, under the icon rather than over the drawing.
+
+                                        Small on purpose: it says what pressing does and nothing else, because the
+                                        thing it is describing is one click away and will say the rest itself.
+                                        Not shown while the full panel is up - it would be describing a button
+                                        whose result is already on screen.
+                                    *@
+                                    @if (infoHintShown && !infoOpen)
+                                    {
+                                        <div id="sidebarInfoHint" class="sidebarInfoHint" role="tooltip">
+                                            Click for what @(sidebarShows == SidebarPanel.Rules ? "design rules" : "layers")
+                                            are, and how to make the file this panel takes
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <b>Layers</b>
+                            }
 
                             @*
                                 Named after whichever list is up, since the panel is now two of them.
@@ -951,6 +1012,118 @@
                                     aria-label="@(sidebarShows == SidebarPanel.Rules ? "Close the rules" : "Close the layer list")"
                                     title="Close">&#128473;</button>
                         </div>
+
+                        @*
+                            What the panel is, over the middle of the screen.
+
+                            Centered rather than hung off the icon because it is a few paragraphs rather than a
+                            tooltip, and a box that size anchored to a corner control ends up half off the window
+                            on the narrow layouts this app is used at.
+
+                            It closes when the pointer leaves it, so moving away is enough and nothing has to be
+                            dismissed. The cross is for the pinned case, where a click opened it.
+                        *@
+                        @if (infoOpen)
+                        {
+                            <div id="sidebarInfoPopup" class="popupDiv infoPopup" @onmouseleave="closeInfo">
+                                <div class="infoPopupHead">
+                                    <b>@(sidebarShows == SidebarPanel.Rules ? "Design rules" : "Layers")</b>
+
+                                    <button id="closeSidebarInfo" class="buttonStyle2 closeButton" @onclick="closeInfo"
+                                            aria-label="Close" title="Close">&times;</button>
+                                </div>
+
+                                @if (sidebarShows == SidebarPanel.Rules)
+                                {
+                                    <p>
+                                        A <b>design rule</b> is the foundry's answer to "how thin may this wire be,
+                                        and how close may two of them get". A deck of them, checked against your
+                                        layout, is what catches a shape that could not be manufactured.
+                                    </p>
+
+                                    <p>
+                                        <b>There is no standard file to download.</b> Design rules have no
+                                        interchange format: a foundry supporting three tools ships three separately
+                                        maintained decks that are meant to agree, and nothing converts between them.
+                                        KLayout's is a Ruby program, Magic's is fused into its technology file, and
+                                        Calibre's SVRF is proprietary and usually under NDA. So a deck here is a
+                                        small text file you supply — the same arrangement as the layermap, and for
+                                        the same licensing reason: one PDK's tables are somebody else's work and do
+                                        not belong compiled into a viewer that opens any file.
+                                    </p>
+
+                                    <p>
+                                        The format is deliberately a fixed vocabulary rather than an expression
+                                        language. <b>A rule this build cannot measure is refused by name</b> —
+                                        listed, and every result from that deck says "not fully checked" — because
+                                        a count of faults is only an answer when every rule actually ran.
+                                    </p>
+
+                                    <p class="infoPopupWarn">
+                                        This is not a signoff tool. It catches the obvious against the rules you
+                                        give it; it is not a tapeout.
+                                    </p>
+
+                                    <p>
+                                        <b>Load sky130A example</b> in the panel loads a working 30-rule deck to
+                                        read. To write one for your own PDK, take the guide below: it is the whole
+                                        grammar, written so you can hand it to an AI along with your PDK's rule
+                                        document and get a deck back.
+                                    </p>
+                                    <p>
+                                        <b>Nothing failing?</b> That is the expected answer — the bundled cells
+                                        are signed-off sky130 layout, so a correct deck finds nothing in them.
+                                        To see what a violation actually looks like, load a deck whose limits
+                                        the layout cannot meet:
+                                    </p>
+
+                                    <div class="infoPopupActions">
+                                        <button id="downloadDeckGuide" class="buttonStyle2 smallButton rulesButton"
+                                                @onclick='() => downloadGuide("WRITING-A-DECK.md")'>
+                                            Download the deck-writing guide (.md)
+                                        </button>
+
+                                        <button id="loadStrictDeck" class="buttonStyle2 smallButton rulesButton infoPopupDemo"
+                                                @onclick="loadStrictDeck">
+                                            Load a deck that fails (demo)
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p>
+                                        A GDSII file carries only numbers. <b>Nothing in the format records that
+                                        65/20 is diffusion</b>, what color it should be drawn in, what it is for, or
+                                        where it sits in the wafer.
+                                    </p>
+
+                                    <p>
+                                        So all of that comes from a <b>layermap</b> you supply — a CSV of
+                                        layer, datatype, name, color, height, thickness and role. Without one the
+                                        app draws bare numbers in palette colors, which is readable but says
+                                        nothing about the process.
+                                    </p>
+
+                                    <p>
+                                        The <b>role</b> column is the one worth filling in: net tracing follows
+                                        conductors through vias, so a via with no role stops a net dead, and antenna
+                                        rules are refused outright rather than guessed at without it.
+                                    </p>
+
+                                    <p>
+                                        <b>Export</b> is the fastest start — it writes every layer pair already in
+                                        your file, so filling one in means typing over rather than typing out. To
+                                        build one for a whole PDK, take the guide below and hand it to an AI with
+                                        your PDK's layer table.
+                                    </p>
+
+                                    <button id="downloadLayermapGuide" class="buttonStyle2 smallButton rulesButton"
+                                            @onclick='() => downloadGuide("WRITING-A-LAYERMAP.md")'>
+                                        Download the layermap-writing guide (.md)
+                                    </button>
+                                }
+                            </div>
+                        }
 
                         @*
                             Naming lives beside the list it renames rather than in the top toolbar, which is
@@ -978,44 +1151,30 @@
                                 panel.
                             *@
                             <div class="layerSidebarControls">
-                                <div class="layerSidebarActions">
-                                    <InputFile id="drcDeckImport" style="display: none;" OnChange="onDrcDeckChosen" />
-                                    <label for="drcDeckImport" class="layerSidebarAction" title="Load a design rule deck - see docs/DRC.md for the format">
-                                        <img src="./resources/Images/Icons/upload.png" alt="" /> Import
-                                    </label>
+                                <InputFile id="drcDeckImport" style="display: none;" OnChange="onDrcDeckChosen" />
+                                <label for="drcDeckImport" class="layerSidebarAction" title="Load a design rule deck - see docs/DRC.md for the format">
+                                    <img src="./resources/Images/Icons/upload.png" alt="" /> Import
+                                </label>
 
-                                    @if (drcDeck is not null)
-                                    {
-                                        <span id="drcExport" class="layerSidebarAction" @onclick="exportDeck"
-                                              title="Write the deck in force back out as a file">
-                                            <img src="./resources/Images/Icons/download.png" alt="" /> Export
-                                        </span>
-                                    }
-
-                                    @if (drcDeck is not null)
-                                    {
-                                        @*
-                                            Takes the result off and keeps the deck.
-
-                                            The deck is what somebody went to a file picker for, and the
-                                            markers are what one press remakes - so clearing the expensive
-                                            half to be rid of the cheap one is the wrong way round.
-                                        *@
-                                        <span id="drcClear" class="layerSidebarAction layerSidebarClear" @onclick="clearDrc"
-                                              title="Take the markers off and keep the deck, so Check can run again">Clear</span>
-                                    }
-                                </div>
-
-                                @*
-                                    The deck that ships beside the examples, for somebody who has no deck of
-                                    their own and no repository in front of them.
-                                *@
-                                @if (drcDeckText != shippedDeck || drcDeck is null)
+                                @if (drcDeck is not null)
                                 {
-                                    <div class="layerSidebarActions">
-                                        <span id="drcBundled" class="layerSidebarAction" @onclick="loadBundledDeck"
-                                              title="Load the sky130 starter deck that ships with the examples">Load sky130A</span>
-                                    </div>
+                                    <span id="drcExport" class="layerSidebarAction" @onclick="exportDeck"
+                                          title="Write the deck in force back out as a file">
+                                        <img src="./resources/Images/Icons/download.png" alt="" /> Export
+                                    </span>
+                                }
+
+                                @if (drcDeck is not null)
+                                {
+                                    @*
+                                        Takes the result off and keeps the deck.
+
+                                        The deck is what somebody went to a file picker for, and the
+                                        markers are what one press remakes - so clearing the expensive
+                                        half to be rid of the cheap one is the wrong way round.
+                                    *@
+                                    <span id="drcClear" class="layerSidebarAction layerSidebarClear" @onclick="clearDrc"
+                                          title="Take the markers off and keep the deck, so Check can run again">Clear</span>
                                 }
                             </div>
 
@@ -1029,13 +1188,13 @@
                             @if (drcDeck is not null)
                             {
                                 <div class="rulesRun">
-                                    <button id="drcRun" class="buttonStyle2 smallButton" @onclick="runDrc"
+                                    <button id="drcRun" class="buttonStyle2 smallButton rulesButton" @onclick="runDrc"
                                             disabled="@drcContinuous"
-                                            title="@drcDeckDescription()">Check</button>
+                                            title="@drcDeckDescription()">DRC Check</button>
 
-                                    <label class="rulesContinuous" title="Check again whenever the layout changes, rather than waiting to be asked">
+                                    <label class="rulesContinuous" title="@drcContinuousDescription()">
                                         <input type="checkbox" id="drcContinuous" checked="@drcContinuous" @onchange="toggleContinuous" />
-                                        continuous
+                                        check on edit
                                     </label>
                                 </div>
                             }
@@ -1050,8 +1209,20 @@
                             <div class="layerList rulesList">
                                 @if (drcDeck is null)
                                 {
+                                    @*
+                                        Nothing loaded, and the way out of that.
+
+                                        **The offer belongs in the empty space, not in the row of controls.**
+                                        It sat beside Import and Export, which meant it was still there with
+                                        thirty rules on screen - taking width in a crowded row to offer a
+                                        deck you already have. Here it is only ever visible when the list has
+                                        nothing in it, which is exactly when somebody wants it.
+                                    *@
                                     <div class="rulesEmpty">
-                                        No rules loaded. Import a deck, or load the sky130A one that ships with the examples.
+                                        <div>No rules loaded. Import a deck of your own, or start from the one that ships with the examples.</div>
+
+                                        <button id="drcBundled" class="buttonStyle2 smallButton rulesButton" @onclick="loadBundledDeck"
+                                                title="Load the sky130 starter deck that ships with the examples">Load sky130A example</button>
                                     </div>
                                 }
                                 else
@@ -2228,19 +2399,16 @@
         }
     }
 
+    ///<summary>
+    ///Opens and closes the side panel, whichever of the two lists it is showing.
+    ///
+    ///It does not put the panel back to Layers on the way. Which list is up is the heading's business now,
+    ///and somebody who closed the panel mid-rule-check and opened it again meant to carry on rather than
+    ///to be handed a different list.
+    ///</summary>
     private async Task toggleLayers()
     {
-        //The switch in the bar is the layer list's, so pressing it while the rules are up brings the layers
-        //back rather than closing a panel the button does not name.
-        if (layersOpen && sidebarShows == SidebarPanel.Rules)
-        {
-            sidebarAsked = SidebarPanel.Layers;
-
-            return;
-        }
-
         layersOpen = !layersOpen;
-        sidebarAsked = SidebarPanel.Layers;
 
         await forgetSidebarWidth("layerSidebar", "--layer-sidebar");
 
@@ -2248,31 +2416,78 @@
     }
 
     ///<summary>
-    ///Brings the rules up, opening the panel if it was shut.
+    ///Shows one of the two lists. The pair of words in the heading are the control - see the markup.
     ///
-    ///Pressed again with the rules already showing, it closes - which is what the layer switch beside it
-    ///does and what a pressed-looking button is expected to undo.
+    ///Told which one to show rather than asked to swap, because the control names both: pressing "Rules"
+    ///while the rules are up should leave them up, not toggle them away.
+    ///
+    ///No opening or closing here. These are pressed *on* the panel, so the panel is already open, and a
+    ///heading that could also shut the thing it heads would be two controls wearing one hat.
     ///</summary>
-    private async Task showRules()
+    private void showPanel(SidebarPanel which)
     {
-        if (layersOpen && sidebarShows == SidebarPanel.Rules)
+        sidebarAsked = which;
+    }
+
+    ///<summary>
+    ///Whether the panel's explanation is up. Not in the session: it is read once and then in the way.
+    ///</summary>
+    private bool infoOpen;
+
+    ///<summary>
+    ///Whether the pointer is over the icon, which gets the small nudge rather than the whole panel.
+    ///</summary>
+    private bool infoHintShown;
+
+    private void showInfoHint()
+    {
+        infoHintShown = true;
+    }
+
+    private void hideInfoHint()
+    {
+        infoHintShown = false;
+    }
+
+    private void closeInfo()
+    {
+        infoOpen = false;
+    }
+
+    ///<summary>
+    ///Opens the explanation, and closes it again.
+    ///
+    ///**A click rather than a hover**, because what opens is a box over the middle of the screen: arriving
+    ///there because the pointer crossed the sidebar is something to get rid of rather than something that
+    ///was asked for. Hovering says the icon is worth pressing, and that is all it says.
+    ///</summary>
+    private void toggleInfo()
+    {
+        infoOpen = !infoOpen;
+
+        //The nudge has done its job the moment the thing it describes is on screen.
+        if (infoOpen)
+            infoHintShown = false;
+    }
+
+    ///<summary>
+    ///Hands over one of the two authoring guides.
+    ///
+    ///Fetched from where it is served rather than built into a string here, because there is one copy of
+    ///each and it is the one in docs/ - linked into the static assets by the csproj so that editing the
+    ///documentation is editing what the app gives out. A second copy would be the copy that goes stale.
+    ///</summary>
+    private async Task downloadGuide(string name)
+    {
+        try
         {
-            layersOpen = false;
+            byte[] guide = await httpClient.GetByteArrayAsync($"resources/{name}");
 
-            await forgetSidebarWidth("layerSidebar", "--layer-sidebar");
-            await saveSession();
-
-            return;
+            await js.InvokeVoidAsync("BlazorDownloadFile", name, "text/markdown", guide);
         }
-
-        sidebarAsked = SidebarPanel.Rules;
-
-        if (!layersOpen)
+        catch (Exception ex)
         {
-            layersOpen = true;
-
-            await forgetSidebarWidth("layerSidebar", "--layer-sidebar");
-            await saveSession();
+            await js.InvokeVoidAsync("alert", $"Could not fetch {name}: {ex.Message}");
         }
     }
 
@@ -2795,6 +3010,53 @@
     }
 
     ///<summary>
+    ///Where the deliberately-failing deck is served from, for seeing what a violation looks like.
+    ///</summary>
+    private const string StrictDeckPath = "resources/GDS Files/sky130A-strict.drc";
+
+    ///<summary>
+    ///Loads a deck the bundled cells cannot satisfy.
+    ///
+    ///**Because a correct deck over signed-off layout finds nothing**, which is the right answer and a
+    ///useless demonstration - somebody trying the feature for the first time gets "no violations" and no
+    ///way to tell a working check from a broken one. This one has the same rules with the limits tightened
+    ///past what the layout is, so every marker, count and color has something to show.
+    ///</summary>
+    private async Task loadStrictDeck()
+    {
+        string text;
+
+        try
+        {
+            text = await httpClient.GetStringAsync(StrictDeckPath);
+        }
+        catch (Exception ex)
+        {
+            await js.InvokeVoidAsync("alert", $"Could not read the demonstration deck from {StrictDeckPath}: {ex.Message}");
+
+            return;
+        }
+
+        var deck = DrcDeck.Parse(text);
+
+        if (deck.Rules.Count == 0)
+            return;
+
+        drcDeck = deck;
+        drcDeckText = text;
+
+        drcResult = null;
+        drcMarkers = "";
+
+        summarizeDrc();
+        closeInfo();
+
+        await saveSession();
+
+        StateHasChanged();
+    }
+
+    ///<summary>
     ///Puts a stored deck back, quietly.
     ///
     ///No message and no alert, unlike picking one from the dialog: this happens while the page is loading,
@@ -2904,16 +3166,44 @@
         summarizeDrc();
     }
 
-    ///<summary>What the Check button says it will do, which is worth stating before it is pressed.</summary>
+    ///<summary>
+    ///What the Check button will do, which is worth saying before it is pressed.
+    ///
+    ///It says what the press *does* as well as what it will run, because "Check against 30 rules" tells
+    ///somebody who already knows what a check is nothing they did not know. And when the switch below has
+    ///taken the button out of use it says so, rather than describing an action that is not on offer.
+    ///</summary>
     private string drcDeckDescription()
     {
         if (drcDeck is null)
             return "";
 
-        if (drcDeck.Refused.Count == 0)
-            return $"Check against {drcDeck.Rules.Count} rule(s)";
+        if (drcContinuous)
+            return "Nothing to press: \"check on edit\" is on, so the layout is checked after every change.";
 
-        return $"Check against {drcDeck.Rules.Count} rule(s). {drcDeck.Refused.Count} more cannot be measured by this build and will not run";
+        var said = new StringBuilder();
+
+        said.Append($"Measure the layout against all {drcDeck.Rules.Count} rule(s) in the deck and mark on the drawing what fails.");
+
+        if (drcDeck.Refused.Count > 0)
+            said.Append($" {drcDeck.Refused.Count} more cannot be measured by this build and will not run.");
+
+        return said.ToString();
+    }
+
+    ///<summary>
+    ///What the switch beside it does, in both of its positions.
+    ///
+    ///**The off position needs saying as much as the on one.** What happens to a result when the layout
+    ///changes under it is the part nobody would guess: it is taken away rather than left to go stale, so
+    ///a marker on screen is always a claim about the layout on screen.
+    ///</summary>
+    private string drcContinuousDescription()
+    {
+        if (drcContinuous)
+            return "On: the deck is run again after every edit, so the marks always match what is drawn. Turn it off to check only when you press the button.";
+
+        return "Off: press the button to check. An edit takes the last result off the drawing rather than leaving it out of date. Turn this on to have every edit checked instead.";
     }
 
     private string? drcDescriptionOf(string ruleId)
@@ -3039,6 +3329,18 @@
     ///Whether that notice is bad news, so the view can color it like the markers rather than like a hint.
     ///</summary>
     private bool drcNoticeIsFault;
+
+    ///<summary>
+    ///Takes the run's message off the drawing and leaves the markers on it.
+    ///
+    ///Two different things: the sentence says how many faults there are and whether every rule ran, and
+    ///the markers say where each one is. Somebody who has read the first still wants the second - so this
+    ///closes the message only. Clear in the panel is what takes the marks off.
+    ///</summary>
+    private void dismissDrcNotice()
+    {
+        drcNotice = "";
+    }
 
     ///<summary>
     ///Sorts a finished run into what the panel and the view each need from it.

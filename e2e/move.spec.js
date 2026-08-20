@@ -134,7 +134,7 @@ test.describe('the handles', () => {
 ///
 ///**Just inside the corner rather than exactly on it.** A handle is a disc a few pixels across, so the
 ///corner region is what this is about - but the corner *point* is shared ground: it is on the boundary of
-///whatever else meets there, and a click on it can land on a neighbour. That would be testing the aim
+///whatever else meets there, and a click on it can land on a neighbor. That would be testing the aim
 ///rather than the tools. A few pixels in is unambiguously this shape, and still well inside where the
 ///handle sat.
 ///

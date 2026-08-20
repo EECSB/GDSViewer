@@ -31,8 +31,10 @@ const CANNOT_MEASURE = [
 ].join('\n');
 
 ///Puts the rules up in the side panel, which is where every control below it lives.
+///
+///The heading is a pair of names with the live one lit; pressing "Rules" shows the rules.
 async function openRules(page) {
-    await page.locator('#rulesToggle').click();
+    await page.locator('#sidebarPanelRules').click();
 
     await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
 }
@@ -69,30 +71,58 @@ test.describe('the rules panel', () => {
     });
 
     ///
-    ///The panel is the layer panel showing something else, which is what the button switches.
+    ///The panel is the layer panel showing something else, which is what the name pair switches.
     ///
-    ///Worth asserting both halves: a button that put the rules up *beside* the layers would pass a test
+    ///Worth asserting both halves: a control that put the rules up *beside* the layers would pass a test
     ///that only looked for the rules, and would be a second panel rather than the one the design asks for.
     ///
-    test('the rules button turns the layer panel into the rules panel', async ({ page }) => {
+    test('the name pair turns the layer panel into the rules panel', async ({ page }) => {
         await expect(page.locator('#layerSidebar .layerList')).toBeVisible();
+        await expect(page.locator('#sidebarPanelLayers')).toHaveClass(/sidebarPanelChoiceOn/);
 
         await openRules(page);
 
+        await expect(page.locator('#sidebarPanelRules')).toHaveClass(/sidebarPanelChoiceOn/);
         await expect(page.locator('.rulesList')).toBeVisible();
 
         //And the layer rows are gone rather than pushed down.
-        await expect(page.locator('#layerSidebar input[type=checkbox]')).toHaveCount(0);
+        await expect(page.locator('#layerSidebar .layerList input[type=checkbox]')).toHaveCount(0);
     });
 
-    ///Pressing the layer button while the rules are up brings the layers back rather than closing anything.
-    test('the layer button brings the layers back', async ({ page }) => {
+    ///Pressing the other name goes back, which is what makes the pair a switch.
+    test('the other name switches back to the layers', async ({ page }) => {
         await openRules(page);
 
-        await page.locator('#layersToggle').click();
+        await page.locator('#sidebarPanelLayers').click();
 
+        await expect(page.locator('#sidebarPanelLayers')).toHaveClass(/sidebarPanelChoiceOn/);
         await expect(page.locator('.rulesList')).toHaveCount(0);
         await expect(page.locator('#layerSidebar .layerList')).toBeVisible();
+    });
+
+    ///
+    ///And pressing the name you are already on leaves you there.
+    ///
+    ///The pair names both lists, so "Rules" means show the rules - not toggle them away. A swap would make
+    ///the lit half a trap: the one control whose label does not describe what pressing it does.
+    ///
+    test('pressing the name already showing is not a toggle', async ({ page }) => {
+        await openRules(page);
+
+        await page.locator('#sidebarPanelRules').click();
+
+        await expect(page.locator('#sidebarPanelRules')).toHaveClass(/sidebarPanelChoiceOn/);
+        await expect(page.locator('.rulesList')).toBeVisible();
+    });
+
+    ///
+    ///There is no second button in the toolbar for it.
+    ///
+    ///There was, and it was a third icon in a crowded bar that said nothing about where its panel would
+    ///appear. The panel names both its lists now, so the switch lives on the panel it changes.
+    ///
+    test('the toolbar has no separate rules button', async ({ page }) => {
+        await expect(page.locator('#rulesToggle')).toHaveCount(0);
     });
 
     test('asks for a deck before it offers to check anything', async ({ page }) => {
@@ -176,7 +206,7 @@ test.describe('the rules panel', () => {
         await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 
         //It is the real deck rather than an empty one - the whole file, rules and all.
-        await expect(page.locator('#drcRun')).toHaveAttribute('title', /Check against \d\d rule/);
+        await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all \d\d rule/);
     });
 
     ///
@@ -406,10 +436,10 @@ test.describe('the markers', () => {
     test('survive a redraw', async ({ page }) => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
 
-        //The checkboxes are on the layer list, which is the panel the rules replaced.
-        await page.locator('#layersToggle').click();
+        //The checkboxes are on the layer list, so switch the panel back to it.
+        await page.locator('#sidebarPanelLayers').click();
 
-        await page.locator('#layerSidebar input[type=checkbox]').last().click();
+        await page.locator('#layerSidebar .layerList input[type=checkbox]').last().click();
 
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
     });
@@ -443,6 +473,24 @@ test.describe('the markers', () => {
         await expect(page.locator('.rulesCount')).toHaveText(/^\d+$/);
     });
 
+
+    ///
+    ///The message can be put away, and putting it away is not the same as clearing the result.
+    ///
+    ///The drawing hints above it come and go with the tool in hand; this one is about a run that has
+    ///finished, so nothing else takes it off the drawing it is sitting over. Closing it leaves the marks
+    ///and the flagged rule exactly where they were - Clear in the panel is what takes those off.
+    ///
+    test('the message closes without taking the markers with it', async ({ page }) => {
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+
+        await page.locator('#drcNoticeClose').click();
+
+        await expect(page.locator('#drcNotice')).toHaveCount(0);
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+        await expect(page.locator('.rulesRowBroken')).toHaveCount(1);
+    });
     ///Clearing takes the markers off and keeps the deck, so the next run needs no second trip to the picker.
     test('clearing takes them off without dropping the deck', async ({ page }) => {
         await page.locator('#drcClear').click();
