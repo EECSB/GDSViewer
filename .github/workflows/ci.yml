@@ -94,6 +94,19 @@ jobs:
       - name: JS unit tests
         run: npm test
 
+      #
+      # Built before the suite starts, because one of the specs runs it *during* the suite.
+      #
+      # large-layout.spec.js generates its twenty-thousand-shape fixture by shelling out to
+      # `dotnet run -c Release --project GdsII.Cli`, and `dotnet run` builds first. That build lands in the
+      # same obj/ tree the Playwright web server is already running out of, so two dotnet builds end up in
+      # one directory and the second one fails with "The build failed" and no compiler error under it -
+      # which reads as a broken CLI and is nothing of the kind. Built here, the mid-suite `dotnet run`
+      # finds its output current and compiles nothing.
+      #
+      - name: Build the CLI the large-layout spec shells out to
+        run: dotnet build GdsII.Cli -c Release
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

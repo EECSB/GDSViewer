@@ -13,8 +13,7 @@ module.exports = defineConfig({
     fullyParallel: true,
 
     //
-    //Twelve, and the number is measured rather than reasoned - including a measurement that took two runs
-    //to believe.
+    //Twelve here, four on CI, and both numbers are measured rather than reasoned.
     //
     //It was pinned at 4 on the belief that the shared dev server was the bottleneck past that. It is not:
     //sampled through a run the processor sits at 100% with memory to spare, so what runs out is cores.
@@ -29,24 +28,24 @@ module.exports = defineConfig({
     //
     //**Sixteen looks best on that table and is not.** It ran the whole suite clean once in 7.9 minutes and
     //then came back flaky in 9.1, and the test that went was large-layout.spec.js asserting a frame
-    //budget. That is the catch: some of these specs measure *performance*, so a worker count that
-    //saturates the machine makes them fail for being slow rather than wrong - a different one each run,
-    //every one of them passing on its own. Twenty did the same thing more loudly.
+    //budget. Some of these specs measure *performance*, so a worker count that saturates the machine makes
+    //them fail for being slow rather than wrong - a different one each run, every one passing on its own.
     //
-    //So this sits under the physical core count rather than over it, which leaves the frame-rate specs a
-    //core to run on. The wall-clock difference against sixteen is small; the difference in whether a red
-    //run means anything is not.
+    //**And a GitHub runner is four vCPUs, where twelve is three times oversubscribed.** The first CI run at
+    //twelve took 21.9 minutes against 7.9 here, went flaky in three specs, and failed outright in
+    //large-layout - which shells out to `dotnet run` mid-suite, so its build was competing with twelve
+    //browsers for four cores. `process.env.CI` is set by Actions, so each machine gets a number that suits
+    //it rather than one of them getting the other's.
     //
     //Re-measure after changing the machine, and take two full runs before believing a number: time a
     //subset at a few settings, run the whole suite at the winner twice, and check nothing came back flaky.
-    //The knee has moved twice - 8 on six cores, 12 on eleven.
     //
     //**What this no longer buys much of is wall clock on the whole suite.** 792 of the 801 specs finish in
     //5.7 minutes; the whole suite takes about eight. The difference is the nine specs in
     //large-layout.spec.js, one of which is a single four-and-a-half-minute test that no number of workers
-    //can divide. Until that one is split or made to start first, the suite has a floor near its length.
+    //can divide.
     //
-    workers: 12,
+    workers: process.env.CI ? 4 : 12,
 
     //One retry, so a spec that fails for a reason nothing here controls is retried rather than believed
     //immediately. A spec that fails twice has something to say.
