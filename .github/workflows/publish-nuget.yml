@@ -114,6 +114,29 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
 
+      #
+      # The web app itself, as a folder anybody can serve.
+      #
+      # It is a Blazor WebAssembly PWA with no server side, so "deploying" it is copying wwwroot somewhere
+      # static - which makes a zip of that folder the whole product, and the thing somebody who does not
+      # want the hosted copy is actually after. Published rather than built: publish is what trims, AOT
+      # compiles, precompresses and writes the service worker's asset manifest, and a `bin` folder from a
+      # plain build is none of those things.
+      #
+      # `--no-build` is deliberately *not* passed. The build above is the ordinary one; a publish needs its
+      # own pass to produce the AOT output, and reusing the other one produces an app that boots to a mono
+      # interpreter assertion rather than anything that looks like an error.
+      #
+      - name: Publish the web app
+        run: dotnet publish GDSViewer.csproj --configuration Release --output ./published
+
+      - name: Zip it
+        run: |
+          cd ./published/wwwroot
+          zip -qr "../../artifacts/GDSViewer-${{ steps.version.outputs.number }}-web.zip" .
+          cd ../..
+          ls -lh artifacts
+
       # As late as possible, immediately before the push: the key this hands back is good for one hour, and
       # each token buys exactly one of them.
       - name: NuGet login (OIDC, for a short-lived key)
@@ -173,5 +196,11 @@ jobs:
             dotnet tool install -g GdsII.Cli --version ${{ steps.version.outputs.number }}
             ```
 
-            Both are public domain — [The Unlicense](https://github.com/EECSB/GDSViewer/blob/master/UNLICENSE).
+            ### The app itself
+
+            `GDSViewer-${{ steps.version.outputs.number }}-web.zip` below is the whole web app, published —
+            trimmed, AOT compiled and precompressed. It is a Blazor WebAssembly PWA with no server side, so
+            hosting it is copying those files behind any static web server: no runtime, no configuration.
+
+            Both packages are public domain — [The Unlicense](https://github.com/EECSB/GDSViewer/blob/master/UNLICENSE).
             The `.nupkg` files below are the same ones on nuget.org.

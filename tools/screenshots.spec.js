@@ -296,6 +296,55 @@ test('fill patterns over the colors', async ({ page }) => {
     await shoot(page, 'patterns');
 });
 
+///
+///The rules, in the panel the layers usually have.
+///
+///Loaded through the bundled deck rather than a fixture, because that is the button somebody actually
+///presses and a picture of a hand-fed deck would be a picture of something nobody does.
+///
+test('the rules panel, with the bundled deck loaded', async ({ page }) => {
+    await open(page, `?file=${CELL}&view=2d&layermap=${LAYERMAP}`);
+    await drawn(page);
+
+    await page.locator('#sidebarPanelRules').click();
+    await page.locator('#drcBundled').click();
+
+    await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+
+    await shoot(page, 'rules-sidebar', { clip: await box(page, '#layerSidebar') });
+});
+
+///
+///A run that finds something, which is the picture the feature is for.
+///
+///The bundled cells are signed-off layout and the real deck finds nothing in them - the right answer and a
+///useless picture. The demonstration deck is the one whose limits the layout cannot meet, so the markers,
+///the counts and the message all have something to show.
+///
+test('violations marked on the drawing', async ({ page }) => {
+    await open(page, `?file=${CELL}&view=2d&layermap=${LAYERMAP}`);
+    await drawn(page);
+
+    await page.locator('#sidebarPanelRules').click();
+    await page.locator('#sidebarInfo').click();
+    await page.locator('#loadStrictDeck').click();
+
+    await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+
+    await page.locator('#drcRun').click();
+
+    await expect(page.locator('#drcNotice')).toBeVisible({ timeout: 60000 });
+
+    //The marks are drawn into the SVG, so wait for them rather than for the message that counts them.
+    await expect
+        .poll(async () => page.locator('#gdsSVG .drcMarker, #gdsSVG .drcMarkerPoint').count(), { timeout: 60000 })
+        .toBeGreaterThan(0);
+
+    await page.waitForTimeout(600);
+
+    await shoot(page, 'rules-violations');
+});
+
 ///Clicks the middle of the first shape drawn on a given layer's path, so a test can choose *which* shape
 ///rather than whichever happens to be first.
 async function clickShapeOnLayer(page, className) {

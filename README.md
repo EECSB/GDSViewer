@@ -5,6 +5,7 @@
 ![Blazor WebAssembly](https://img.shields.io/badge/Blazor-WebAssembly-512BD4) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8) ![No server](https://img.shields.io/badge/files-never%20uploaded-brightgreen)
 
 
+
 ## About
 
 
@@ -21,10 +22,12 @@ I updated the UI and added more features, and the functionality is now also avai
 > matters against other software. See [Current limitations](#current-limitations).
 
 
+
 ## Try it out
 
 
 🔗 Open the viewer: <https://eecs.blog/BlazorApps/GDSViewer/>
+
 
 
 ## Features
@@ -48,6 +51,7 @@ The text editor: the raw record stream in Monaco, editable and saveable back int
 
 **See [FEATURES-DEMO.md](docs/FEATURES-DEMO.md) for the rest of them, in pictures** — selecting and editing,
 drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and the layer settings.
+
 
 ### Feature List
 
@@ -162,11 +166,13 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   view with it, so you land on what you were looking at.
 
 
+
 ## Embedding
 
 
 Drop the viewer into your own page in an `<iframe>` and set its whole opening state from the address. Nothing
 needs building, configuring or hosting — every setting is a query parameter.
+
 
 ### Copy and paste this
 
@@ -187,6 +193,7 @@ Drop `mode=viewer` for the whole app, or use `mode=noedit` for one that can be l
 
 `allow="xr-spatial-tracking"` is only needed if you want the VR and AR buttons to work from inside the frame;
 everything else works without it.
+
 
 ### Every parameter
 
@@ -221,6 +228,7 @@ it. Pan or zoom the 2D view, or orbit the 3D one, and a second after you stop th
 are looking. The **center** button in the canvas's top-right puts the layout back in the middle of it, and
 in the 2D view it takes `box` back out again, since that is the framing a fresh visitor gets anyway.
 
+
 ### The three modes
 
 `mode` is the coarse control, and the one worth choosing deliberately:
@@ -233,6 +241,7 @@ in the 2D view it takes `box` back out again, since that is the framing a fresh 
 
 A `mode` this build does not recognize gives you the whole app, which is the safe direction to be wrong in: a
 misspelled `noedit` that fell back to `viewer` would take the toolbar away with nothing on screen to say why.
+
 
 ### Your own files in the picker
 
@@ -251,6 +260,7 @@ refused quietly, one entry at a time.
 **CORS is your job.** A file on another host has to be served with a header allowing this app's origin, or the
 browser refuses the read. The app says so in the failure rather than reporting a bare network error, because a
 page that has just embedded the viewer has no other way to find out.
+
 
 ### Naming the layers
 
@@ -287,6 +297,7 @@ The bundled sky130 mapping is served from the app's own origin, so it works with
 ?file=Mosfet&view=2d&layermap=resources/GDS%20Files/sky130-roles.csv
 ```
 
+
 ### A few worth trying
 
 ```html
@@ -311,6 +322,7 @@ How this is implemented, and how the precedence is tested, is in
 [DOCUMENTATION.md](docs/DOCUMENTATION.md#embedding-the-viewer).
 
 
+
 ## The command line and the packages
 
 
@@ -331,6 +343,7 @@ The format library is its own project with **no dependencies** and nothing in it
 the web app is one consumer of it, and the command line is another.
 
 
+
 ## Documentation
 
 
@@ -342,6 +355,7 @@ the web app is one consumer of it, and the command line is another.
 | **[DRC.md](docs/DRC.md)** | Design rule checking: the deck format, the checks, and what they were measured against |
 | **[WRITING-A-DECK.md](wwwroot/resources/WRITING-A-DECK.md)** | How to write a rule deck for your own PDK — a grammar you can hand to an AI |
 | **[NUGET.md](docs/NUGET.md)** | Using the format library from your own code |
+
 
 
 ## Current limitations
@@ -381,6 +395,7 @@ A fuller list, including the internal ones, is in
 [DOCUMENTATION.md](docs/DOCUMENTATION.md#known-gaps).
 
 
+
 ## Third-party code
 
 
@@ -396,6 +411,7 @@ Also used: [Bootstrap](https://getbootstrap.com/) and
 
 The bundled example layouts are from the
 [SkyWater sky130 PDK](https://github.com/google/skywater-pdk), licensed Apache-2.0.
+
 
 
 ## License

@@ -20,6 +20,7 @@ read at a glance, and `sky130_fd_sc_hd__nand2_1.gds`, a real SkyWater standard c
 - [Opening a file](#opening-a-file)
 - [The 2D editor](#the-2d-editor)
 - [Layers](#layers)
+- [Design rules](#design-rules)
 - [The cell tree](#the-cell-tree)
 - [Selecting and editing](#selecting-and-editing)
 - [Drawing](#drawing)
@@ -81,6 +82,9 @@ format, every column filled in, so a mapping is edited rather than typed from no
 
 Names persist between visits and across files, since the numbers mean the same thing throughout a technology.
 
+The heading above the list is a switch: the same panel also holds the [design rules](#design-rules) the
+layout is checked against, and only one of the two is ever wanted at a time.
+
 ### Fill patterns
 
 Color runs out before layers do. A file with twenty-two of them has shades that are genuinely hard to tell
@@ -89,6 +93,45 @@ marks can be given a color of their own and a size in screen pixels, because a s
 it is actually seen at rather than in the layout's units.
 
 ![A layer given a hatch](images/patterns.png)
+
+## Design rules
+
+**The same panel, showing what the layout is allowed to be rather than what it is.** The heading is a pair
+of names with the live one lit — press *Rules* and the deck comes up, press *Layers* and the rows come back.
+They are never both wanted at once, so they share one panel rather than taking the width twice over.
+
+![The rules panel](images/rules-sidebar.png)
+
+A **deck** is a small text file you supply: `width`, `space`, `enclosure`, `area`, `density` and off-grid
+rules over layers the deck itself derives. **There is no standard file to download** — design rules have no
+interchange format, so a foundry supporting three tools ships three separately maintained decks and nothing
+converts between them. **Load sky130A example** brings up a working 30-rule starter deck; **Import** takes
+your own, and **Export** hands back the text that came in rather than the parse printed out, so comments and
+blank lines survive the round trip.
+
+**DRC Check** runs it. **check on edit** runs it again after every change — and with it off, an edit *takes
+the last result off the drawing* rather than leaving it: a marker is a claim about where something is, and
+the moment the geometry under it moves the claim is about a layout that no longer exists.
+
+What it finds is marked on the drawing, counted per rule, and said in one line over the view:
+
+![Violations marked on the layout](images/rules-violations.png)
+
+Every fault is drawn in the same orange as the rule row that found it, so the list and the marks read as one
+thing. Clicking a flagged row frames the view on the first fault under it.
+
+**A rule this build cannot measure is refused by name, not skipped.** It stays in the list, marked *not
+measurable*, and every result from that deck says *"not fully checked"* — because a count of faults is only
+an answer when every rule actually ran. That is the whole reason the format is a fixed vocabulary rather
+than an expression language.
+
+> **Not a signoff tool.** It catches the obvious against the rules you give it. The picture above uses a
+> deliberately failing deck, because the bundled cells are signed-off layout and a correct deck finds
+> nothing in them — the right answer, and a poor demonstration.
+
+The ⓘ beside the heading explains all of this in the app, and hands you a guide written to be given to an AI
+along with your PDK's rule document — see [WRITING-A-DECK.md](../wwwroot/resources/WRITING-A-DECK.md). The
+same check runs without a browser: `gds drc cell.gds --deck sky130A.drc`.
 
 ## The cell tree
 
