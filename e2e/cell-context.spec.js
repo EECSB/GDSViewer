@@ -4,7 +4,7 @@
 //right shapes, the breadcrumb goes where it says, and the fade actually happens. Against the fixture,
 //because no bundled file has a placement that resolves: see selection.spec.js.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, shapesMarked, snapToGrid, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, shapesMarked, snapToGrid, openedOnItsOwn, leaveCell } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
@@ -42,8 +42,10 @@ async function clickIntoLeaf(page) {
     throw new Error('no shape from a placed cell was found');
 }
 
-test('there is no context until a cell is entered', async ({ page }) => {
-    await expect(page.locator('#contextBar')).toHaveCount(0);
+test('leaving the cell a file opens in puts everything back out of context', async ({ page }) => {
+    //A file opens inside its own top cell now, so being outside every cell is somewhere to go rather than
+    //where you start - and this is what it looks like when you get there.
+    await leaveCell(page);
 
     //And nothing is marked one way or the other.
     await expect.poll(async () => shapeCount(page, 'outOfContext'), { timeout: 15000 }).toBe(0);

@@ -10,7 +10,7 @@
 //every C# test still passed through happily because the markup it produced was perfectly correct. Nothing
 //but a real page can tell markup that is right from markup that arrived.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, chooseShape, CLEAR_OF_PANEL, MOSFET } = require('./helpers');
+const { gotoExample, selectExample, shapeCount, shapeBox, chooseShape, CLEAR_OF_PANEL, MOSFET, SKY130_CELL } = require('./helpers');
 
 ///A deck naming one layer Mosfet.gds uses, with a width nothing could satisfy - so it always finds a fault.
 const FINDS_SOMETHING = [
@@ -63,6 +63,35 @@ async function runDeck(page) {
 ///is mounted, so a single read races it.
 async function markerCount(page) {
     return page.evaluate(() => document.querySelectorAll('#gdsSVG .drcMarker, #gdsSVG .drcMarkerPoint').length);
+}
+
+///
+///Drops whatever deck is loaded, which a bundled example now arrives with.
+///
+///Most of these start from an empty panel, and since the deck comes automatically that is a Clear away
+///rather than the state a file opens in.
+///
+async function clearDeck(page) {
+    await page.locator('#drcClear').click();
+
+    await expect(page.locator('#drcRun')).toHaveCount(0);
+}
+
+///
+///Loads the bundled deck through the Example offer.
+///
+///The button lives inside a popup the wrapper opens on hover, so it has to be hovered rather than clicked
+///straight away - `hover()` drives the real CSS :hover, which is what the popup is built on.
+///
+async function loadBundledDeck(page) {
+    await page.locator('#drcExampleOffer').hover();
+
+    //The popup waits a third of a second before opening, so a pointer passing over cannot trip it.
+    await expect(page.locator('#drcBundled')).toBeVisible();
+
+    await page.locator('#drcBundled').click();
+
+    await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 }
 
 test.describe('the rules panel', () => {
@@ -125,13 +154,54 @@ test.describe('the rules panel', () => {
         await expect(page.locator('#rulesToggle')).toHaveCount(0);
     });
 
-    test('asks for a deck before it offers to check anything', async ({ page }) => {
+    ///
+    ///A bundled example arrives with the deck already on it.
+    ///
+    ///Every file this app ships is a sky130 cell and the deck for them ships beside the layermap that is
+    ///already applied the same way - so opening one and finding the panel empty sent somebody to fetch a
+    ///file the app was already holding. The empty state is what a Clear leaves behind, and this checks
+    ///both halves of that.
+    ///
+    test('a bundled example opens with its rules already loaded', async ({ page }) => {
         await openRules(page);
 
-        await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
+        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+        await expect(page.locator('.rulesRow')).not.toHaveCount(0);
 
-        //Nothing to run until a deck says what the rules are.
+        //Nothing to offer while it is loaded.
+        await expect(page.locator('#drcExampleOffer')).toHaveCount(0);
+
+        await clearDeck(page);
+
+        //And with it gone, Import and the Example offer are what is left.
+        await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
+        await expect(page.locator('#drcExampleOffer')).toBeVisible();
         await expect(page.locator('#drcRun')).toHaveCount(0);
+    });
+
+    ///
+    ///A Clear speaks for the file it was made on, and stops there.
+    ///
+    ///It has to outlast a reload, or the panel would fill straight back up and Clear would read as a button
+    ///that does nothing. But it was outlasting everything: one Clear while looking round the examples, and
+    ///every example opened afterwards arrived with an empty panel - for a PDK this app ships the deck for
+    ///and knows the file belongs to. Nothing on screen explained it, and the way back was behind a hover.
+    ///
+    ///Through the picker rather than the address, because the picker is where it was reported from.
+    ///
+    test('clearing the deck does not follow you to the next example', async ({ page }) => {
+        await openRules(page);
+        await clearDeck(page);
+
+        await expect(page.locator('#drcExampleOffer')).toBeVisible();
+
+        await selectExample(page, `${SKY130_CELL}.gds`);
+
+        await openRules(page);
+
+        //A different sky130 cell, so the deck for it applies again.
+        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+        await expect(page.locator('.rulesRow')).not.toHaveCount(0);
     });
 
     test('a deck arrives, is listed rule by rule, and offers to be run', async ({ page }) => {
@@ -198,12 +268,11 @@ test.describe('the rules panel', () => {
     ///
     test('the deck that ships with the examples can be picked', async ({ page }) => {
         await openRules(page);
+        await clearDeck(page);
 
-        await expect(page.locator('#drcBundled')).toBeVisible();
+        await expect(page.locator('#drcExampleOffer')).toBeVisible();
 
-        await page.locator('#drcBundled').click();
-
-        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+        await loadBundledDeck(page);
 
         //It is the real deck rather than an empty one - the whole file, rules and all.
         await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all \d\d rule/);
@@ -219,8 +288,7 @@ test.describe('the rules panel', () => {
     test('the deck that ships finds nothing wrong with the example it ships beside', async ({ page }) => {
         await openRules(page);
 
-        await page.locator('#drcBundled').click();
-
+        //Already loaded, since it is a bundled example.
         await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 
         await runDeck(page);
@@ -230,14 +298,12 @@ test.describe('the rules panel', () => {
         await expect.poll(() => markerCount(page)).toBe(0);
     });
 
-    ///Once it is the deck in hand there is nothing left to pick, so the control stands aside.
+    ///Once it is the deck in hand there is nothing left to pick, so the offer stands aside.
     test('the bundled control goes once its deck is the one loaded', async ({ page }) => {
         await openRules(page);
 
-        await page.locator('#drcBundled').click();
-
         await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
-        await expect(page.locator('#drcBundled')).toHaveCount(0);
+        await expect(page.locator('#drcExampleOffer')).toHaveCount(0);
     });
 
     test('a clean run says so rather than leaving the view silent', async ({ page }) => {
@@ -332,13 +398,30 @@ test.describe('checking as the layout changes', () => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
     });
 
-    ///With it on there is nothing left for the button to do, and it says so.
-    test('the Check button steps aside while it is on', async ({ page }) => {
+    ///
+    ///The button stays live with the switch on, and still runs.
+    ///
+    ///It used to go disabled, on the argument that a control with nothing left to do should say so. But a
+    ///check runs on an *edit*, and plenty worth checking is not one - a deck imported, a cell flattened, or
+    ///simply wanting the marks back after reading them away. Disabling it took the only manual run away
+    ///because an automatic one existed, which left no way to ask for the thing the panel is for.
+    ///
+    test('the Check button still runs while it is on', async ({ page }) => {
         await expect(page.locator('#drcRun')).toBeEnabled();
 
         await page.locator('#drcContinuous').check();
 
-        await expect(page.locator('#drcRun')).toBeDisabled();
+        await expect(page.locator('#drcNotice')).toBeVisible({ timeout: 60000 });
+        await expect(page.locator('#drcRun')).toBeEnabled();
+
+        //Read away, then asked for again - the gesture the disabled button had no answer for.
+        await page.locator('#drcNoticeClose').click();
+
+        await expect(page.locator('#drcNotice')).toHaveCount(0);
+
+        await page.locator('#drcRun').click();
+
+        await expect(page.locator('#drcNotice')).toBeVisible({ timeout: 60000 });
     });
 
     ///
@@ -364,15 +447,48 @@ test.describe('checking as the layout changes', () => {
     ///Which is the whole point of the switch: the result under a layout being worked on is either current
     ///or absent, and this is the setting that chooses current.
     ///
+    ///**The message is read away first, so what comes back is this edit's answer.** Without that this
+    ///passed while the recheck did nothing at all - the notice and the markers were both left over from
+    ///turning the switch on, and neither of them moves when a run silently returns. It was green through
+    ///the whole life of the bug the button test below is named for.
+    ///
     test('an edit is rechecked when it is on', async ({ page }) => {
         await page.locator('#drcContinuous').check();
 
         await expect(page.locator('#drcNotice')).toBeVisible({ timeout: 60000 });
 
+        await page.locator('#drcNoticeClose').click();
+
+        await expect(page.locator('#drcNotice')).toHaveCount(0);
+
         await drawOne(page);
 
-        //Still up afterwards, which is what a recheck looks like and a clear does not.
+        //Back up afterwards, which only a run that happened can do.
         await expect(page.locator('#drcNotice')).toBeVisible({ timeout: 60000 });
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+    });
+
+    ///
+    ///And the button goes on working after an edit, which is what it stopped doing.
+    ///
+    ///The shell drops its flattened layout when the library is changed in place, and the check read that
+    ///null as "nothing to check" and returned. So **from the first edit onward DRC Check did nothing** -
+    ///no marks, no message, and a deck listed above saying the rules were loaded. It took "check on edit"
+    ///with it, since that runs through the same method. It works a layout out now rather than returning.
+    ///
+    test('the button still checks after an edit', async ({ page }) => {
+        await runDeck(page);
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+
+        await drawOne(page);
+
+        //The switch is off here, so the edit takes the stale result away. That is the state the button
+        //could not get out of.
+        await expect.poll(() => markerCount(page)).toBe(0);
+
+        await runDeck(page);
+
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
     });
 });
@@ -491,12 +607,23 @@ test.describe('the markers', () => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
         await expect(page.locator('.rulesRowBroken')).toHaveCount(1);
     });
-    ///Clearing takes the markers off and keeps the deck, so the next run needs no second trip to the picker.
-    test('clearing takes them off without dropping the deck', async ({ page }) => {
+
+    ///
+    ///Clearing drops the deck as well as the marks, the way Clear does one panel over.
+    ///
+    ///The two Clears sit in the same place in the same row, so they mean the same thing: the layer one
+    ///drops an imported layermap rather than merely what it is drawing, and this drops an imported deck.
+    ///It used to keep the deck, which made one a reset and the other a tidy-up.
+    ///
+    test('clearing drops the deck along with the marks', async ({ page }) => {
         await page.locator('#drcClear').click();
 
         await expect.poll(() => markerCount(page)).toBe(0);
         await expect(page.locator('#drcNotice')).toHaveCount(0);
-        await expect(page.locator('#drcRun')).toBeVisible();
+
+        //No deck, so nothing to run and the empty state is back with its offer.
+        await expect(page.locator('#drcRun')).toHaveCount(0);
+        await expect(page.locator('.rulesRow')).toHaveCount(0);
+        await expect(page.locator('#drcExampleOffer')).toBeVisible();
     });
 });

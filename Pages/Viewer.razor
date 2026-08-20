@@ -1167,29 +1167,57 @@
                                 @if (drcDeck is not null)
                                 {
                                     @*
-                                        Takes the result off and keeps the deck.
+                                        Drops the deck, the way Clear drops a layermap one panel over.
 
-                                        The deck is what somebody went to a file picker for, and the
-                                        markers are what one press remakes - so clearing the expensive
-                                        half to be rid of the cheap one is the wrong way round.
+                                        The two sit in the same place in the same row of the same panel, so
+                                        they had better mean the same thing. This one used to keep the deck
+                                        and take only the markers off, which made one Clear a reset and the
+                                        other a tidy-up - a difference nothing on screen explained.
                                     *@
                                     <span id="drcClear" class="layerSidebarAction layerSidebarClear" @onclick="clearDrc"
-                                          title="Take the markers off and keep the deck, so Check can run again">Clear</span>
+                                          title="Drop the deck and everything it found, leaving the panel empty">Clear</span>
+                                }
+
+                                @*
+                                    The bundled deck, offered only while there is nothing loaded.
+
+                                    **Hover to open, click the button inside to load.** Two steps rather than
+                                    one because this replaces what is in the panel, and a control that swaps
+                                    your work for a sample on a single mis-click is a control people learn to
+                                    steer around. The popup is inside the wrapper, so moving onto it never
+                                    crosses a gap and it needs no state to stay open.
+                                *@
+                                @if (drcDeck is null)
+                                {
+                                    <span class="exampleOffer">
+                                        <span class="layerSidebarAction" id="drcExampleOffer">Example</span>
+
+                                        <span class="exampleOfferPopup">
+                                            <button id="drcBundled" class="buttonStyle2 smallButton rulesButton" @onclick="loadBundledDeck"
+                                                    title="The 30-rule sky130 starter deck that ships with the examples">Load sky130</button>
+                                        </span>
+                                    </span>
                                 }
                             </div>
 
                             @*
                                 Check, and whether to keep checking.
 
-                                **The switch is beside the button rather than in the settings**, because it
-                                changes what the button means: with it on there is nothing to press, and a
-                                control that becomes pointless should say so where it is.
+                                **The switch is beside the button rather than in the settings**, because the
+                                two are one question - when the layout gets measured - and reading the answer
+                                should not mean opening a menu to find half of it.
+
+                                **The button stays live with the switch on.** It went disabled, on the
+                                argument that a control with nothing left to do should say so. But there is
+                                always something left to do: a check runs on an *edit*, and plenty happens
+                                that is not one - a deck imported, a cell flattened, or simply wanting the
+                                marks back after reading them away. Taking the only manual run away because
+                                an automatic one exists left no way to ask for the thing the panel is for.
                             *@
                             @if (drcDeck is not null)
                             {
                                 <div class="rulesRun">
                                     <button id="drcRun" class="buttonStyle2 smallButton rulesButton" @onclick="runDrc"
-                                            disabled="@drcContinuous"
                                             title="@drcDeckDescription()">DRC Check</button>
 
                                     <label class="rulesContinuous" title="@drcContinuousDescription()">
@@ -1210,19 +1238,16 @@
                                 @if (drcDeck is null)
                                 {
                                     @*
-                                        Nothing loaded, and the way out of that.
+                                        Nothing loaded, and no offer here any more.
 
-                                        **The offer belongs in the empty space, not in the row of controls.**
-                                        It sat beside Import and Export, which meant it was still there with
-                                        thirty rules on screen - taking width in a crowded row to offer a
-                                        deck you already have. Here it is only ever visible when the list has
-                                        nothing in it, which is exactly when somebody wants it.
+                                        **The offer moved up to the controls row, as Example.** It was here,
+                                        under a sentence explaining it, which was two things saying one -
+                                        and it left the layer panel with no equivalent at all. One control
+                                        in the same place in both panels is the shorter answer.
                                     *@
                                     <div class="rulesEmpty">
-                                        <div>No rules loaded. Import a deck of your own, or start from the one that ships with the examples.</div>
-
-                                        <button id="drcBundled" class="buttonStyle2 smallButton rulesButton" @onclick="loadBundledDeck"
-                                                title="Load the sky130 starter deck that ships with the examples">Load sky130A example</button>
+                                        No rules loaded. <b>Import</b> a deck of your own, or take the bundled
+                                        sky130 one from <b>Example</b> above.
                                     </div>
                                 }
                                 else
@@ -1306,6 +1331,26 @@
                                         not be the loudest.
                                     *@
                                     <span class="layerSidebarAction layerSidebarClear" @onclick="clearLayerNames" title="Drop every layer name and put the palette colors back, leaving the bare numbers">Clear</span>
+                                }
+
+                                @*
+                                    The bundled layermap, on the same terms as the deck one panel over.
+
+                                    Offered only while nothing is named, and behind a hover so a mis-click
+                                    cannot replace a mapping somebody typed. On a bundled example it has
+                                    usually already been applied and this never appears; it is here for an
+                                    uploaded sky130 file, which gets no mapping guessed at it.
+                                *@
+                                @if (!layerNamesLoaded)
+                                {
+                                    <span class="exampleOffer">
+                                        <span class="layerSidebarAction" id="layerExampleOffer">Example</span>
+
+                                        <span class="exampleOfferPopup">
+                                            <button id="layerNamesBundled" class="buttonStyle2 smallButton rulesButton" @onclick="loadBundledLayerNames"
+                                                    title="The sky130 layer names, colors, heights and roles that ship with the examples">Load sky130</button>
+                                        </span>
+                                    </span>
                                 }
                             </div>
 
@@ -1451,50 +1496,55 @@
                                     }
                                 }
                             </div>
+                        }
 
+                        @*
+                            How see-through the shapes are drawn, under whichever list is up.
+
+                            Outside the Layers/Rules switch rather than inside it: opacity is about the drawing,
+                            and the drawing is there whichever list somebody is reading. Inside the layer branch it
+                            disappeared the moment they pressed Rules - which is exactly when a marker over a stack
+                            of half-transparent shapes is hardest to see.
+
+                            It was an overlay across the top of the view, sitting on top of the very thing it
+                            dims - a control you had to look past to see its own effect. It belongs with the
+                            list of what it is dimming.
+
+                            Only for the 2D view, which is the only one that has an opacity; the 3D view
+                            stacks its layers in space instead. Reached by a cast rather than through
+                            IRenderable, for the same reason the draw layer is: it is not a question every
+                            view can answer.
+                        *@
+                        @if (viewer is Viewer2DSvg shaded)
+                        {
+                            <div class="layerOpacity">
+                                <label for="layerOpacity">Opacity</label>
+
+                                <input id="layerOpacity" type="range" min="0" max="1" step="0.1"
+                                       value="@SvgWriter.FormatOpacity(shaded.Opacity)"
+                                       @oninput="shaded.AdjustOpacity"
+                                       title="How see-through the shapes are drawn, so you can look through stacked layers" />
+                            </div>
+                        }
+                        else if (viewer is Viewer3D stacked)
+                        {
                             @*
-                                How see-through the layers are drawn, under the layers it applies to.
+                                The 3D view's answer to the same question, in the same place.
 
-                                It was an overlay across the top of the view, sitting on top of the very thing it
-                                dims - a control you had to look past to see its own effect. It belongs with the
-                                list of what it is dimming.
-
-                                Only for the 2D view, which is the only one that has an opacity; the 3D view
-                                stacks its layers in space instead. Reached by a cast rather than through
-                                IRenderable, for the same reason the draw layer is: it is not a question every
-                                view can answer.
+                                Opacity and spacing are the two ways of seeing past the layer on top, one per
+                                view - so whichever view is open, the control for it is the row under the
+                                layer list rather than something floating over the drawing in one view and
+                                not the other. It was an overlay across the bottom left of the scene, where
+                                it sat over the geometry and took drags the orbit controls wanted.
                             *@
-                            @if (viewer is Viewer2DSvg shaded)
-                            {
-                                <div class="layerOpacity">
-                                    <label for="layerOpacity">Opacity</label>
+                            <div class="layerSpacing">
+                                <label for="layerSpacing">Distance</label>
 
-                                    <input id="layerOpacity" type="range" min="0" max="1" step="0.1"
-                                           value="@SvgWriter.FormatOpacity(shaded.Opacity)"
-                                           @oninput="shaded.AdjustOpacity"
-                                           title="How see-through the shapes are drawn, so you can look through stacked layers" />
-                                </div>
-                            }
-                            else if (viewer is Viewer3D stacked)
-                            {
-                                @*
-                                    The 3D view's answer to the same question, in the same place.
-
-                                    Opacity and spacing are the two ways of seeing past the layer on top, one per
-                                    view - so whichever view is open, the control for it is the row under the
-                                    layer list rather than something floating over the drawing in one view and
-                                    not the other. It was an overlay across the bottom left of the scene, where
-                                    it sat over the geometry and took drags the orbit controls wanted.
-                                *@
-                                <div class="layerSpacing">
-                                    <label for="layerSpacing">Distance</label>
-
-                                    <input id="layerSpacing" type="range" min="50" max="700"
-                                           value="@stacked.LayerSpacing"
-                                           @oninput="stacked.AdjustLayerSpacing"
-                                           title="How far apart the layers are stacked, to pull the layout open and see between them" />
-                                </div>
-                            }
+                                <input id="layerSpacing" type="range" min="50" max="700"
+                                       value="@stacked.LayerSpacing"
+                                       @oninput="stacked.AdjustLayerSpacing"
+                                       title="How far apart the layers are stacked, to pull the layout open and see between them" />
+                            </div>
                         }
 
                     </div>
@@ -2622,7 +2672,7 @@
         //at the same moment: measured, the DXF specs went from stable to five flaky in four runs, and back to
         //stable when this read was taken out. WhenAll costs the slower of the two rather than the sum.
         //
-        await Task.WhenAll(loadShippedRoles(), loadExampleFileList());
+        await Task.WhenAll(loadShippedRoles(), loadShippedDeck(), loadExampleFileList());
     }
 
     ///
@@ -2647,6 +2697,26 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Could not read the bundled layermap from {ShippedRolesPath}: {ex.Message}");
+        }
+    }
+
+    ///
+    ///The bundled deck, read once at start rather than on the open that needs it.
+    ///
+    ///The same arrangement as the layermap beside it and for the same reason: it is one 10 KB file from
+    ///this app's own origin, and fetching it per example open would put a round trip in front of every
+    ///one. Best effort - a viewer that would not draw because a convenience file was missing is worse
+    ///than one that shows an empty rule panel.
+    ///
+    private async Task loadShippedDeck()
+    {
+        try
+        {
+            shippedDeck = await httpClient.GetStringAsync(ShippedDeckPath);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not read the bundled deck from {ShippedDeckPath}: {ex.Message}");
         }
     }
 
@@ -2689,7 +2759,12 @@
 
         //Read here as well as on a full restore, because this is what a ?file= link on a fresh page gets -
         //and Clear has to outlast a reload however the next file arrives.
+        //
+        //With the file it was made against, since that is what keeps it to that file: restoring the flag on
+        //its own would decline the mapping for whatever the link happens to name.
         declinedBundledRoles = session.NoBundledLayerNames;
+        declinedBundledDeck = session.NoBundledDeck;
+        declinedOn = session.ExampleName;
     }
 
     ///
@@ -2967,6 +3042,65 @@
     private string shippedDeck = "";
 
     ///<summary>
+    ///Whether somebody has cleared the deck, so it stops being laid over the examples.
+    ///
+    ///The same flag the bundled layermap has, for the same reason: Clear has to mean something. Without it
+    ///the deck would come straight back on the next example opened, and the button would read as broken.
+    ///</summary>
+    private bool declinedBundledDeck = false;
+
+    ///
+    ///The bundled deck, over a bundled example, unless somebody has said otherwise.
+    ///
+    ///**Every example this app ships is a sky130 cell**, and the deck for them is in the same folder as
+    ///the layermap that is already applied this way. Opening one and finding the rules panel empty made
+    ///the visitor go and fetch a file the app was already holding - for the one PDK every bundled file
+    ///belongs to.
+    ///
+    ///Only where nothing is loaded and nothing was cleared, and only for a file this app ships: an upload
+    ///is somebody else's layout and guessing sky130 rules at it would be wrong.
+    ///
+    private void carryDeckOver()
+    {
+        if (drcDeck is not null || declinedBundledDeck || shippedDeck.Length == 0)
+            return;
+
+        //A bundled example rather than an upload, a history entry, or a file an embedding page brought.
+        if (selectedExample.Length == 0 || injectedNamed(selectedExample) is not null)
+            return;
+
+        var deck = DrcDeck.Parse(shippedDeck);
+
+        if (deck.Rules.Count == 0)
+            return;
+
+        drcDeck = deck;
+        drcDeckText = shippedDeck;
+
+        drcResult = null;
+        drcMarkers = "";
+
+        summarizeDrc();
+    }
+    ///<summary>
+    ///The deck to carry, which is nothing when it is the bundled one.
+    ///
+    ///**A deck the app already ships is not worth copying into the session.** It is ten kilobytes, and it
+    ///is laid over every bundled example automatically - so storing it turned a session that was a file
+    ///*name* into one carrying a file's worth of text, and a test that pins an unedited example at under
+    ///1.5 KB caught it at 5.5. Restoring re-applies it through carryDeckOver, which is where it came from.
+    ///
+    ///The same reasoning as the bundled layermap, which is deliberately not written into layerNames.
+    ///</summary>
+    private string deckToRemember()
+    {
+        if (drcDeckText == shippedDeck)
+            return "";
+
+        return drcDeckText;
+    }
+
+    ///<summary>
     ///Loads the deck that ships beside the examples.
     ///
     ///**Fetched when it is pressed for rather than at startup**, unlike the layermap. That one is laid over
@@ -2994,6 +3128,11 @@
 
         if (deck.Rules.Count == 0 && deck.Refused.Count == 0)
             return;
+
+        //Asked for, so it stops being declined - the same thing loadBundledLayerNames does one panel over.
+        //Without it, taking the deck back after a Clear got it for this file only, and the next example
+        //opened empty again.
+        declinedBundledDeck = false;
 
         drcDeck = deck;
         drcDeckText = shippedDeck;
@@ -3132,19 +3271,35 @@
         StateHasChanged();
     }
 
-    ///<summary>
+    ///
     ///Runs the deck over what is open.
     ///
-    ///On the prepared layout rather than flattening again: the shell already holds one and resolving the
-    ///hierarchy is the expensive part of opening a file. See GdsFlattener.Flattens, which exists to catch
-    ///exactly this kind of quiet second walk.
-    ///</summary>
+    ///On the prepared layout where there is one: the shell already holds one after a file opens, and
+    ///resolving the hierarchy is the expensive part of that. See GdsFlattener.Flattens, which exists to
+    ///catch exactly this kind of quiet second walk.
+    ///
+    ///**Where there is not one, it works one out rather than doing nothing.** An edit drops the shell's copy
+    ///- the library is changed in place, so what is held is of the file as it was, and RenderGDS hands the
+    ///view a null that means "work it out for yourself". This read the same null as "nothing to check" and
+    ///returned, which made **DRC Check a button that did nothing from the first edit onward** - and took
+    ///"check on edit" down with it, since that comes through here too. Silent both times: no marks, no
+    ///message, and a deck listed above saying the rules were loaded.
+    ///
+    ///Worked out here and kept, because the next edit nulls it again - onFileEdited is the one funnel every
+    ///edit passes through, so a layout cached here cannot outlive the file it was taken from.
+    ///
     private async Task runDrc()
     {
-        if (drcDeck is null || preparedLayout is null)
+        if (drcDeck is null || gds is null)
             return;
 
-        drcResult = Drc.Check(drcDeck, preparedLayout);
+        if (preparedLayout is null)
+        {
+            flattened = GdsFlattener.Flatten(gds);
+            flattenedFor = gds;
+        }
+
+        drcResult = Drc.Check(drcDeck, flattened!);
         drcMarkers = SvgWriter.Markers(drcResult.Violations);
 
         summarizeDrc();
@@ -3154,8 +3309,22 @@
         await Task.CompletedTask;
     }
 
-    private void clearDrc()
+    ///<summary>
+    ///Drops the deck and everything that came from it.
+    ///
+    ///**The same thing Clear does in the layer panel**, which drops an imported layermap rather than
+    ///merely what it is currently drawing. The two sit in the same place in the same row, so they had
+    ///better mean the same thing - and this one used to keep the deck and take only the markers off,
+    ///which made one Clear a reset and the other a tidy-up.
+    ///
+    ///The deck's text goes with it, so a reload does not bring back a file that was deliberately dropped.
+    ///Import and the bundled deck are both one press away again once it has.
+    ///</summary>
+    private async Task clearDrc()
     {
+        drcDeck = null;
+        drcDeckText = "";
+
         drcResult = null;
         drcMarkers = "";
 
@@ -3163,23 +3332,30 @@
         //a run that cannot happen under a switch saying it is happening.
         drcContinuous = false;
 
+        //And it stays cleared for this file, reload included: without this a restore would lay the bundled
+        //deck straight back over it, and Clear would read as a button that does nothing. Opening a different
+        //file lets it apply again - see reArmBundledPdkData.
+        declinedBundledDeck = true;
+        declinedOn = selectedExample;
+
         summarizeDrc();
+
+        await saveSession();
     }
 
     ///<summary>
     ///What the Check button will do, which is worth saying before it is pressed.
     ///
     ///It says what the press *does* as well as what it will run, because "Check against 30 rules" tells
-    ///somebody who already knows what a check is nothing they did not know. And when the switch below has
-    ///taken the button out of use it says so, rather than describing an action that is not on offer.
+    ///somebody who already knows what a check is nothing they did not know.
+    ///
+    ///The same sentence with the switch on, because the press does the same thing. It used to say "nothing
+    ///to press" and the button was disabled to match - see the markup for why both went.
     ///</summary>
     private string drcDeckDescription()
     {
         if (drcDeck is null)
             return "";
-
-        if (drcContinuous)
-            return "Nothing to press: \"check on edit\" is on, so the layout is checked after every change.";
 
         var said = new StringBuilder();
 
@@ -3201,9 +3377,9 @@
     private string drcContinuousDescription()
     {
         if (drcContinuous)
-            return "On: the deck is run again after every edit, so the marks always match what is drawn. Turn it off to check only when you press the button.";
+            return "On: the deck is run again after every edit, so the marks always match what is drawn. The button still runs it whenever you press. Turn this off to check only when you do.";
 
-        return "Off: press the button to check. An edit takes the last result off the drawing rather than leaving it out of date. Turn this on to have every edit checked instead.";
+        return "Off: press the button to check. An edit takes the last result off the drawing rather than leaving it out of date. Turn this on to have every edit checked as well.";
     }
 
     private string? drcDescriptionOf(string ruleId)
@@ -3440,7 +3616,30 @@
         //it is the way most people would name a whole PDK, and it was the one route that did not stick.
         await saveChangedFile();
 
-        await js.InvokeVoidAsync("alert", layerNamesMessage(names, applied));
+        await reportLayerMap(names, applied);
+    }
+
+    ///<summary>
+    ///Applies the bundled sky130 layermap, the same one an example gets laid over it automatically.
+    ///
+    ///Through applyLayerMapText like an imported file, so it is remembered, carries onto the next file and
+    ///reports what it matched - the offer is a shortcut past the file picker, not a second way in.
+    ///</summary>
+    private async Task loadBundledLayerNames()
+    {
+        if (gds is null || shippedRoles.Length == 0)
+            return;
+
+        //Asked for, so it stops being declined: Clear set that, and this is somebody undoing it.
+        declinedBundledRoles = false;
+
+        var names = applyLayerMapText(shippedRoles, out int applied);
+
+        await RenderGDS();
+
+        await saveChangedFile();
+
+        await reportLayerMap(names, applied);
     }
 
     ///
@@ -3520,6 +3719,26 @@
         layerMapNotice = "";
     }
 
+    ///
+    ///Says something about a mapping that has just been applied, when there is something to say.
+    ///
+    ///**A mapping that worked says nothing.** Its rows land in the panel one line away, named and colored,
+    ///which is the whole result - so a dialog reporting it stands between somebody and the thing they asked
+    ///for, and has to be dismissed before the layers it is describing can be looked at. Every route in
+    ///reports through here, so that was a click in the way of loading a mapping however it was loaded.
+    ///
+    ///What is left is the two cases the panel cannot show, because in both of them it looks exactly like a
+    ///mapping nobody loaded: **nothing matched**, and **a row could not be read**. The same policy
+    ///fetchLayerMap already applies to a mapping named by `layermap=`.
+    ///
+    private async Task reportLayerMap(LayerNames names, int applied)
+    {
+        if (applied > 0 && names.Problems.Count == 0)
+            return;
+
+        await js.InvokeVoidAsync("alert", layerNamesMessage(names, applied));
+    }
+
     ///<summary>
     ///What to say about a mapping. The case worth a real explanation is **none applied**: rows matching
     ///nothing is normal, since a mapping usually covers a whole PDK where a file uses a handful of layers,
@@ -3556,9 +3775,11 @@
 
         layerNames = "";
 
-        //Said, and remembered: bare numbers are what was asked for, so the bundled mapping stops being laid
-        //over the examples until a mapping is imported again. See declinedBundledRoles.
+        //Said, and remembered for this file: bare numbers are what was asked for, so the bundled mapping
+        //stops being laid over it, reload included. Opening a different file lets it apply again - see
+        //reArmBundledPdkData.
         declinedBundledRoles = true;
+        declinedOn = selectedExample;
 
         getLayers();
 
@@ -5359,8 +5580,9 @@
             FileType = CurrentlySelectedFileType,
             View = slugOf(view),
             LayerNames = LayerNames.Named(file.AdditionalInformation),
-            Deck = drcDeckText,
+            Deck = deckToRemember(),
             NoBundledLayerNames = declinedBundledRoles,
+            NoBundledDeck = declinedBundledDeck,
             HiddenLayers = checkboxItems.Where(item => !item.IsSelected).Select(item => item.Id.ToString()).ToList(),
             LabelsOffLayers = checkboxItems.Where(item => !item.ShowLabels).Select(item => item.Id.ToString()).ToList(),
             LayerColors = customColors(),
@@ -5598,8 +5820,10 @@
             return;
 
         //Before the names, so a restore that has both does not lay the bundled mapping over a session that
-        //had already declined it.
+        //had already declined it. With the file it was declined for, which is what keeps it to that file.
         declinedBundledRoles = session.NoBundledLayerNames;
+        declinedBundledDeck = session.NoBundledDeck;
+        declinedOn = session.ExampleName;
 
         if (session.LayerNames.Length > 0)
         {
@@ -6527,9 +6751,16 @@
         //opened after an upload is an untouched example, not something worth keeping.
         fileIsHistoryWorthy = intoHistory;
 
+        //A different file, so a Clear made on the last one stops speaking for this one.
+        reArmBundledPdkData();
+
         //Names carry across files rather than belonging to one: a layer number means the same thing
         //throughout a technology, so naming 65/20 while looking at one cell names it in the next.
         carryLayerNamesOver();
+
+        //And the rules for it, on the same argument: every bundled example is a sky130 cell and the deck for
+        //them ships beside the layermap that is already applied here.
+        carryDeckOver();
 
         //A different file, so its rows start where a file's rows start rather than inheriting what was set
         //on the last one's. Names do carry over, above; which layers were hidden does not.
@@ -6542,6 +6773,36 @@
         await RenderGDS();
 
         await saveSession();
+    }
+
+    ///<summary>The file a Clear of the bundled layermap or deck was made against. See reArmBundledPdkData.</summary>
+    private string declinedOn = "";
+
+    ///
+    ///Lets the bundled sky130 layermap and deck apply again, once a different file is on screen.
+    ///
+    ///**Clear is about the layout in front of you, not a setting.** It has to outlast a reload, or the panel
+    ///would fill straight back up and Clear would look broken - which is what the session flags are for. But
+    ///it was outlasting everything: one Clear during a look round the examples, and every example opened
+    ///afterwards arrived with an empty panel, for a PDK the app ships the data for and knows the file
+    ///belongs to. There was no way back to it either, short of finding the offer behind a hover.
+    ///
+    ///So the decline is scoped to the file it was made on. Reopening that same file keeps it - including
+    ///across a reload, where the session restores the name alongside the flag - and choosing a different one
+    ///is a fresh start on a file whose technology is known.
+    ///
+    ///An upload is a file, so it re-arms too. Both auto-loads refuse an upload on their own account, since
+    ///sky130 names laid over another PDK's layout would be wrong - see defaultRolesForThisFile.
+    ///
+    private void reArmBundledPdkData()
+    {
+        if (declinedOn == selectedExample)
+            return;
+
+        declinedBundledRoles = false;
+        declinedBundledDeck = false;
+
+        declinedOn = "";
     }
 
     ///<summary>

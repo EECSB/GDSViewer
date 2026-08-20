@@ -1802,6 +1802,21 @@ blob download used by the GDS and 3D-model exports), and small DOM style helpers
 
 ### What the Draw tool makes
 
+**A new shape goes in a cell, so the tool refuses outside one — out loud.** It was left out of the bar
+entirely at first, which is a worse puzzle than a tool that does nothing: five icons became four, the row
+changed width, and the one that went was the one somebody was looking for. It was disabled next, with the
+reason in its tooltip. Better, but a tooltip is read by somebody who already suspects there is something to
+read, and pressing a disabled button produces nothing at all — the same silence the missing button had, and
+exactly how it was reported: *"the draw tool just doesn't put down anything."* It is live now, and the press
+is what answers, in the place the drawing hints are said and naming the way out rather than only the rule.
+
+The `D` shortcut answers identically, through the same method — it never went near the button, so a disabled
+one could not have stopped it either. It needs its own `StateHasChanged`: `OnShortcut` is called from JS, and
+a `[JSInvokable]` does not re-render the way an `@onclick` does, so without it the button spoke and the key
+stayed quiet. Still disabled where editing itself is off, which is a fact about the whole app rather than
+about this file's cells — there is no way out of it to describe. Mostly this is now a state you have to ask
+for: a file [opens in its own top cell](#the-list-of-cells).
+
 Five things, and only the first two are what most people picture. A rectangle and an ellipse are dragged
 out; a polygon is clicked corner by corner; a [path](#drawing-a-path) is clicked turn by turn; a label is
 clicked into place and typed where it lands. All five end up as one `AddElement` on the undo stack, which is
@@ -2272,6 +2287,22 @@ parameter and an argument that disagreed are what the defect was made of.
 The spec asserted exactly one flatten on the way back until the day this was fixed, which is how the fix
 announced itself: the test that pinned the cost failed, and changing its number was the deliberate act of
 somebody who had removed it. It asserts zero now, and reverting the one-line change turns it red again.
+
+**`preparedLayout` is null after an edit, and null means "work one out" — not "there is nothing here."** The
+library is changed in place, so the copy the shell holds is of the file as it was, and `onFileEdited` drops
+it; `RenderGDS` then hands the view a null and the view re-flattens for itself. That is correct for drawing
+and it was quietly wrong for checking. `runDrc` read the same null as a reason to return, so **DRC Check did
+nothing from the first edit onward** — no marks, no message, and the deck still listed above saying the
+rules were loaded — and it took `check on edit` down with it, since that runs through the same method. The
+guard now flattens rather than returning, and keeps the result, which the next edit drops again. A silent
+early return where the failure looks exactly like a legitimate empty case, which is the shape worth
+recognizing: the two callers of a null had different questions and only one of them was being answered.
+
+**Its tests were green throughout.** `an edit is rechecked when it is on` asserted the notice was still up
+and the markers still there after an edit — both true of a run that did nothing at all, because both were
+left over from turning the switch on. It reads the message away first now, so what comes back can only be
+this edit's answer, and `the button still checks after an edit` presses the button on the far side of one.
+Reverting the guard turns both red and leaves the rest of the file green.
 
 **The counter counts previews too**, which is worth knowing before reading it. The Examples popup draws what
 it is pointing at through the same whole-library flatten, so opening a file through the picker measures
@@ -3053,6 +3084,17 @@ whole chain it was reached by, so the breadcrumb reads the way it does after a c
 where it should. `CellContext.Of` is the other way in: one level and no transform, which is what a cell
 looked at directly is - and the only honest answer for a cell placed several times, since there is no single
 place it sits and picking one would be inventing one.
+
+**A file opens in its own top cell.** A top is a cell nothing places, so it is what the flattener draws on
+its own account and what the picker previews - it is the thing the file is *about*, and opening in it is
+where somebody already thinks they are. The view used to open outside every cell, which is a state with no
+picture of its own: it looked identical, and the only thing it changed was that nothing could be added.
+Draw sat disabled and its shortcut did nothing at all.
+
+Only where there is exactly one. A library with several tops has no cell that "the top cell" names, and
+choosing one of them would be answering a question nobody asked - so those open outside a cell as before,
+and Draw says why when it is pressed. Applied after a restored session has had its say, and once per file,
+so **Whole layout** is somewhere you can stay rather than a button that undoes itself on the next render.
 
 ### Carrying a cell to where it goes
 
@@ -4092,11 +4134,18 @@ putting it in the session would have the next file opened inherit it. It lands *
 from the file, because the names, colors, roles and fills all come off the layers and `buildSession` reads
 them.
 
-**Quiet when it works, and not when it does not.** Every other way into a layermap is somebody pressing
-something, so a report answers what they just did; this one is a page arriving as its author intended, and a
-modal over every visitor's first sight of the layout would answer nobody's question. A fetch that fails, or
-a mapping that matches none of the file's layers, puts a dismissable line in the notice strip above the view
-— because the layers stay as bare numbers and nothing else on screen explains why.
+**Quiet when it works, and not when it does not.** A fetch that fails, or a mapping that matches none of the
+file's layers, puts a dismissable line in the notice strip above the view — because the layers stay as bare
+numbers and nothing else on screen explains why. A mapping that lands says nothing, because the named rows
+are the result and they are already on screen.
+
+That rule started here and now covers **every** way in, through `reportLayerMap`. Import and the **Example**
+offer used to report a success in a modal — "Updated 9 of this file's layers from 25 row(s)" — on the
+argument that a report answers what somebody just pressed. What it actually did was stand between them and
+the layers it was describing, and it had to be dismissed before those could be looked at; every bundled
+example loads its mapping this way, so it was a click on the way into the app. What still reaches a dialog
+is the pair the panel cannot show, since in both of them it looks exactly like a mapping nobody loaded:
+**nothing matched**, and **a row that could not be read**.
 
 The bundled [`sky130-roles.csv`](../wwwroot/resources/GDS%20Files/sky130-roles.csv) is served from this app's
 own origin, so it works as a value without a second host:
@@ -4123,7 +4172,7 @@ Three layers, because they catch different things:
 |---|---|---|---|---|
 | C# unit and corpus | [`tests/`](../tests) | `dotnet test` | 1,952 | nothing |
 | Browser-JS unit | [`jstests/`](../jstests) | `npm test` | 41 | Node only, no packages |
-| End-to-end | [`e2e/`](../e2e) | `npm run test:e2e` | 801 | `npm install` and a browser |
+| End-to-end | [`e2e/`](../e2e) | `npm run test:e2e` | 805 | `npm install` and a browser |
 
 On CI the C# run is 1,663: the twenty-four tests marked `Needs=KLayout` use it as a second implementation to
 check this one against, and it is a desktop EDA tool that is not on a runner.
@@ -4427,7 +4476,7 @@ accepts. The view simply stopped drawing, with nothing in the console.
 
 [`e2e/`](../e2e) drives a real browser with **Playwright**, against the app served by
 [`playwright.config.js`](../playwright.config.js) — which starts `dotnet run` itself, with
-`--no-launch-profile` for the same reason the manual instructions use it. 801 specs across launch, the 2D
+`--no-launch-profile` for the same reason the manual instructions use it. 805 specs across launch, the 2D
 and 3D views, the text editor and its save path, the URL state, everything that leaves the app, the 3D
 view's own controls, naming and coloring layers, the process stack, opening an OASIS file, how the app fits
 the window, the title bar and the two sidebars, the cell tree, the fill patterns and how they are colored and
@@ -4511,7 +4560,7 @@ dotnet run           # the app, on http://localhost:5105
 
 dotnet test          # 1,952 C# unit and corpus tests
 npm test             # 41 browser-JS units, Node's own runner, nothing to install
-npm run test:e2e     # 801 Playwright end-to-end specs; it starts the app itself
+npm run test:e2e     # 805 Playwright end-to-end specs; it starts the app itself
 npm run screenshots  # retakes the documentation's screenshots
 ```
 
@@ -4824,7 +4873,7 @@ Carried here so they are not rediscovered. None of these are regressions; they a
   PDK's table in a viewer that opens any GDSII file, which is why KLayout and Magic both make it a file the
   user chooses rather than something compiled in.
 
-  What *does* ship is one twenty-row file,
+  What *does* ship is one twenty-five-row file,
   [`sky130-roles.csv`](../wwwroot/resources/GDS%20Files/sky130-roles.csv), and **it is laid over a bundled
   example when one is opened** — because every file in the picker is a sky130 cell, so naming its layers is a
   fact rather than a guess. Not compiled in: it is fetched from `wwwroot` like any other, and it is the same
@@ -4838,12 +4887,19 @@ Carried here so they are not rediscovered. None of these are regressions; they a
   file the app knows nothing about. Touch a name and `rememberLayerNames` picks it up, which is the point at
   which it stopped being an assumption.
 
-  **Clear declines it, durably.** That was a per-page-load flag first, and a spec already knew better:
-  `clear drops the stored names too` has always asserted bare numbers survive a reload, so a default that came
-  back on the next load made Clear a button the reload undid. It is `SavedSession.NoBundledLayerNames` now —
-  a flag rather than an empty `LayerNames`, because "nothing has named anything yet" is where a first visit
-  starts and is exactly when the mapping *should* land. Getting it back afterwards is Import, with the file
-  the app ships.
+  **Clear declines it for the file it was made on.** That was a per-page-load flag first, and a spec already
+  knew better: `clear drops the stored names too` has always asserted bare numbers survive a reload, so a
+  default that came back on the next load made Clear a button the reload undid. It is
+  `SavedSession.NoBundledLayerNames` now — a flag rather than an empty `LayerNames`, because "nothing has
+  named anything yet" is where a first visit starts and is exactly when the mapping *should* land.
+
+  Durable, then, but **not global**, which is where it went wrong next: one Clear and every example opened
+  afterwards arrived with bare numbers, for a PDK the app ships the mapping for and knows the file belongs to.
+  Nothing on screen explained it. So `reArmBundledPdkData` keeps the decline to the file it was made against —
+  the session stores the name beside the flag, so reopening that same file, reload included, still gets bare
+  numbers, and choosing a different one is a fresh start. Getting it back on the same file is the **Example**
+  offer, or Import with the file the app ships. The bundled rule deck follows the same rule, through the same
+  method — see [Design rules](DRC.md).
 
   **Four of its rows were wrong** in the
   first version: `69/20` was named `via` and given a via's role when it is met2 — which would have shorted

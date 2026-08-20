@@ -371,15 +371,33 @@ the text that came in rather than the parse printed out, because a deck round-tr
 would come back without its comments, its blank lines and any rule this build refused, and Export would
 quietly be a way of losing part of your own file.
 
-**The starter deck is offered in the empty list, not in that row.** It used to sit beside Import and
-Export, which meant it was still there with thirty rules on screen — spending width in a crowded row to
-offer a deck you already have. In the empty state it is the only thing to press, which is exactly when
-somebody wants it.
+**A bundled example arrives with the deck already loaded**, the way it arrives with its layer names —
+every file in the picker is a sky130 cell, and the deck for them ships in the same folder as the layermap.
+Opening one and finding the rules empty sent people to fetch a file the app was already holding.
+
+**Clear drops it, for that file.** It has to outlast a reload or Clear would read as a button that does
+nothing, so the session carries the decline; but it used to outlast *everything*, and one Clear meant every
+example opened afterwards arrived empty. `reArmBundledPdkData` keeps it to the file it was made on — the
+same method the layermap goes through, since the two controls sit in the same place and had better mean the
+same thing.
+
+**What is left when it is empty is Example**, in the control row beside Import, and only while the list is
+empty: with thirty rules on screen it would be spending width to offer a deck you already have. Pointing at
+it opens **Load sky130**. Two steps on purpose, and the popup waits a third of a second before it opens —
+loading replaces what is in the panel, and a pointer crossing the row on its way somewhere else should not
+put a button under it. Without that delay it opened in passing and covered the rows underneath, which three
+specs caught by clicking it instead of what they were aiming at.
 
 Under a rule sit **DRC Check** and **continuous DRC check**. The switch is beside the button rather than in
-a settings menu because it changes what the button means: with it on there is nothing left to press, and the
-button says so by going disabled. Turning it on runs a check straight away — the switch claims the panel is
-current, and a stale result underneath it would say otherwise.
+a settings menu because the two are one question — when the layout gets measured — and reading the answer
+should not mean opening a menu to find half of it. Turning it on runs a check straight away: the switch
+claims the panel is current, and a stale result underneath it would say otherwise.
+
+**The button stays live with the switch on.** It went disabled first, on the argument that a control with
+nothing left to do should say so. There is always something left to do: a check runs on an *edit*, and
+plenty worth checking is not one — a deck imported, a cell flattened, or simply wanting the marks back after
+reading the message away. Taking the only manual run away because an automatic one exists left no way to ask
+for the thing the panel is for.
 
 **Without it, an edit takes the last result off rather than leaving it.** A marker is a claim about where
 something is, and the moment the geometry under it moves the claim is about a layout that no longer exists.

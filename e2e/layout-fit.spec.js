@@ -377,3 +377,44 @@ test('the 3D canvas leaves no part of its container showing', async ({ page }) =
 
     await expect.poll(async () => fits(await canvasGaps(page)), { timeout: 15000 }).toBe(true);
 });
+
+///
+///The frame around the view and the sidebar is one frame, at every width.
+///
+///It was not. Under 1200 pixels a media query took the sidebar's top border off and gave it a left one -
+///both right for an arrangement where the sidebar dropped *below* the view, and both wrong now that the row
+///is `flex-wrap: nowrap` and the two always sit side by side. What showed was the frame under the toolbar
+///stopping short of the corner, and the divider between view and sidebar drawn twice, once by each of them.
+///
+///Read as the border coming and going with a resize, because that is what a breakpoint does.
+///
+///Asserted either side of the old breakpoint and against the *view pane* rather than a pixel count, since
+///the claim is that the two agree - a theme that changed the border width should not have to come here.
+///
+test('the sidebar keeps its top border at every width', async ({ page }) => {
+    await gotoExample(page, MOSFET, '2d');
+    await expect(page.locator('#layerSidebar')).toBeVisible();
+
+    for (const width of [1250, 1150, 900, 700]) {
+        await page.setViewportSize({ width, height: 700 });
+
+        await expect.poll(async () => {
+            return page.evaluate(() => {
+                const bar = document.querySelector('#layerSidebar');
+                const pane = document.querySelector('.viewPane');
+                const barStyle = getComputedStyle(bar);
+                const paneStyle = getComputedStyle(pane);
+
+                return {
+                    //The top edge is one line across both, so the sidebar carries its own.
+                    topMatchesPane: barStyle.borderTopWidth === paneStyle.borderTopWidth,
+                    topDrawn: parseFloat(barStyle.borderTopWidth) > 0,
+
+                    //And the divider between them is drawn once: the pane's right edge, not both.
+                    dividerOnce: parseFloat(barStyle.borderLeftWidth) === 0
+                        && parseFloat(paneStyle.borderRightWidth) > 0
+                };
+            });
+        }, { timeout: 15000 }).toEqual({ topMatchesPane: true, topDrawn: true, dividerOnce: true });
+    }
+});

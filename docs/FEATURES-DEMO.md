@@ -105,13 +105,15 @@ They are never both wanted at once, so they share one panel rather than taking t
 A **deck** is a small text file you supply: `width`, `space`, `enclosure`, `area`, `density` and off-grid
 rules over layers the deck itself derives. **There is no standard file to download** — design rules have no
 interchange format, so a foundry supporting three tools ships three separately maintained decks and nothing
-converts between them. **Load sky130A example** brings up a working 30-rule starter deck; **Import** takes
-your own, and **Export** hands back the text that came in rather than the parse printed out, so comments and
-blank lines survive the round trip.
+converts between them. A bundled example arrives with the 30-rule sky130 starter deck already loaded; where
+nothing is loaded, **Example** offers it — point at it and press **Load sky130**. **Import** takes your own,
+and **Export** hands back the text that came in rather than the parse printed out, so comments and blank
+lines survive the round trip.
 
-**DRC Check** runs it. **check on edit** runs it again after every change — and with it off, an edit *takes
-the last result off the drawing* rather than leaving it: a marker is a claim about where something is, and
-the moment the geometry under it moves the claim is about a layout that no longer exists.
+**DRC Check** runs it, whenever you press it. **check on edit** runs it again after every change as well —
+and with that off, an edit *takes the last result off the drawing* rather than leaving it: a marker is a
+claim about where something is, and the moment the geometry under it moves the claim is about a layout that
+no longer exists.
 
 What it finds is marked on the drawing, counted per rule, and said in one line over the view:
 
@@ -159,6 +161,11 @@ From there: copy, cut, delete, four kinds of turn, grow or shrink by a number, g
 **Editing happens in a cell.** A shape on screen may be one of a thousand instances, and moving it moves all
 thousand — so the breadcrumb above the view says which cell the edit will land in, and the layout around it is
 drawn faded because it is not what the pointer is for.
+
+A file opens in its own **top cell** — the one nothing places, which is what the file is about — so there is
+somewhere for a new shape to go from the moment it is on screen. **All** in the breadcrumb steps back out to
+the whole layout, and a row in the cell tree steps into any other. Out there the pencil has nothing to draw
+into and says so when it is pressed, rather than quietly doing nothing.
 
 Every edit is undoable, and **the undo stack survives a refresh**: close the tab mid-edit, come back, and it is
 still there to take back.

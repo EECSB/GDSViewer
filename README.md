@@ -2,9 +2,7 @@
 
 ### A free online GDSII viewer — open an IC layout file and inspect it in 2D, in 3D, or as raw records, entirely in your browser.
 
-![Blazor WebAssembly](https://img.shields.io/badge/Blazor-WebAssembly-512BD4) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8) ![No server](https://img.shields.io/badge/files-never%20uploaded-brightgreen)
-
-[![GdsII on NuGet](https://img.shields.io/nuget/v/GdsII?label=GdsII&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII) [![GdsII.Cli on NuGet](https://img.shields.io/nuget/v/GdsII.Cli?label=GdsII.Cli&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII.Cli)
+![Blazor WebAssembly](https://img.shields.io/badge/Blazor-WebAssembly-512BD4) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8) ![No server](https://img.shields.io/badge/files-never%20uploaded-brightgreen) [![GdsII on NuGet](https://img.shields.io/nuget/v/GdsII?label=GdsII&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII) [![GdsII.Cli on NuGet](https://img.shields.io/nuget/v/GdsII.Cli?label=GdsII.Cli&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII.Cli)
 
 
 
@@ -145,8 +143,10 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   are what the file says. Names persist across visits and across files, since a layer number means the same
   thing throughout a technology.
 - 📋 **The bundled examples name their own layers.** Every file in the picker is a sky130 cell, so a
-  twenty-row mapping that ships with the app is laid over one when it opens — a fact rather than a guess.
-  Your own uploads get nothing, since sky130 names over another PDK's layout would be worse than numbers.
+  twenty-five-row mapping that ships with the app is laid over one when it opens — a fact rather than a
+  guess — along with the sky130 rule deck that sits beside it. Your own uploads get neither, since sky130
+  names over another PDK's layout would be worse than numbers. **Clear** drops either one for the file you
+  are looking at, reload included; opening a different example is a fresh start.
 - 🩺 **Fill patterns** — dots, a grid, diagonals or crosshatch drawn over a layer's color, with a color and
   a screen size of their own. Color runs out before layers do.
 - 🎨 **Color them yourself** — a swatch on every row opens a picker, and the colors you have used recently

@@ -1227,7 +1227,20 @@ async function openedOnItsOwn(page, timeout = 6000) {
     await expect(page.locator('#importDialog')).toHaveCount(0);
 }
 
+///
+///Steps out of whatever cell is open, back to the whole layout.
+///
+///**A file now opens inside its own top cell**, so "no cell is open" is a state a spec has to ask for
+///rather than one it starts in. Reached the way a person reaches it: the first crumb in the context bar.
+///
+async function leaveCell(page) {
+    await page.getByTitle('Stop editing and look at the whole layout again').click();
+
+    await expect(page.locator('#contextBar')).toHaveCount(0);
+}
+
 module.exports = {
+    leaveCell,
     openGridMenu,
     chooseShape,
     openShapeSettings,

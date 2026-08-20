@@ -6,7 +6,7 @@
 //here reloads for real rather than calling the storage API, because a session that saves and never
 //restores would pass any test that did not.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, SKY130_CELL, fillsDrawn, captureScene, cameraPosition } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, SKY130_CELL, fillsDrawn, captureScene, cameraPosition, leaveCell } = require('./helpers');
 
 ///
 ///Waits for the session to name the file given, so a reopen is not racing the save that follows a load.
@@ -582,8 +582,9 @@ test('the cell you were editing is still open when you come back', async ({ page
     await expect.poll(async () => svgCounts(page).then(counts => counts.polygons), { timeout: 60000 })
         .toBeGreaterThan(0);
 
-    //Nothing is being edited to begin with, so there is no bar at all.
-    await expect(page.locator('#contextBar')).toHaveCount(0);
+    //Out of the cell the file opened in, so what comes back is what this test put there and not the
+    //default - the two are the same cell on this file, which would make the assertion prove nothing.
+    await leaveCell(page);
 
     //Into a cell the ordinary way, by clicking a shape in it.
     await page.locator('#selectTool').click();

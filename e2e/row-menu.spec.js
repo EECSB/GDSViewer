@@ -5,7 +5,7 @@
 //browser is that the right menu comes up on the right row and that its lines reach the things they name -
 //the edits themselves are covered in LayoutEditTests, and the menu's own placement in shape-menu.spec.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, layerLabel } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, layerLabel, leaveCell } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg', true);
@@ -178,6 +178,9 @@ test.describe('a layer row', () => {
     ///and a line that quietly did nothing would look exactly like the menu being broken.
     ///
     test('will not edit a layer of a cell that is not open', async ({ page }) => {
+        //Out of the cell the file opened in, so the row genuinely belongs to a cell that is not open.
+        await leaveCell(page);
+
         await menuOn(await layerRow(page), page);
 
         const found = await lines(page);

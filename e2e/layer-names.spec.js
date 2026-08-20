@@ -29,12 +29,26 @@ const MAPPING = [
     '68,20,met1.drawing'
 ].join('\n');
 
-///Picks a mapping file, and returns whatever the app said about it.
+///
+///Picks a mapping file, waits for it to land, and gives back anything the app said about it.
+///
+///**A mapping that works says nothing**, so waiting for a dialog would be waiting for one that is never
+///coming. What is waited on instead is either effect: the panel rewritten, or the app speaking up. One of
+///the two always happens, and which one it was is the thing the individual tests are about.
+///
+///Generous, because the whole suite shares one dev server: at six workers the read, the apply and the
+///redraw have been seen to take past 15s, which showed up as this spec alone failing in a full run and
+///passing on its own.
+///
 async function loadMapping(page, contents, name = 'sky130.csv') {
     const said = [];
 
     await page.exposeFunction('reportAlert', message => said.push(String(message)));
     await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
+
+    const labels = () => page.locator('.layerRow .layerName').allTextContents();
+
+    const before = (await labels()).join('|');
 
     await page.locator('#layerNamesImport').setInputFiles({
         name,
@@ -42,10 +56,7 @@ async function loadMapping(page, contents, name = 'sky130.csv') {
         buffer: Buffer.from(contents, 'utf8')
     });
 
-    //The read, the apply and the redraw all go through .NET before the message arrives. Generous, because
-    //the whole suite shares one dev server: at six workers this round trip has been seen to take past 15s,
-    //which showed up as this spec alone failing in a full run and passing on its own.
-    await expect.poll(() => said.length, { timeout: 60000 }).toBeGreaterThan(0);
+    await expect.poll(async () => said.length > 0 || (await labels()).join('|') !== before, { timeout: 60000 }).toBe(true);
 
     return said.join(' ');
 }
@@ -57,9 +68,14 @@ test.beforeEach(async ({ page }) => {
 test('a mapping names the layers and keeps the numbers visible', async ({ page }) => {
     const said = await loadMapping(page, MAPPING);
 
-    //"Updated" rather than "Named": a row can set a color or a height without naming anything, so a
-    //mapping that lands is not necessarily one that named something.
-    expect(said).toContain('Updated 7');
+    //
+    //And it said nothing, because there was nothing to say.
+    //
+    //The names are in the panel one line away, which is the whole result - a dialog reporting it stood
+    //between somebody and the layers it was describing, and had to be dismissed before they could be
+    //looked at. What the app still speaks up about is the two cases the panel cannot show, below.
+    //
+    expect(said).toBe('');
 
     const pairs = await layerPairs(page);
 
@@ -314,13 +330,17 @@ test('a bundled example is named from the shipped mapping', async ({ page }) => 
 });
 
 ///
-///And Clear means it: the mapping does not come straight back on the next example.
+///Clear means it for the file it was made on, and stops there.
 ///
-///Without the guard this asks about, dropping the names and then opening another file would hand them back -
-///the app arguing with somebody who has just said they want the numbers. Once per page load, so a reload is
-///still a fresh start.
+///Both halves matter and they pull opposite ways. Dropping the names has to survive a reload, or the panel
+///would fill straight back up and Clear would read as a button that does nothing. But it used to survive
+///everything: one Clear, and every example opened afterwards arrived with bare numbers - the app
+///withholding a mapping it ships, for a PDK it knows the file belongs to, on the strength of something said
+///about a different layout. Nothing on screen explained it and the way back was behind a hover.
 ///
-test('the shipped mapping does not come back after Clear', async ({ page }) => {
+///The Example offer is what says which state the panel is in: it is there only while nothing is named.
+///
+test('a Clear holds for its own file and not for the next one', async ({ page }) => {
     await gotoExample(page, MOSFET, 'View2DSvg');
 
     await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
@@ -331,12 +351,24 @@ test('the shipped mapping does not come back after Clear', async ({ page }) => {
     await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
         { timeout: 20000 }).not.toContain('met1');
 
-    //Another example, through the picker, with no reload in between.
+    await expect(page.locator('#layerExampleOffer')).toBeVisible();
+
+    //The same file again: still bare, because that is what was asked for about this one.
+    await page.reload();
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
+
+    await expect(page.locator('#layerExampleOffer')).toBeVisible({ timeout: 60000 });
+
+    expect((await page.locator('.layerRow .layerName').allTextContents()).join(' ')).not.toContain('met1');
+
+    //Another example, through the picker, which is a fresh start on a file whose technology is known.
     await selectExample(page, 'sky130_fd_sc_hd__nand2_1.gds');
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('sky130_fd_sc_hd__nand2_1.gds');
 
-    const named = (await page.locator('.layerRow .layerName').allTextContents()).join(' ');
+    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
+        { timeout: 20000 }).toContain('met1');
 
-    expect(named).not.toContain('met1');
+    await expect(page.locator('#layerExampleOffer')).toHaveCount(0);
 });

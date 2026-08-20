@@ -159,6 +159,23 @@
                 click to place a label and type it where it lands &middot; Enter keeps it, Esc takes it back
             </div>
         }
+        else if (drawRefusal.Length > 0)
+        {
+            @*
+                Why the pencil would not draw, in the hint's place and its shape.
+
+                Above the rule check because it is about the gesture somebody just made, and below the
+                drawing hints because those only appear once drawing is under way - which is exactly when
+                this one cannot be up. It is a fault rather than a hint: nothing happened, and the line has
+                to read as the reason and not as an instruction that was followed.
+            *@
+            <div id="drawRefusal" class="drawHint viewNotice drawHintFault">
+                <span>@drawRefusal</span>
+
+                <button id="drawRefusalClose" class="viewNoticeClose" @onclick="dismissDrawRefusal"
+                        aria-label="Close this message" title="Close">&times;</button>
+            </div>
+        }
         else if (Notice.Length > 0)
         {
             @*
@@ -1590,6 +1607,37 @@
     ///</summary>
     private CellContext? context = null;
 
+    ///<summary>Why Draw could not be taken up, or empty. Set by startDrawingShapes and shown where the hints are.</summary>
+    private string drawRefusal = "";
+
+    ///
+    ///The file's one top cell, or null where it does not have exactly one.
+    ///
+    ///A top is a cell nothing places, so it is what the flattener draws on its own account. Files written
+    ///by a tool usually have one and it is the thing the file is about; a library can have several, and
+    ///then "the top cell" is not a fact about the file but a question for whoever opened it.
+    ///
+    private string? onlyTopCell()
+    {
+        if (Gds is null)
+            return null;
+
+        string? only = null;
+
+        foreach (var summary in Hierarchy.Summarize(Gds))
+        {
+            if (!summary.IsTop)
+                continue;
+
+            if (only is not null)
+                return null;
+
+            only = summary.Name;
+        }
+
+        return only;
+    }
+
     ///<summary>
     ///How many times the cell being edited is placed, which is the multiplier on an edit. Counted when the
     ///context changes rather than on every render.
@@ -1708,6 +1756,15 @@
     private async Task dismissNotice()
     {
         await OnNoticeDismissed.InvokeAsync();
+    }
+
+    ///<summary>
+    ///Takes the Draw refusal off the drawing. This view's own line, so it is put away here rather than
+    ///through the shell the way the rule check's is.
+    ///</summary>
+    private void dismissDrawRefusal()
+    {
+        drawRefusal = "";
     }
 
     ///<summary>
@@ -1843,12 +1900,19 @@
                     went is the one somebody was looking for - which reads as the button having been taken
                     away rather than as it not applying yet.
 
-                    Disabled says the same thing without moving anything, and the tooltip says why.
+                    It was disabled next, with the tooltip carrying the reason. Better, but a tooltip is
+                    read by somebody who already suspects there is something to read - and pressing a
+                    disabled button produces nothing at all, which is the same silence the missing button
+                    had. It is live now and answers when pressed, in the same place the drawing hints are
+                    said. See startDrawingShapes.
+
+                    Still disabled where editing itself is off, which is a fact about the whole app and not
+                    about this file's cells - there is no way out of it to describe.
                 *@
                 <button id="drawTool" class="buttonStyle2 toolbarButton toolButton buttonIcon @(drawingShapes ? "toolButtonOn" : "")"
                         @onclick="startDrawingShapes"
                         @onmouseenter="showShapeMenu"
-                        disabled="@(context is null || ReadOnly)"
+                        disabled="@ReadOnly"
                         aria-label="Draw"
                         aria-expanded="@(drawingShapes && shapeMenuOpen ? "true" : "false")"
                         title="@drawDescription()">
@@ -2865,6 +2929,10 @@
     ///
     private async Task toolChosen()
     {
+        //Any tool actually taken up answers the refusal: it was about the one gesture that could not be
+        //made, and a line still saying so under a different tool is about nothing on screen.
+        drawRefusal = "";
+
         await OnToolChanged.InvokeAsync();
 
         if (toolInUse() == toolSaved)
@@ -2883,9 +2951,13 @@
     ///that gets forgotten is always the one nobody is looking at. What the keyboard adds is a way to reach
     ///these, not a set of things only it can do.
     ///
-    ///Anything the current state does not allow is simply nothing: Delete with nothing chosen, Paste with an
-    ///empty clipboard, Draw outside a cell. Each of those already checks for itself, because the button that
-    ///does it is not on screen in that state either.
+    ///Anything the current state does not allow is nothing: Delete with nothing chosen, Paste with an empty
+    ///clipboard. Each of those already checks for itself, because the button that does it is not on screen
+    ///in that state either.
+    ///
+    ///Draw outside a cell is the one that answers rather than going quiet - it is a whole tool refusing, not
+    ///one action having nothing to act on. It says so through the same method the button calls, which is
+    ///what makes the two agree. See startDrawingShapes.
     ///
     [JSInvokable]
     public async Task OnShortcut(string what)
@@ -3622,6 +3694,10 @@
 
         context = entered;
 
+        //Whichever way this went, the refusal is about a cell that is no longer the one open - and leaving
+        //a cell earns its own answer next time Draw is asked for rather than inheriting the last one.
+        drawRefusal = "";
+
         if (!keepChosen)
             chosenIndexes = new List<int>();
 
@@ -4210,7 +4286,7 @@
     private string drawDescription()
     {
         if (context is null)
-            return "Open a cell first - a new shape has to go in one. Click a shape to edit the cell it is in, or pick one from the library";
+            return "Open a cell first - a new shape has to go in one. Pick one from the cell tree, or click a shape to edit the cell it is in";
 
         return "Drag out a rectangle to add it to the cell being edited (D)";
     }
@@ -6101,20 +6177,33 @@
     ///
     private async Task openCell(string name)
     {
+        await useContext(contextOf(name));
+    }
+
+    ///
+    ///The context for a cell, through a shape in it where the layout has one.
+    ///
+    ///Through a shape gives the whole chain the cell was reached by, so the breadcrumb reads the way it
+    ///does after a click and going back up lands where it should. `CellContext.Of` is the other way in: one
+    ///level and no transform, which is what a cell looked at directly is - and the only honest answer for a
+    ///cell placed several times, since there is no single place it sits.
+    ///
+    ///Split out from openCell so opening a file can take the context without the rest of what entering a
+    ///cell does - see Render, where the top cell is set before the first markup is built rather than
+    ///through a second render afterwards.
+    ///
+    private CellContext contextOf(string name)
+    {
         if (layout is not null)
         {
             foreach (var element in layout.Elements)
             {
                 if (element.Source is ElementSource source && source.Structure == name)
-                {
-                    await useContext(CellContext.At(source));
-
-                    return;
-                }
+                    return CellContext.At(source);
             }
         }
 
-        await useContext(CellContext.Of(name));
+        return CellContext.Of(name);
     }
 
     ///<summary>
@@ -7838,8 +7927,29 @@
     ///<summary>Switches the pointer to dragging out rectangles into the cell being edited.</summary>
     private async Task startDrawingShapes()
     {
+        //
+        //**Refused out loud.** A new shape has to go in a cell, and outside one this returned and left no
+        //trace: the button is disabled, so a click does nothing visible, and the D shortcut does not go
+        //near the button at all - it called straight in here and stopped. What that looks like from the
+        //outside is a drawing tool that draws nothing, which is indistinguishable from a broken one.
+        //
+        //Said where the drawing hints are said, because it is about the gesture that was just attempted,
+        //and it names the way out rather than only the rule.
+        //
         if (context is null)
+        {
+            drawRefusal = "Nothing to draw into: a new shape goes in a cell. Pick one from the cell tree, or click a shape to edit the cell it is in.";
+
+            //Asked for, because the keyboard is one of the two ways in and it does not render by itself:
+            //OnShortcut is called from JS, and a [JSInvokable] does not re-render the way an @onclick does.
+            //Without this the button said it and the D key still went quiet, which is the half that was
+            //reported.
+            StateHasChanged();
+
             return;
+        }
+
+        drawRefusal = "";
 
         measuring = false;
         selecting = false;
@@ -8825,6 +8935,32 @@
             //and this view being built for the second time - and this cannot tell the two apart, since a
             //view that has just been created has never flattened anything.
             context = null;
+
+            //
+            //And straight into its own top cell, which is where anything added to it has to go.
+            //
+            //**Because a file has to be in a cell before it can be drawn into**, and nothing on screen said
+            //so: the view opened outside every cell, a state with no picture of its own - it looked
+            //identical, and all it changed was that Draw sat disabled and its shortcut did nothing at all.
+            //A top is a cell nothing places, so it is what the flattener draws on its own account and what
+            //the picker previews: the thing the file is about, and where somebody already thinks they are.
+            //
+            //Only where there is exactly one. A library with several tops has no cell that "the top cell"
+            //names, and choosing one would be answering a question nobody asked - so those open outside a
+            //cell as before, and Draw says why when it is pressed. See startDrawingShapes.
+            //
+            //**Here rather than after the render, and by assignment rather than through useContext.**
+            //Entering a cell redraws, and a redraw at that point rebuilt the markup after ApplySettings had
+            //appended the grid to it - so an embed asking for `grid=true` lost its grid until whatever
+            //render came next, which is a race an embed has no reason to run. Set before the first markup
+            //is built there is no second render to lose anything to, and everything else useContext does
+            //for a *change* of cell - clearing the selection, redrawing, saving - is either already
+            //happening below or is about a file that was open before this one.
+            //
+            //A session that named a cell still wins: OnAfterRenderAsync restores it over the top.
+            //
+            if (onlyTopCell() is string top)
+                context = contextOf(top);
 
             //And it is somewhere else, and probably some other size. See fitToDrawing.
             refit = true;

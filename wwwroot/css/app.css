@@ -2672,13 +2672,18 @@ body:has(.viewerPageFull) #mainAppContainer {
     wrapped and it dropped onto a line below. The row does not wrap any more - that is what lets the view
     be sized to the window instead of the window to the view - so a full-width sidebar simply took the
     row and squeezed the view down to its borders. Two pixels of it, measured, against a sidebar of 861.
+
+    **And the borders it was given for that arrangement have gone with it.** Under 1200 pixels it lost its
+    top border and gained a left one, which was right while it sat *underneath* the view: no top line to
+    double the view's bottom one, and a left line because it was no longer to the right of anything. Beside
+    the view both are wrong, and both showed - the frame under the toolbar stopped an inch short of the
+    corner, and the divider between view and sidebar was drawn twice, once by each of them.
+
+    It only showed on a narrow window, which is why it read as the border coming and going with a resize
+    rather than as a rule that had outlived its layout. Measured at 1150 against 1250: top border 0px
+    against 0.8, left 0.8 against 0. The row is `flex-wrap: nowrap` and the two sit on one line at every
+    width down to 700, so there is no arrangement left for these to be right in.
 */
-@media (max-width: 1200px) {
-    #layerSidebar {
-        border-top: none;
-        border-left: 1px solid #41464b61;
-    }
-}
 
 /*
     A popup over the view.
@@ -4016,8 +4021,8 @@ popupZIndex_0 {
 }
 
 /*
-    The switch travels with the button because it changes what the button means - with it on there is
-    nothing left to press. `nowrap` so the word never drops below its box on a narrow panel, which this
+    The switch travels with the button because the two are one question - when the layout gets measured.
+    `nowrap` so the word never drops below its box on a narrow panel, which this
     one can be dragged to be.
 */
 /*
@@ -5090,4 +5095,57 @@ body.sidebarResizing {
 
     border: 5px solid transparent;
     border-bottom-color: rgba(33, 37, 41, 0.94);
+}
+
+/*
+    The bundled layermap and deck, offered from the controls row while nothing is loaded.
+
+    **Hover opens it, a click inside loads.** Two steps because loading replaces what is in the panel, and
+    a control that swaps somebody's work for a sample on one mis-click is a control they learn to avoid.
+
+    A CSS hover on the wrapper rather than a state flag, which is what lets the popup sit *inside* the
+    thing that opens it: moving from the word onto the button never leaves the hovered element, so there
+    is no gap to cross and nothing to keep open.
+*/
+.exampleOffer {
+    position: relative;
+    display: inline-flex;
+}
+
+.exampleOfferPopup {
+    /*
+        Hidden by visibility rather than display, and opened only after the pointer has stayed put.
+
+        **A pointer crossing this on its way somewhere else must not open it.** It sits directly above the
+        list, so an instant popup lands over the first rows - and a click aimed at a layer row hits the
+        popup instead. That is not only a test failing; it is the control eating clicks meant for the thing
+        underneath it. A third of a second of intent is the difference between hovering and passing over.
+    */
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: visibility 0s linear 0.35s, opacity 0.1s linear 0.35s;
+
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+
+    /*Pulled up over the gap so the pointer never crosses dead space between the two.*/
+    margin-top: 0.15em;
+    padding: 0.45em;
+
+    white-space: nowrap;
+    border: 1px solid #ced4da;
+    border-radius: 0.35em;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.exampleOffer:hover .exampleOfferPopup,
+.exampleOffer:focus-within .exampleOfferPopup {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
 }

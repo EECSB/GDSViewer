@@ -86,6 +86,9 @@ namespace GDSViewer.Models
         [JsonPropertyName("ln")]
         public bool NoBundledLayerNames { get; set; }
 
+        ///<summary>Whether the bundled deck was cleared, so it stops being laid over the examples.</summary>
+        public bool NoBundledDeck { get; set; }
+
         ///<summary>The pairs that were switched **off**, written "65/20". The off set is the short one.</summary>
         [JsonPropertyName("h")]
         public List<string> HiddenLayers { get; set; } = new List<string>();

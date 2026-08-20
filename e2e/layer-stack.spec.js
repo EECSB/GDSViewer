@@ -274,8 +274,13 @@ test('a mapping can carry the whole stack', async ({ page }) => {
         ].join('\n'), 'utf8')
     });
 
-    await expect.poll(() => said.length, { timeout: 60000 }).toBeGreaterThan(0);
-    expect(said.join(' ')).toContain('Updated 2');
+    //Waited for on the panel rather than in a dialog: a mapping that lands says nothing now, and the names
+    //it carries are the part of it visible from here. The heights are checked in the 3D view below.
+    await expect(page.locator('.layerList')).toContainText('diff.drawing', { timeout: 60000 });
+    await expect(page.locator('.layerList')).toContainText('poly.drawing');
+
+    //Nothing said, so both rows were read - a row this app cannot parse is still reported.
+    expect(said.join(' ')).toBe('');
 
     await selectView(page, 'View3D');
     await expect(page.locator('#container canvas')).toBeVisible();

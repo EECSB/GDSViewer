@@ -45,12 +45,17 @@ test.beforeEach(async ({ page }) => {
     await snapToGrid(page, false);
 });
 
-///Loads a mapping and waits for the app to say it read one.
+///
+///Loads a mapping and waits for it to land on the panel.
+///
+///On the panel rather than on a dialog: a mapping that works no longer says anything, so waiting to be told
+///would wait for a message that is never coming. The whole suite shares one dev server, so the round trip
+///through .NET is generously waited on - see layer-names.spec.
+///
 async function loadRoles(page, contents = ROLES) {
-    const said = [];
+    const labels = () => page.locator('.layerRow .layerName').allTextContents();
 
-    await page.exposeFunction('reportAlert', message => said.push(String(message)));
-    await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
+    const before = (await labels()).join('|');
 
     await page.locator('#layerNamesImport').setInputFiles({
         name: 'roles.csv',
@@ -58,9 +63,7 @@ async function loadRoles(page, contents = ROLES) {
         buffer: Buffer.from(contents, 'utf8')
     });
 
-    //The read, the apply and the redraw all go through .NET before the message arrives; the whole suite
-    //shares one dev server, so this round trip is generously waited on - see layer-names.spec.
-    await expect.poll(() => said.length, { timeout: 60000 }).toBeGreaterThan(0);
+    await expect.poll(async () => (await labels()).join('|') !== before, { timeout: 60000 }).toBe(true);
 }
 
 ///Clicks shapes until one on a layer with a role is picked out, and gives back what the heading said.
@@ -436,15 +439,29 @@ test.describe('the layermap that ships', () => {
         await page.exposeFunction('reportAlert', message => said.push(String(message)));
         await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
 
+        //
+        //Cleared first, so importing it proves something.
+        //
+        //This same file is laid over a bundled example automatically, so the names are already on the panel
+        //when the page settles - and an import that changed nothing would be waited on by watching for a
+        //name that was never going to go away. Clearing puts the bare numbers back, and the names returning
+        //is the shipped file being read.
+        //
+        await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
+
+        await expect(page.locator('.layerList')).not.toContainText('met1');
+
         await page.locator('#layerNamesImport').setInputFiles('wwwroot/resources/GDS Files/sky130-roles.csv');
 
-        await expect.poll(() => said.join(' '), { timeout: 15000 }).toContain('Updated');
+        await expect(page.locator('.layerList')).toContainText('met1', { timeout: 60000 });
 
-        //Read without complaint: a row this app cannot parse is reported, and there should be none.
-        expect(said.join(' ')).not.toContain('Line ');
-
-        //It names the layers as well, so the sidebar stops reading as bare numbers.
-        await expect(page.locator('.layerList')).toContainText('met1');
+        //
+        //And it was read without complaint, which is now what silence means.
+        //
+        //A mapping that lands says nothing at all; what still reaches a dialog is a row that could not be
+        //read, or a whole file that matched nothing. Either would be a fault in the mapping this app ships.
+        //
+        expect(said.join(' ')).toBe('');
 
         //And somewhere in the file is a shape that can be traced. Every shape in turn rather than a chosen
         //one: which index is metal is a fact about the example, and not the claim being made.

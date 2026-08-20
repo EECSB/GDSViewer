@@ -8,7 +8,7 @@
 //cell below is. Nothing in C# can see which of those happened, because both are the same edit on a different
 //element.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn, leaveCell } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     //With the cell tree open, since one of these reads the library - see gotoApp.
@@ -307,6 +307,9 @@ test.describe('carrying one in', () => {
     ///bottom, and the flattener would walk it to its depth limit rather than refuse it.
     ///
     test('a cell is offered only where it could actually go', async ({ page }) => {
+        //Outside every cell there is nowhere to put one, which a file no longer opens in - see leaveCell.
+        await leaveCell(page);
+
         await expect(page.locator('.cellRowPlace')).toHaveCount(0);
 
         await editTop(page);

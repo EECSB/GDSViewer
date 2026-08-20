@@ -5,7 +5,7 @@
 //on screen lands in the cell being edited, that a handle appears on each corner and only where an edit is
 //allowed, and that both go through the same undo as everything else.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, chooseShape, openGridMenu, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, chooseShape, openGridMenu, openedOnItsOwn, leaveCell } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
@@ -52,24 +52,57 @@ async function chooseInContext(page) {
 
 test.describe('drawing', () => {
     ///
-    ///The Draw tool is there before a cell is, and cannot be used until one is.
+    ///The Draw tool is there before a cell is, and says so when it is pressed.
     ///
-    ///It used to be left out of the bar entirely, which is a worse puzzle than a tool that does nothing:
-    ///five icons became four, the row changed width, and the one that went was the one somebody was looking
-    ///for - which reads as the button having been taken away. Disabled says the same thing without moving
-    ///anything, and its tooltip says what to do about it.
+    ///It was left out of the bar entirely first, which is a worse puzzle than a tool that does nothing:
+    ///five icons became four, the row changed width, and the one that went was the one somebody was
+    ///looking for - which reads as the button having been taken away. It was disabled next, with the
+    ///reason in its tooltip. Better, but a tooltip is read by somebody who already suspects there is
+    ///something to read, and pressing a disabled button produces nothing at all - the same silence the
+    ///missing button had, and the way this was reported: "the draw tool just doesn't put down anything".
     ///
-    test('the Draw tool waits for a cell rather than disappearing', async ({ page }) => {
-        await expect(page.locator('#drawTool')).toBeVisible();
-        await expect(page.locator('#drawTool')).toBeDisabled();
+    ///So it is live, and the press is what answers. The `D` shortcut answers the same way: it never went
+    ///near the button, so a disabled one could not have stopped it either.
+    ///
+    test('the Draw tool says why it will not draw rather than going quiet', async ({ page }) => {
+        await leaveCell(page);
 
-        //And says why, rather than only refusing.
+        await expect(page.locator('#drawTool')).toBeVisible();
+        await expect(page.locator('#drawTool')).toBeEnabled();
         await expect(page.locator('#drawTool')).toHaveAttribute('title', /Open a cell first/);
+
+        await page.locator('#drawTool').click();
+
+        //Named, and the way out named with it.
+        await expect(page.locator('#drawRefusal')).toBeVisible();
+        await expect(page.locator('#drawRefusal')).toContainText('a new shape goes in a cell');
+        await expect(page.locator('#drawRefusal')).toContainText('cell tree');
+
+        //And nothing was taken up: the pencil is not lit and Pan still is.
+        await expect(page.locator('#drawTool')).not.toHaveClass(/toolButtonOn/);
 
         await enterLeaf(page);
 
+        //Entering a cell answers it, so the line goes without being dismissed.
+        await expect(page.locator('#drawRefusal')).toHaveCount(0);
+
         await expect(page.locator('#drawTool')).toBeEnabled();
         await expect(page.locator('#drawTool')).toHaveAttribute('title', /Drag out a rectangle/);
+    });
+
+    ///The same refusal from the keyboard, which never touched the button and so was never gated by it.
+    test('the Draw shortcut says the same thing', async ({ page }) => {
+        await leaveCell(page);
+
+        await page.locator('#gdsSVG').click({ position: { x: 5, y: 5 } });
+        await page.keyboard.press('d');
+
+        await expect(page.locator('#drawRefusal')).toBeVisible();
+
+        //And it can be put away, like the rule check's message one place over.
+        await page.locator('#drawRefusalClose').click();
+
+        await expect(page.locator('#drawRefusal')).toHaveCount(0);
     });
 
     ///
