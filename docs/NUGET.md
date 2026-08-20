@@ -216,7 +216,7 @@ A release is a tag:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds it, runs the tests, packs both,
+[`.github/workflows/publish-nuget.yml`](../.github/workflows/publish-nuget.yml) builds it, runs the tests, packs both,
 pushes to nuget.org and opens a GitHub Release with the same `.nupkg` files attached. It refuses to run if the
 tag and `Directory.Build.props` disagree about the version, which is the mistake that would otherwise publish
 a number nobody chose.
@@ -224,7 +224,7 @@ a number nobody chose.
 **No API key is stored.** It authenticates by Trusted Publishing: GitHub issues a short-lived signed OIDC
 token naming this repository and this workflow file, nuget.org checks it against a policy registered there,
 and hands back a key that lives an hour. The only secret on the repository is `NUGET_USER`, the nuget.org
-profile name. The policy is keyed to the workflow file's name, so renaming `release.yml` stops publishing
+profile name. The policy is keyed to the workflow file's name, so renaming `publish-nuget.yml` stops publishing
 until the policy is edited to match - and the failure reads as a credentials problem rather than a rename.
 The push is the last step, because a version on nuget.org can be unlisted but never replaced.
 

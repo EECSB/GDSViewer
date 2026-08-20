@@ -16,7 +16,7 @@
 #       Package Owner    : EECSB
 #       Repository Owner : EECSB
 #       Repository       : GDSViewer
-#       Workflow File    : release.yml          (file name only, no path)
+#       Workflow File    : publish-nuget.yml    (file name only, no path)
 #       Environment      : (leave empty - this workflow declares none)
 #       Scopes           : Push → "Push new packages and package versions"
 #       Glob             : GdsII*               (both ids; neither package exists yet, so a pattern is

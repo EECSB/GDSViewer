@@ -4694,7 +4694,7 @@ needed: there is one route and the state lives in the query string, so every lin
 
 A different thing from the above and on a different trigger. Two packages come out of the repository —
 `GdsII`, the library, and `GdsII.Cli`, the `gds` command as a .NET tool — and a `v*` tag is what publishes
-them. [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds, tests, packs both, pushes
+them. [`.github/workflows/publish-nuget.yml`](../.github/workflows/publish-nuget.yml) builds, tests, packs both, pushes
 to nuget.org and opens a GitHub Release with the same files attached.
 
 **The version lives once**, in [`Directory.Build.props`](../Directory.Build.props). It used to live in three
