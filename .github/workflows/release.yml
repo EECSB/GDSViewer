@@ -32,9 +32,19 @@
 # be unlisted but never replaced.
 name: Release
 
+#
+# Two ways in, as LabEquipmentController's publish-nuget.yml has:
+#
+#   git tag v1.0.0 && git push origin v1.0.0     the usual one, and the one that cuts a GitHub Release
+#   Actions → Release → Run workflow             manual, for a re-run after a push that half failed
+#
+# A tag decides its own version and is checked against Directory.Build.props below. A manual run has no tag
+# to read, so it publishes whatever version the file already carries - there is nothing to disagree with.
 on:
   push:
     tags: ['v*']
+
+  workflow_dispatch:
 
 # `contents` for the GitHub Release at the end; `id-token` is what lets the job ask GitHub for the OIDC
 # token that the NuGet login below trades for a key.
@@ -64,21 +74,34 @@ jobs:
       - name: Install the wasm-tools workload
         run: dotnet workload install wasm-tools
 
-      # The tag without its v, which is what the version has to be.
-      - name: Read the version off the tag
+      #
+      # The version, from the tag when there is one and from the file when there is not.
+      #
+      # A tag is a claim about a number, so it gets checked: tagging v0.2.0 without bumping
+      # Directory.Build.props is the mistake this exists to catch, and it would otherwise publish a version
+      # nobody chose. A manual run makes no such claim - it publishes what the file says, so there is
+      # nothing to disagree with and nothing to check.
+      #
+      - name: Work out the version
         id: version
-        run: echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Check the tag and the build agree
         run: |
           declared=$(grep -oPm1 '(?<=<Version>)[^<]+' Directory.Build.props)
-          tagged="${{ steps.version.outputs.number }}"
-          if [ "$declared" != "$tagged" ]; then
-            echo "The tag says $tagged and Directory.Build.props says $declared."
-            echo "Bump the file, or tag the version that is in it."
-            exit 1
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tagged="${GITHUB_REF_NAME#v}"
+
+            if [ "$declared" != "$tagged" ]; then
+              echo "The tag says $tagged and Directory.Build.props says $declared."
+              echo "Bump the file, or tag the version that is in it."
+              exit 1
+            fi
+
+            echo "Both say $declared."
+          else
+            echo "No tag; publishing the version in Directory.Build.props: $declared."
           fi
-          echo "Both say $declared."
+
+          echo "number=$declared" >> "$GITHUB_OUTPUT"
 
       - run: dotnet restore
 
@@ -116,7 +139,21 @@ jobs:
         continue-on-error: true
         run: dotnet nuget push "./artifacts/*.snupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
+      # Kept whichever way this ran, so a manual publish still leaves the exact bytes that went up.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: published-nupkg
+          path: ./artifacts/*.*nupkg
+          if-no-files-found: error
+
+      #
+      # Only a tag gets a GitHub Release, because only a tag has something to hang one on.
+      #
+      # A manual run is for republishing a version whose push half failed; it has no ref to release against
+      # and there is nothing to announce that the tag's own release did not already say.
+      #
       - name: Release on GitHub
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/*
