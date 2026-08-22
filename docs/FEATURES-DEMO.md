@@ -79,9 +79,19 @@ rows with their own colors, rather than one "layer 67" hiding drawn geometry and
 
 ![The layer sidebar](images/layer-sidebar.png)
 
-Each row can be switched off, renamed, recolored, hatched, given a role and given a real height and thickness:
+**Each row carries an eye and a lock**, which answer two different questions. The eye is whether the layer is
+drawn at all: switch it off and its shapes leave the view, the 3D stack and the reach of the pointer
+together. The lock leaves them drawn but faded and takes them out of reach — they cannot be clicked, caught
+in a band, or dragged. So locking everything except the layer you are working on isolates it without hiding
+what you are lining it up against, which hiding cannot do.
+
+Behind the gear, a row can be renamed, recolored, hatched, given a role and given a real height and
+thickness:
 
 ![The layer settings popup](images/layer-settings.png)
+
+Renaming is in that panel rather than on the row. A name is a claim about what a number means across a whole
+technology, and a click that lands slightly wrong on a row you meant to select is the wrong way to make one.
 
 **Nothing in a GDSII file says what its layers mean.** `65/20` is a number; that it is diffusion is PDK data,
 which is why KLayout wants a `.lyp` and Magic its techfile. So the names above came from a layermap — a CSV of
@@ -136,6 +146,11 @@ you type is checked by the same parser that reads a deck file, and its complaint
 own words. The **×** on any row takes that rule out, asking first. Both edit the deck itself, so **Export**
 hands you exactly what the panel is showing.
 
+A **gear** on each row opens that rule as the deck holds it — the line itself, editable, checked by the same
+parser and refused the same way if it cannot be read. Same idea as the layer settings beside it: the row
+shows you the rule, and changing one is a deliberate act behind a control rather than a click on the row you
+were trying to point at.
+
 **DRC Check** runs it, whenever you press it. **check on edit** runs it again after every change as well —
 and with that off, an edit *takes the last result off the drawing* rather than leaving it: a marker is a
 claim about where something is, and the moment the geometry under it moves the claim is about a layout that
@@ -147,6 +162,10 @@ What it finds is marked on the drawing, counted per rule, and said in one line o
 
 Every fault is drawn in the same orange as the rule row that found it, so the list and the marks read as one
 thing. Clicking a flagged row frames the view on the first fault under it.
+
+**The line over the view names each rule and says what it is**, in the deck's own description — the same
+sentence the row's tooltip carries. A rule id is a filename to somebody who wrote the deck and nothing at all
+to anybody else, so `met1.2` on its own is a fault you have to go and look up before you can act on it.
 
 **A rule this build cannot measure is refused by name, not skipped.** It stays in the list, marked *not
 measurable*, and every result from that deck says *"not fully checked"* — because a count of faults is only
@@ -272,9 +291,19 @@ GDS3D shows the same. What a mapping does *not* cover — markers, area ids, a c
 this view rather than hung at a depth nobody measured, so nothing floats over or between the real films. It
 keeps its row in the sidebar and its 2D drawing, and a height in its layer settings brings it back.
 
+The **Distance** slider starts at nought, so a mapped file opens on the process stack itself rather than on a
+spread-out picture of it. Pull it up to open a gap on top of wherever each layer already rests, for seeing
+between films that in reality touch.
+
 Pin labels come too, as camera-facing billboards so they stay readable from any angle. Scene backgrounds and a
 cinematic orbit are in the toolbar, along with **STL, OBJ and GLTF export** — and **VR and AR** buttons, which
 say `NOT SUPPORTED` on a machine with no headset, as above.
+
+**What is exported is Z-up**, whichever way the view happens to be turned. The scene here is Y-up because
+that is what three.js uses; every CAD and EDA tool that opens an STL expects the wafer normal to be Z, so the
+model is converted on the way out and its faces wound outward — the two things a slicer or a mesh tool checks
+first. Compared against the same cells extruded by KLayout: same footprint, same stack height, same levels to
+the nanometer.
 
 ## The text editor
 

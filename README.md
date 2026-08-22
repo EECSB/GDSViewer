@@ -85,7 +85,8 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   zoom, adjustable opacity to see through stacked layers. Twenty thousand shapes pan at the screen's own
   frame rate. **Download Image** saves the whole layout, not only the part on screen.
 - 🎯 **Center the view**, in 2D or in 3D, from the button in the top-right of the canvas — for when you have panned or
-  orbited the layout off the edge of the window. And **where you are looking is part of the link**: frame
+  orbited the layout off the edge of the window. Both views frame the layout when it opens, so this is for
+  getting back rather than for arriving. And **where you are looking is part of the link**: frame
   something and the address says so, so a link or the QR code opens on that transistor rather than on the
   whole cell. It comes back on your next visit either way.
 - 🖱️ **Tools** — **Pan**, **Measure** for a distance in units and microns, **Select** to click a shape and
@@ -107,10 +108,16 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   it. Removal takes them everywhere in the file and undoes as one step, with the layer's name and height
   intact. (The format records a layer only through the shapes on it, so an empty one is gone when the file is
   written — draw on it or name it and it stays.)
+- 👁️ **An eye and a lock on every layer** — two different questions, so two controls. The eye is whether the
+  layer is drawn: off, and its shapes leave the 2D view, the 3D stack and the reach of the pointer together.
+  The lock leaves them drawn but faded and out of reach — not clickable, not caught in a band, not draggable.
+  Lock everything but the layer you are on and it is isolated, while what you are lining it up against is
+  still visible; hiding those would take away the thing you were aligning to.
 - 🩺 **Add and remove rules** — **Add rule**, at the foot of the rules list, takes one line of the deck's own
   grammar, checked by the same parser that reads a deck file, with its complaint shown where you typed. An
-  **×** on any row takes that rule out, asking first. Both edit the deck itself, so **Export** hands you what
-  the panel is showing.
+  **×** on any row takes that rule out, asking first. A **gear** on the row opens the rule as the deck holds
+  it, editable and checked the same way. Both edit the deck itself, so **Export** hands you what the panel is
+  showing.
 - 📐 **A grid to see and to snap to**, in nanometers, microns, millimeters or raw database units. It starts at
   the file's own grid rather than a round number, so the first thing you draw lands where the rest of the
   file already is. Drawing can also snap to a neighboring corner or edge.
@@ -133,12 +140,16 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   and rotation, at every level of nesting.
 - 🔌 **Wires drawn at their real width** — a `PATH`'s centerline is expanded into the shape it occupies,
   with mitered corners and all four end-cap styles.
-- 🧊 **3D view** — layers extruded and stacked in space, orbit and drag, adjustable layer spacing,
-  scene backgrounds, and a cinematic camera orbit.
+- 🧊 **3D view** — layers extruded and stacked in space, orbit and drag, scene backgrounds, and a cinematic
+  camera orbit. With a layermap carrying heights it opens on the **process stack itself** — a contact sitting
+  between the two films it joins, because the table says where it is — and the **Distance** slider opens a
+  gap on top of that when you want to see between layers that in reality touch.
 - 🥽 **WebXR** — enter the layout in VR or AR from a supported headset or phone. The chip is scaled from
   its own nanometer units down to something you can stand next to, and AR keeps the camera feed visible
   behind it.
-- 📤 **Export the 3D model** as STL, OBJ or GLTF.
+- 📤 **Export the 3D model** as STL, OBJ or GLTF — **Z-up and wound outward**, which is what every CAD and
+  EDA tool that opens one expects, rather than the Y-up the browser scene is drawn in. Checked against the
+  same cells extruded by KLayout: same footprint, same stack height, same levels to the nanometer.
 - 📝 **Text view** — the raw record stream, one record per line, in Monaco with a GDSII grammar: keywords,
   colons and numeric values colored, and typing offers every record type with its data type as
   documentation. **Save** reads the buffer back into the file, all or nothing: a line it cannot parse is
@@ -349,6 +360,11 @@ How this is implemented, and how the precedence is tested, is in
 
 Everything the viewer does to a file, it can do from a terminal too — read it, check it, name its layers,
 draw it, extrude it, run booleans over it and convert it between GDSII, OASIS and DXF.
+
+**The library builds layouts as well as reading them.** Rectangles, circles, ellipses, regular polygons and
+rings; Bézier curves; and routes laid a segment at a time with radiused bends and a width that can taper
+along them — every one handing back corners rather than elements, so a shape can be measured or combined
+before it goes on a layer. Each edit is undoable, so the same calls drive a generator or an editor.
 
 ```bash
 dotnet tool install -g GdsII.Cli

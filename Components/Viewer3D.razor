@@ -330,9 +330,12 @@
         //And the camera goes back where a session left it, once there is a viewer to move.
         //
         //Here rather than in ApplySettings for the same reason the backdrop is: a restored session hands its
-        //settings over *before* this view has had its first render, so there was nothing to point yet. The
-        //3D view frames nothing of its own - the camera opens at a fixed distance and stays there - so
-        //unlike the 2D box this is not competing with a fit, and can land whenever it is ready.
+        //settings over *before* this view has had its first render, so there was nothing to point yet.
+        //
+        //**This does now compete with a fit**, unlike when the camera opened at a fixed distance and stayed
+        //there. The first draw of a file frames it - see frameAfterDrawing - so the two are ordered rather
+        //than left to race: that fit is skipped outright when there is a camera waiting here, and this
+        //lands afterwards in the case where it is not.
         //
         if (cameraToRestore.Length > 0)
         {
@@ -539,6 +542,15 @@
 
     ///<summary>The one a session carried, applied once there is a viewer to move. Cleared as it is used.</summary>
     private string cameraToRestore = "";
+
+    ///<summary>
+    ///Whether the draw about to happen is the first of a file, and so the one that should frame it.
+    ///
+    ///Set beside <see cref="flattenedFrom"/>, which is the only thing here that means "a file this view has
+    ///not drawn yet" - a layer toggle and a spacing step both arrive with the same file and must not move
+    ///the camera.
+    ///</summary>
+    private bool frameAfterDrawing = false;
 
     ///
     ///Where the camera came to rest, kept so the session can put it back.
@@ -770,6 +782,9 @@
             layout = prepared ?? GdsFlattener.Flatten(Gds);
             merged = Booleans.MergeByLayer(layout.Elements);
             flattenedFrom = Gds;
+
+            //And this is the draw that frames it - see frameAfterDrawing.
+            frameAfterDrawing = true;
         }
 
         if (layout is null)
@@ -828,6 +843,32 @@
         }
 
         await js.InvokeVoidAsync("drawInterOp", new { elements = elements, labels = labels });
+
+        //
+        //**The layout framed, rather than hoped to be where the camera happens to point.**
+        //
+        //The camera used to open at a fixed distance down Z and stay there, which worked only because the
+        //stack happened to hang where it was looking. It stopped: extruded slabs used to run *downward*
+        //from the plane they were drawn on and now run upward - the placement the process actually
+        //describes - so the whole stack rose by its own height and the fixed camera was left aimed at its
+        //underside. A mapped sky130 cell opened with the metals off the top of the frame.
+        //
+        //Fitting is what stops that being a standing risk. A number tuned to where the geometry sits today
+        //is a number that is wrong the next time it moves, and this file has spent a while removing exactly
+        //that kind of constant.
+        //
+        //Once per file, not per draw: a layer toggle and a spacing step come back through here with the
+        //same file and must leave the camera alone, or the view would snap back every time a row was
+        //switched off. A session's own camera is restored in OnAfterRender and is the one that wins - this
+        //is for the file that arrives without one.
+        //
+        if (frameAfterDrawing)
+        {
+            frameAfterDrawing = false;
+
+            if (cameraToRestore.Length == 0)
+                await js.InvokeVoidAsync("centerCameraInterOp");
+        }
     }
 
     ///<summary>

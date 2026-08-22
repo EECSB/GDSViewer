@@ -95,22 +95,25 @@ test('the 3D view', async ({ page }) => {
     //of "layers extruded and stacked in space" shows a flat lump. The restack is live, so this settles in a
     //frame rather than needing a redraw.
     //
-    //**60 because the camera does not refit.** Only a headset gets one - see ThreeInterop's restack, which
-    //refits when xr.isPresenting so the layout does not walk off into the room. On a desktop the camera stays
-    //where it is, so a stack opened wider than what was already in frame runs off the top: at 520 the upper
-    //layers were gone entirely and at 200 the top one was still clipped. A wheel over the canvas does not fix
-    //it either - Playwright's wheel does not reach OrbitControls here, which was tried and did nothing. This
-    //is the number that fits, and it is worth knowing it is about the frame rather than about the feature.
+    //**The number no longer has to be tuned to the frame**, which is what it used to be for. A spread wider
+    //than what was already in view ran off the top, so this read 110, then 60, each time picked by looking
+    //at the result - and each time wrong again the moment the geometry moved, which it did when slabs
+    //stopped hanging below the plane they were drawn on.
     //
-    //**It read 110 while the slider's number was measured from 50 rather than from nought**, so it always
-    //meant this same 60 of spread. The framing it was tuned for is the thing to keep, not the digits.
+    //Center the view is pressed instead, which is a real control doing the thing the picture needs, and it
+    //fits whatever the stack has become. See Viewer3D's frameAfterDrawing: opening a file frames it now, and
+    //a spacing change deliberately does not, so this is exactly the case the button is there for.
     //
     await page.locator('#layerSpacing').evaluate(slider => {
         slider.value = '60';
         slider.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
+
+    await page.locator('#centerView').click();
+
+    await page.waitForTimeout(1500);
 
     await shoot(page, '3d-view');
 });

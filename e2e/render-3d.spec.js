@@ -667,3 +667,101 @@ test('a press on a layer row flashes that row', async ({ page }) => {
     //And it goes out, rather than leaving one row of the list marked from then on.
     await expect(page.locator('.layerRow').nth(2)).not.toHaveClass(/layerRowPulsing/, { timeout: 5000 });
 });
+
+///
+///**Opening a file in 3D frames it**, rather than trusting the stack to be where a fixed camera points.
+///
+///This is a regression test with a story. The camera opened at a fixed distance down Z and stayed there,
+///which worked only for as long as the geometry happened to sit in front of it. It stopped: extruded slabs
+///used to hang *below* the plane they were drawn on and now stand on it - the placement the process actually
+///describes - so the whole stack rose by its own height and the camera was left aimed at its underside. A
+///mapped sky130 cell opened with its metals off the top of the frame, and the only thing that caught it was
+///a documentation screenshot looking wrong.
+///
+///Asserted by projecting the stack's own corners through the camera the scene renders with: inside the
+///normalized cube on both axes is "in frame", and it holds wherever the geometry moves to next. Which is the
+///point - a camera position tuned to today's stack would pass this while meaning nothing.
+///
+test('opening a layout in 3D frames the whole stack', async ({ page }) => {
+    const framing = await page.evaluate(async () => {
+        const THREE = await import('three');
+
+        //The meshes come back through the restack, which is a Y write per object and builds nothing.
+        const added = [];
+        const originalAdd = THREE.Object3D.prototype.add;
+
+        THREE.Object3D.prototype.add = function (...objects) {
+            for (const object of objects)
+                added.push(object);
+
+            return originalAdd.apply(this, objects);
+        };
+
+        const slider = document.getElementById('layerSpacing');
+
+        slider.value = String(Number(slider.value) + 1);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+        await new Promise(resolve => setTimeout(resolve, 1200));
+
+        THREE.Object3D.prototype.add = originalAdd;
+
+        const meshes = added.filter(object => object.isMesh);
+
+        if (meshes.length === 0)
+            return { meshes: 0 };
+
+        //Up to the scene, then the camera it holds - the same one the renderer draws with.
+        let root = meshes[0];
+
+        while (root.parent)
+            root = root.parent;
+
+        let camera = null;
+
+        root.traverse(object => {
+            if (object.isCamera && camera === null)
+                camera = object;
+        });
+
+        if (camera === null)
+            return { meshes: meshes.length, camera: false };
+
+        const box = new THREE.Box3();
+
+        for (const mesh of meshes) {
+            mesh.updateMatrixWorld(true);
+            box.expandByObject(mesh);
+        }
+
+        camera.updateMatrixWorld(true);
+
+        let left = 9, right = -9, bottom = 9, top = -9;
+
+        for (const x of [box.min.x, box.max.x])
+            for (const y of [box.min.y, box.max.y])
+                for (const z of [box.min.z, box.max.z]) {
+                    const corner = new THREE.Vector3(x, y, z).project(camera);
+
+                    left = Math.min(left, corner.x);
+                    right = Math.max(right, corner.x);
+                    bottom = Math.min(bottom, corner.y);
+                    top = Math.max(top, corner.y);
+                }
+
+        return { meshes: meshes.length, camera: true, left, right, bottom, top };
+    });
+
+    expect(framing.meshes).toBeGreaterThan(0);
+    expect(framing.camera).toBe(true);
+
+    const said = `x ${framing.left.toFixed(2)}..${framing.right.toFixed(2)}, y ${framing.bottom.toFixed(2)}..${framing.top.toFixed(2)}`;
+
+    expect(framing.top, `the stack runs off the top: ${said}`).toBeLessThanOrEqual(1);
+    expect(framing.bottom, `the stack runs off the bottom: ${said}`).toBeGreaterThanOrEqual(-1);
+    expect(framing.right, `the stack runs off the right: ${said}`).toBeLessThanOrEqual(1);
+    expect(framing.left, `the stack runs off the left: ${said}`).toBeGreaterThanOrEqual(-1);
+
+    //And it is actually filling the frame rather than a speck in the middle of it, which would also "fit".
+    expect(framing.top - framing.bottom, `the stack is a speck: ${said}`).toBeGreaterThan(0.2);
+});

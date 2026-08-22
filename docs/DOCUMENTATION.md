@@ -3425,6 +3425,34 @@ Worth generalizing from. A synthetic event is a good stand-in for one the automa
 for what the *handler* does with it — never for what the browser would have done afterwards. An assertion
 about the second kind will pass for free.
 
+### The 3D camera frames the layout rather than pointing where it used to be
+
+**The camera opened at a fixed distance down Z and stayed there**, which worked only for as long as the
+geometry happened to sit in front of it. It stopped when the extrusion was corrected: slabs used to hang
+*below* the plane they were drawn on and now stand on it, the placement the process describes, so the whole
+stack rose by its own height and the fixed camera was left aimed at its underside. A mapped sky130 cell
+opened with its metals off the top of the frame — measured, the stack projected to a normalized y of −0.20
+to **2.90**, where anything past 1 is off screen.
+
+Nothing caught it. Every 3D test asserted geometry — mesh counts, extruded footprints, label heights — and
+none of them asserted that any of it was *visible*, which is a whole class of fault a scene graph check
+cannot see. What caught it was a documentation screenshot coming out wrong.
+
+The first draw of a file now calls the same fit the **Center the view** button uses, and only the first: a
+layer toggle and a spacing step come back through the same path with the same file and must leave the camera
+alone, or the view would snap back every time a row was switched off. A session's own camera still wins —
+that fit is skipped outright when there is one waiting to be restored. `flattenedFrom` is what tells "a file
+this view has not drawn yet" from "the same file again"; it already existed, for the merge cache.
+
+**The test that pins it projects the stack's own corners through the camera the scene renders with** and
+requires the normalized bounds to fall inside the cube, plus a floor on how much of the frame it fills so a
+speck in the middle cannot pass. That holds wherever the geometry moves to next, where a camera position
+tuned to today's stack would pass while meaning nothing. Verified by disabling the fit and watching it fail
+with `the stack runs off the top: x -1.50..1.61, y -1.25..1.86`.
+
+The documentation screenshot no longer needs a tuned spread either — `tools/screenshots.spec.js` presses
+Center after opening the stack out, instead of the magic 60 that had already been 110 once.
+
 ### How tall a toolbar popup gets
 
 **Examples and History are measured downward, not guessed.** They hang under their button at `top: 100%`,
