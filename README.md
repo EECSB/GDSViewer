@@ -2,7 +2,7 @@
 
 ### A free online GDSII viewer — open an IC layout file and inspect it in 2D, in 3D, or as raw records, entirely in your browser.
 
-![Blazor WebAssembly](https://img.shields.io/badge/Blazor-WebAssembly-512BD4) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8) ![No server](https://img.shields.io/badge/files-never%20uploaded-brightgreen) [![GdsII on NuGet](https://img.shields.io/nuget/v/GdsII?label=GdsII&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII) [![GdsII.Cli on NuGet](https://img.shields.io/nuget/v/GdsII.Cli?label=GdsII.Cli&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII.Cli)
+![Blazor WebAssembly](https://img.shields.io/badge/Blazor-WebAssembly-512BD4) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8) [![GdsII on NuGet](https://img.shields.io/nuget/v/GdsII?label=GdsII&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII) [![GdsII.Cli on NuGet](https://img.shields.io/nuget/v/GdsII.Cli?label=GdsII.Cli&color=004880&logo=nuget)](https://www.nuget.org/packages/GdsII.Cli)
 
 
 
