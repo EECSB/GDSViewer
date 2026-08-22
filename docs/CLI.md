@@ -274,12 +274,14 @@ gds nets cell.gds --layermap sky130.csv --at -700,850
 Traced from li1 (67/20) at -700,850.
 
 layer               shapes
-li1 (67/20)              1
-mcon (67/44)             1
-met1 (68/20)             1
+diff (65/20)             1
+licon1 (66/44)           2
+li1 (67/20)              2
+mcon (67/44)             2
+met1 (68/20)             2
 
-3 shape(s) across 3 layer(s).
-Named source.
+9 shape(s) across 5 layer(s).
+Carries 2 distinct names, which is either two spellings or a short: drain, source
 ```
 
 **It needs a layermap and says so plainly when it has none.** Nothing in a layout file records which of its

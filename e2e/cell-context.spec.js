@@ -4,12 +4,12 @@
 //right shapes, the breadcrumb goes where it says, and the fade actually happens. Against the fixture,
 //because no bundled file has a placement that resolves: see selection.spec.js.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, shapesMarked, snapToGrid, openedOnItsOwn, leaveCell } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, shapesMarked, snapToGrid, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 

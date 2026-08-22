@@ -6,26 +6,43 @@
 //is stored between runs, so there is no shared workspace for parallel workers to tread on.
 const { expect } = require('@playwright/test');
 
-//The hand-made example. Small, and the one file whose contents are asserted here: 18 polygons on 6
+//The hand-made example. Small, and the one file whose contents are asserted here: 20 polygons on 6
 //layers, 3 labels, and coordinates that go negative - which is what makes it worth using rather than a
 //sky130 cell.
+//
+//It was 18 until the file gained two more licon1 contacts on 66/44, taking that layer from one shape to
+//three. Every number below moved with it, and they are measured off the running app rather than counted
+//out of the file - see the note on MOSFET_MESHES for why the two do not simply agree.
 const MOSFET = 'Mosfet';
-const MOSFET_POLYGONS = 18;
+const MOSFET_POLYGONS = 20;
 const MOSFET_LABELS = 3;
 
 //
-//And seventeen slabs in 3D, because that view merges each layer before extruding it.
+//And nineteen slabs in 3D, because that view merges each layer before extruding it.
 //
-//Two of the eighteen boundaries are on 66/20 and meet along an edge, so they come out as one outline
+//Two of the twenty boundaries are on 66/20 and meet along an edge, so they come out as one outline
 //covering exactly the same ground. Held apart from the polygon count rather than derived from it: the two
 //views deliberately draw the same layout differently now, and a single number would hide that.
 //
-const MOSFET_MESHES = 17;
+const MOSFET_MESHES = 19;
 const MOSFET_LAYERS = [65, 66, 67, 68, 93, 95];
 
 //The same file by layer/datatype pair, which is what the sidebar lists. Three of its six layers carry two
 //purposes each, so keying on the number alone merged nine rows into six.
 const MOSFET_LAYER_PAIRS = ['65/20', '66/20', '66/44', '67/20', '67/44', '68/5', '68/20', '93/44', '95/20'];
+
+//
+//The rung of the even stack - AdditionalGDSInformation.DefaultLayerSpacing.
+//
+//Where a layer rests when the file was told no height for it, which after clearLayerNames is every layer.
+//The spacing slider opens its gap on top of wherever a layer already rests, so a step between untold
+//layers is this plus the slider, and at the slider's nought it is exactly this.
+//
+//It used to be neither: the slider was read as the step itself, so its minimum had to be this number to
+//mean "add nothing" and a file could never open on its own process stack. Every assertion below that adds
+//this to a slider value used to compare against the slider value alone.
+//
+const LAYER_RUNG = 50;
 
 //A standard cell, for the cases that need a second file or the sky130-only PDK links.
 const SKY130_CELL = 'sky130_fd_sc_hd__nand2_1';
@@ -63,20 +80,89 @@ async function gotoApp(page, query = '', tree = false) {
     //all. onFileInputChanged gets FileCount 0 and returns - the same silent return a canceled file dialog
     //takes, and correct for that - so the upload leaves no mark anywhere: nothing drawn, nothing logged,
     //no dialog, and not even a history entry. What is on screen stays whatever the app opened by itself,
-    //which is instance.spec.js finding the bundled Mosfet's 18 shapes where it had uploaded a file of 4.
+    //which is instance.spec.js finding the bundled Mosfet's 20 shapes where it had uploaded a file of 4.
     //
     //Rendered is not enough to wait on, and neither is visible: the element is in the page and already
     //carries its Blazor handler attribute while this is still open. `_blazorInputFileNextFileId` is what
     //that listener sets when it attaches, so it is the readiness itself rather than a proxy for it.
     //
-    //Only a spec can reach this. The input is hidden and has no drag-and-drop path, so a person gets to it
-    //through the file dialog - which cannot be opened and answered inside the window this closes.
+    //Still only a spec can reach it. The input is hidden, so the two ways to a file are the dialog - which
+    //cannot be opened and answered inside the window this closes - and a drop on the view, which reads this
+    //same flag and declines rather than dispatching into a listener that is not there yet. See onDrop in
+    //js/fileDrop.js.
     //
     await page.waitForFunction(() => {
         const input = document.getElementById('fileUpload');
 
         return input !== null && input._blazorInputFileNextFileId !== undefined;
     }, null, { timeout: 60000 });
+}
+
+///
+///Opens a file the way the Open button does, and says yes to the question that follows.
+///
+///**Opening replaces what is on screen, and the app asks before it does** - see discardsWhatIsOpen in
+///Viewer.razor. Playwright dismisses a dialog nobody told it about, and dismissing that one is Cancel, so a
+///spec that sets the input directly now uploads nothing and fails much later holding whatever was already
+///open. That is the same silent-nothing this file's own note about `_blazorInputFileNextFileId` describes,
+///arriving by a second route.
+///
+///`files` is whatever setInputFiles takes: a path, a list of them, or the {name, mimeType, buffer} form.
+///
+///A spec that wants to answer the question itself - to check that Cancel keeps the file - registers its own
+///handler and drives the input directly rather than calling this.
+///
+///**It answers that question and no other.** This was a bare `page.once`, which is wrong twice over. An
+///upload does not always ask - mayOfferImport offers to bring the file in as a cell instead, and that offer
+///is a panel rather than a dialog - so the handler was often left armed with nothing to answer, and the
+///next dialog in the test got it. In history.spec that was Clear History, which has a handler of its own:
+///both fired, both answered, and the second one threw `Cannot accept dialog which is already handled`.
+///Matching on the message is what keeps it to its own question, and armed once per page is what keeps a
+///second upload from stacking a second handler on the same one.
+///
+const armed = new WeakSet();
+
+function answerDiscardQuestion(dialog) {
+    if (!dialog.message().includes(' and close '))
+        return;
+
+    //Whoever got there first wins, and losing that race is not a failure.
+    dialog.accept().catch(() => { });
+}
+
+///
+///Says yes, from here on, to the question anything that closes the open file asks.
+///
+///For a spec that opens something by clicking rather than through a helper - a row of the Examples list,
+///say. Idempotent, so calling it before every click is fine.
+///
+function acceptsClosingWhatIsOpen(page) {
+    if (armed.has(page))
+        return;
+
+    page.on('dialog', answerDiscardQuestion);
+
+    armed.add(page);
+}
+
+///
+///Hands the question back, for a spec that means to answer it itself.
+///
+///The arming above lasts the rest of the page, which is what every spec that just wants its file open
+///wants - and exactly wrong for the one asserting that Cancel is a real answer, where the standing yes
+///wins the race and the spec's own handler finds the dialog already answered. Any helper that arms it
+///again afterwards - openRow, uploadFile - does so, so this is a gap rather than a switch.
+///
+function answersClosingItself(page) {
+    page.off('dialog', answerDiscardQuestion);
+
+    armed.delete(page);
+}
+
+async function uploadFile(page, files) {
+    acceptsClosingWhatIsOpen(page);
+
+    await page.locator('#fileUpload').setInputFiles(files);
 }
 
 ///Opens the Examples popup and waits for the bundled list to have arrived.
@@ -90,8 +176,33 @@ async function openExamples(page) {
     //wait below - which is there for the manifest arriving - then never saw the full list at all.
     await page.locator('.examplePickerFilter').fill('');
 
-    await expect.poll(async () => page.locator('.examplePickerOption').count(), { timeout: 60000 })
-        .toBeGreaterThan(1);
+    //
+    //**Settled, not merely non-empty.**
+    //
+    //The list is virtualized and arrives in stages: the popup appears with nothing in it, the rows land a
+    //moment later, and the headings - which are rows in the same sequence rather than markup wrapped around
+    //groups - come after those. Waiting only for a row count over one returns inside that window, with the
+    //rows present and the second group's heading not yet rendered. Traced: `rows 0, heads 0` at the open,
+    //`rows 27, heads 1` about a second later, `heads 2` two hundred milliseconds after that. A spec that
+    //reads `headings.nth(0)` on return is reading the middle of it.
+    //
+    //Two consecutive agreeing reads rather than a count of the groups the manifest happens to have - a
+    //manifest with one group is legitimate and this should not start failing the day somebody ships one.
+    //
+    let was = null;
+
+    await expect.poll(async () => {
+        const now = await page.evaluate(() => ({
+            rows: document.querySelectorAll('.examplePickerOption').length,
+            heads: document.querySelectorAll('.examplePickerHeading').length
+        }));
+
+        const settled = was !== null && was.rows === now.rows && was.heads === now.heads && now.rows > 1;
+
+        was = now;
+
+        return settled;
+    }, { timeout: 60000 }).toBe(true);
 }
 
 ///
@@ -180,14 +291,57 @@ async function layerLabel(page, pair) {
 }
 
 ///
-///A layer row's visibility checkbox, by position in the list.
+///A layer row's eye - the switch that says whether the layer is drawn - by position in the list.
 ///
 ///Scoped to the row and to its own class rather than taken as "the first checkbox on the page": a row
 ///carries more than one control, and a test expecting fewer shapes after toggling the wrong one waits
 ///for something that never happens.
 ///
 function layerCheckbox(page, index = 0) {
-    return page.locator('.layerRow').nth(index).locator('.layerVisible');
+    return page.locator('.layerRow').nth(index).locator('.layerEyeButton');
+}
+
+///
+///Hides a layer through the eye on its row, and leaves it hidden if it was already.
+///
+///**Idempotent, the way `uncheck` was.** The control is a button now rather than a checkbox, and a press on
+///a button is a toggle - so a spec that meant "make sure this one is off" and called this twice would turn
+///it back on. The state is read off `aria-pressed`, which the row sets from the same field the drawing does.
+///
+async function hideLayer(page, index = 0) {
+    const eye = layerCheckbox(page, index);
+
+    if (await eye.getAttribute('aria-pressed') === 'true')
+        await eye.click();
+
+    await expect(eye).toHaveClass(/layerEyeOff/);
+}
+
+///Shows a layer again, and leaves it shown if it already is. The pair of hideLayer.
+async function showLayer(page, index = 0) {
+    const eye = layerCheckbox(page, index);
+
+    if (await eye.getAttribute('aria-pressed') === 'false')
+        await eye.click();
+
+    await expect(eye).not.toHaveClass(/layerEyeOff/);
+}
+
+///
+///Locks or unlocks a layer through the padlock on its row, idempotently and for the same reason.
+///
+///A locked layer is still drawn - faded - and cannot be chosen, dragged or drawn on. See layer-lock.spec.
+///
+async function setLayerLocked(page, index, locked) {
+    const lock = page.locator('.layerRow').nth(index).locator('.layerLockButton');
+
+    if (await lock.getAttribute('aria-pressed') !== String(locked))
+        await lock.click();
+
+    if (locked)
+        await expect(lock).toHaveClass(/layerLockOn/);
+    else
+        await expect(lock).not.toHaveClass(/layerLockOn/);
 }
 
 ///Opens one layer's settings through the gear at the end of its row.
@@ -286,11 +440,22 @@ async function selectExample(page, fileName) {
 
     await filterExamples(page, fileName);
 
+    //Choosing a row closes whatever is open, and the app asks first - see uploadFile for the same note.
+    acceptsClosingWhatIsOpen(page);
+
     await exampleRow(page, fileName).click();
 
     await expectLoaded(page);
 
-    await closeExamples(page);
+    //
+    //Gone on its own, rather than needing the pointer moved off it.
+    //
+    //This used to call closeExamples, which moves the mouse to a corner and waits for the popup to go. The
+    //popup closes itself on a choice now - see closeOnChoice in Viewer.razor - so that wait was already
+    //satisfied when it started, and the mouse move was a gesture with nothing left to do. Waited on rather
+    //than assumed, since what follows a selectExample is usually a click somewhere the popup used to cover.
+    //
+    await expect(page.locator('#examplePicker')).toHaveCount(0);
 }
 
 ///
@@ -707,7 +872,7 @@ async function stackHeights(page) {
             return original.apply(this, objects);
         };
 
-        const box = document.querySelector('.layerVisible');
+        const box = document.querySelector('.layerEyeButton');
 
         box.click();
 
@@ -1000,6 +1165,46 @@ async function otherShapeClearOfPanel(page, root) {
 }
 
 ///
+///The middle of a shape that *is* chosen and that the selection panel is not covering.
+///
+///The mirror of otherShapeClearOfPanel, and for the gesture after it: that one finds a shape to *add*, so it
+///skips whatever is already picked out, and this one finds a shape to take hold *of*. Asked after the whole
+///selection is made rather than before, because the panel grows with what is in it - a point measured clear
+///of it with one shape chosen can be behind it with two.
+///
+///Returns null when every chosen shape is behind the panel, which is a fixture worth failing on.
+///
+async function chosenShapeClearOfPanel(page, root) {
+    const count = await shapeCount(page, root);
+
+    for (let nth = 0; nth < count; nth++) {
+        const box = await shapeBox(page, nth, root);
+        const at = { x: box.x + (box.width / 2), y: box.y + (box.height / 2) };
+
+        const usable = await page.evaluate(([x, y]) => {
+            const panel = document.getElementById('selectionPanel');
+
+            if (panel != null) {
+                const over = panel.getBoundingClientRect();
+
+                if (x >= over.left && x <= over.right && y >= over.top && y <= over.bottom)
+                    return false;
+            }
+
+            //And one that is picked out, which is what a drag of the group has to start on.
+            const under = document.elementsFromPoint(x, y);
+
+            return under.some(node => node.classList != null && node.classList.contains('shapeSelected'));
+        }, [at.x, at.y]);
+
+        if (usable)
+            return at;
+    }
+
+    return null;
+}
+
+///
 ///Which layer a drawn shape would go on, as the `65/20` pair, or null when nothing says.
 ///
 ///Read off the sidebar's marked row. There used to be a dropdown in the toolbar to read instead; the row
@@ -1239,8 +1444,22 @@ async function leaveCell(page) {
     await expect(page.locator('#contextBar')).toHaveCount(0);
 }
 
+///
+///Drops the layermap a bundled example arrives with, leaving bare numbers and the automatic stack.
+///
+///**The shipped mapping now carries sky130's process stack**, so an example no longer opens on the evenly
+///spaced synthetic heights. That is the point of it, and it is the wrong ground to stand on for a spec about
+///the even spacing itself - those ask for a file with no process table, which is what this makes.
+///
+async function clearLayerNames(page) {
+    await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
+
+    await expect(page.locator('#layerExampleOffer')).toBeVisible();
+}
+
 module.exports = {
     leaveCell,
+    clearLayerNames,
     openGridMenu,
     chooseShape,
     openShapeSettings,
@@ -1254,6 +1473,10 @@ module.exports = {
     MOSFET,
     CLEAR_OF_PANEL,
     otherShapeClearOfPanel,
+    uploadFile,
+    acceptsClosingWhatIsOpen,
+    answersClosingItself,
+    chosenShapeClearOfPanel,
     dismissSelection,
     chosenLayer,
     chooseLayer,
@@ -1262,6 +1485,7 @@ module.exports = {
     useDrawingLayer,
     layersListed,
     MOSFET_POLYGONS,
+    LAYER_RUNG,
     MOSFET_MESHES,
     MOSFET_LABELS,
     MOSFET_LAYERS,
@@ -1280,6 +1504,9 @@ module.exports = {
     layerNumbers,
     layerPairs,
     layerCheckbox,
+    hideLayer,
+    showLayer,
+    setLayerLocked,
     layerLabel,
     openLayerSettings,
     labelsToggle,

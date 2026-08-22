@@ -6,7 +6,7 @@
 //What is only checkable here is the gesture: the counts and the pitch coming off the panel, the copies
 //landing where the pitch says on screen, and one press being one step.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn, uploadFile } = require('./helpers');
 
 //Mosfet.gds says a database unit is a nanometer, so a micron is a thousand of them.
 const UNITS_PER_MICRON = 1000;
@@ -271,7 +271,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

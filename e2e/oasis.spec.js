@@ -13,13 +13,13 @@ const {
     MOSFET,
     MOSFET_POLYGONS,
     MOSFET_LABELS,
-    MOSFET_LAYER_PAIRS, openedOnItsOwn } = require('./helpers');
+    MOSFET_LAYER_PAIRS, openedOnItsOwn, uploadFile } = require('./helpers');
 
 ///
 ///Mosfet.gds as OASIS, converted by KLayout and committed.
 ///
 ///Committed rather than converted here: the reader's own tests make these with KLayout, and making the
-///browser suite depend on a tool being installed would be a poor trade for one 583-byte file.
+///browser suite depend on a tool being installed would be a poor trade for one 593-byte file.
 ///
 function oasisBytes() {
     return require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'Mosfet.oas'));
@@ -44,7 +44,7 @@ async function upload(page, name, bytes) {
 
     page.on('dialog', onDialog);
 
-    await page.locator('#fileUpload').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+    await uploadFile(page, { name, mimeType: 'application/octet-stream', buffer: bytes });
 
     await openedOnItsOwn(page);
 

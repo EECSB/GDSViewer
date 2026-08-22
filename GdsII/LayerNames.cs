@@ -519,7 +519,14 @@ namespace GdsII
                 //The stack goes with the names, the way the colors do. All three came out of the same
                 //mapping, and leaving a hand-built wafer standing under a set of bare numbers would be a
                 //stranger state than putting the file back as it opened.
+                //
+                //**All three fields, not two.** The height is the one that decides where a layer rests -
+                //SetStackingOffsets reads CustomHeight, not the flag - so clearing the flag and the
+                //thickness took the *look* of the stack away and left its heights standing. Nothing showed
+                //while the shipped mapping carried no heights; the moment it carried sky130's, Clear stopped
+                //putting the file back as it opened. RestoreStacking has always cleared all three.
                 layer.Value.StackIsCustom = false;
+                layer.Value.CustomHeight = null;
                 layer.Value.Depth = AdditionalGDSInformation.DefaultLayerDepth;
 
                 //And what it is for. A role came out of the same mapping as the rest, and leaving a set of
@@ -538,6 +545,21 @@ namespace GdsII
             }
 
             information.RestorePaletteColors();
+
+            //
+            //**The heights still have to be worked out again, and not from here.**
+            //
+            //A layer's Offset is where it is actually drawn, and nothing recomputes it until something asks
+            //for a restack - so dropping the mapping leaves every layer standing at the height that mapping
+            //gave it, and the settings popup, which reads Offset, goes on showing sky130's numbers under a
+            //list of bare numbers.
+            //
+            //Doing it here was tried and is wrong: this has no way of knowing how far apart the 3D view's
+            //slider is currently holding the stack, so the only spacing it could pass is the default - which
+            //collapses a spread stack and leaves the slider reading 700 over a layout stacked at 50. That is
+            //the exact failure slider-carry.spec.js exists to catch. The caller knows the spacing; see
+            //Viewer.razor's clearLayerNames, which restacks the way RestoreStacking already does.
+            //
         }
 
         #endregion **************************************************************************
@@ -664,8 +686,17 @@ namespace GdsII
             {
                 builder.Append(',');
 
+                //
+                //**Where the layer rests, not where it is drawn.** These differ by the spread the spacing
+                //slider is asking for, and writing the drawn position put that spread into the height column
+                //as though it had been measured - so reopening applied it, spread it again, and the stack
+                //walked further apart on every open. See Layer.Resting.
+                //
+                //CustomHeight first so this is right even before a restack has run: ApplyTo writes a height
+                //without recomputing the stack, and Resting only catches up when SetStackingOffsets does.
+                //
                 if (wantsStack)
-                    builder.Append(layer.Offset.ToString(CultureInfo.InvariantCulture));
+                    builder.Append((layer.CustomHeight ?? layer.Resting).ToString(CultureInfo.InvariantCulture));
 
                 builder.Append(',');
 

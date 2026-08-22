@@ -1099,8 +1099,9 @@ namespace GdsII
         ///<summary>The same, for an edit that knows the layer without having an element to read it off.</summary>
         public static void Register(GDS gds, LayerKey key)
         {
-            if (!gds.AdditionalInformation.Layers.ContainsKey(key))
-                gds.AdditionalInformation.Layers[key] = new Layer(key, NewLayerColor);
+            //One place decides what a layer arriving late looks like - see AdditionalGDSInformation.AddLayer,
+            //which the layer sidebar reaches for the same reason a drawn shape reaches this.
+            gds.AdditionalInformation.AddLayer(key);
         }
 
         ///
@@ -1146,7 +1147,6 @@ namespace GdsII
         ///What a layer met for the first time is colored. Overwritten by the palette as soon as the app
         ///assigns colors from how many layers a file has, so this only has to be valid.
         ///</summary>
-        private const string NewLayerColor = "#808080";
 
         ///<summary>Where element number <paramref name="at"/> starts, or where a new one put there would go.</summary>
         private static int recordIndex(GDS gds, StructureModel structure, int at)

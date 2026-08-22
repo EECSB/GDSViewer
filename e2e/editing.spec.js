@@ -5,12 +5,12 @@
 //coordinates, that every instance of a cell moves with it, and that the change reaches the download -
 //which is the whole point, and the one thing a unit test on the model cannot see.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, allPoints, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, allPoints, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 
@@ -158,7 +158,7 @@ test('an edit is in the file that is downloaded', async ({ page }) => {
     const path = await download.path();
 
     //Straight back in, which is the only way to ask what the bytes actually say.
-    await page.locator('#fileUpload').setInputFiles(path);
+    await uploadFile(page, path);
 
     await openedOnItsOwn(page);
 

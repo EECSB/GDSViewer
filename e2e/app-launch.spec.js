@@ -2,7 +2,7 @@
 //the router resolved the viewer at "/". Everything else assumes all of that, so it is worth failing here
 //rather than somewhere confusing.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, openExamples, closeExamples, exampleRow, filterExamples, openFile, openLayerSettings, selectView, MOSFET, previewShapeCount } = require('./helpers');
+const { gotoApp, gotoExample, openExamples, closeExamples, exampleRow, filterExamples, openFile, openLayerSettings, selectView, MOSFET, MOSFET_POLYGONS, previewShapeCount } = require('./helpers');
 
 test('the WASM app boots and renders its shell', async ({ page }) => {
     await gotoApp(page);
@@ -124,8 +124,16 @@ test.describe('the file lists hang off their buttons', () => {
         expect(gap.whiteBelowCanvasTop).toBeGreaterThan(0);
         expect(gap.whiteBelowCanvasTop).toBeLessThan(20);
 
-        //Hanging from this end of the bar rather than centered on the window, as it used to be.
-        expect(Math.abs(gap.across)).toBeLessThan(200);
+        //
+        //From this end of the bar rather than centered on the window, as it used to be - but it is allowed
+        //to slide *left* of its button to take room the view has and it does not.
+        //
+        //That slide is the point of measurePopupRoom: the popup's left edge is pinned under the button, so
+        //without it the room it can use is only whatever happens to be to the right of wherever the toolbar
+        //put that button - which left a third of the view empty beside it on a wide window. It never slides
+        //right, and never past the left of the view, both of which the next test measures.
+        //
+        expect(gap.across).toBeLessThanOrEqual(0);
     });
 
     ///
@@ -282,20 +290,44 @@ test.describe('the file lists hang off their buttons', () => {
 ///difference between reading a list of names and seeing what they are. Framed to the cell's own bounds,
 ///so a small cell fills the thumbnail rather than sitting in the corner of a fixed window.
 ///
-test('the Examples popup previews the cell that is chosen', async ({ page }) => {
+test('the preview is framed to the cell it is of, and carries no labels', async ({ page }) => {
     await gotoApp(page);
     await openExamples(page);
 
     const preview = page.locator('svg.examplePreview');
 
+    //
+    //Nothing until a row is pointed at.
+    //
+    //This used to be the open file's own thumbnail, and the popup opened showing a shrunken copy of the
+    //drawing behind it - which reads as though a row is selected when none is. The frame says what to do
+    //instead, in the cell tree's words for the same empty state.
+    //
+    await expect(preview).toHaveCount(0);
+    await expect(page.locator('.examplePreviewEmpty')).toHaveText('Point at a file');
+
+    await filterExamples(page, `${MOSFET}.gds`);
+    await exampleRow(page, `${MOSFET}.gds`).hover();
+
     await expect(preview).toBeVisible();
-    await expect.poll(async () => previewShapeCount(page), { timeout: 15000 }).toBe(18);
+    await expect.poll(async () => previewShapeCount(page), { timeout: 15000 }).toBe(MOSFET_POLYGONS);
 
     const framedOnMosfet = await preview.getAttribute('viewBox');
 
+    //
+    //Off the list before pointing at the next row, which is not fussiness.
+    //
+    //Narrowing the list is a fill() and moves no pointer, so the row that arrives under a stationary
+    //pointer gets no mouseenter and the frame keeps showing the cell before it. Leaving and coming back is
+    //what a person does anyway, and it makes the second hover a hover rather than a hope.
+    //
+    await page.locator('.examplePickerFilter').hover();
+
+    await expect(preview).toHaveCount(0);
+
     //A different cell, with different geometry and a different size.
     await filterExamples(page, 'a211oi_1');
-    await exampleRow(page, 'sky130_fd_sc_hd__a211oi_1.gds').click();
+    await exampleRow(page, 'sky130_fd_sc_hd__a211oi_1.gds').hover();
 
     await expect.poll(async () => previewShapeCount(page), { timeout: 60000 }).toBe(74);
 
@@ -310,8 +342,8 @@ test('the Examples popup previews the cell that is chosen', async ({ page }) => 
 ///Pointing at a row shows that cell, without opening it.
 ///
 ///The whole reason the picker is a list of divs: an <option> is drawn by the operating system and reports
-///no hover, so a native one could only ever preview what had already been chosen. Leaving the list puts
-///the open file's own picture back, rather than stranding whichever row the pointer last crossed.
+///no hover, so a native one could only ever preview what had already been chosen. Leaving the list empties
+///the frame, rather than stranding whichever row the pointer last crossed.
 ///
 test('pointing at an example previews it without opening it', async ({ page }) => {
     await gotoApp(page);
@@ -319,8 +351,8 @@ test('pointing at an example previews it without opening it', async ({ page }) =
 
     const preview = page.locator('svg.examplePreview');
 
-    //Mosfet is open, and is what the thumbnail shows.
-    await expect.poll(async () => previewShapeCount(page), { timeout: 15000 }).toBe(18);
+    //Nothing is pointed at yet.
+    await expect(preview).toHaveCount(0);
 
     await filterExamples(page, 'a211oi_1');
     await exampleRow(page, 'sky130_fd_sc_hd__a211oi_1.gds').hover();
@@ -330,36 +362,55 @@ test('pointing at an example previews it without opening it', async ({ page }) =
     //Looked at, not opened: the file behind the popup is untouched.
     expect(await openFile(page)).toBe(`${MOSFET}.gds`);
 
-    //And the pointer leaving puts the open file back on screen.
+    //
+    //And the pointer leaving empties it again.
+    //
+    //It used to put the open file's picture up instead. Pinned the other way now, because the picture the
+    //popup was showing most of the time was of the file you already had - see clearPreview in Viewer.razor.
+    //
     await page.locator('.examplePickerFilter').hover();
 
-    await expect.poll(async () => previewShapeCount(page), { timeout: 60000 }).toBe(18);
+    await expect(preview).toHaveCount(0);
+    await expect(page.locator('.examplePreviewEmpty')).toHaveText('Point at a file');
 });
 
 ///
-///It stays up through a choice, so several cells can be looked at without reopening it each time.
 ///
-///Pinned because it used to close itself, and a popup that dismisses on selection is the more common
-///pattern - so this is the sort of thing that gets "tidied" back later by someone who never saw it work
-///the other way.
+///**It closes once a cell is chosen**, and this test used to pin the opposite.
 ///
-test('the Examples popup stays open after picking one', async ({ page }) => {
+///It stayed up so several cells could be looked at without reopening it, which was right while clicking a
+///row was how you looked at one. Pointing at a row previews it now, without opening anything - that is the
+///looking - and a row that is chosen asks first, so clicking through the list is a dialog per cell rather
+///than a glance. What was left after a choice was a list nobody was reading, over the file it had opened.
+///
+///The warning the old version of this carried still stands, pointing the other way: whichever of the two it
+///is, it is a decision rather than an accident, so it is pinned. See closeOnChoice in Viewer.razor.
+///
+test('the Examples popup closes after picking one', async ({ page }) => {
     await gotoApp(page);
     await openExamples(page);
 
     await filterExamples(page, `${MOSFET}.gds`);
+
+    //Choosing a row closes what is open, and the app asks before it does.
+    page.once('dialog', (dialog) => dialog.accept());
+
     await exampleRow(page, `${MOSFET}.gds`).click();
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
 
-    //Still up, and ready for the next one.
-    await expect(page.locator('#examplePicker')).toBeVisible();
+    await expect(page.locator('#examplePicker')).toHaveCount(0);
 
+    //And it opens again for the next one, rather than being spent.
+    await openExamples(page);
     await filterExamples(page, 'nand2_1');
+
+    page.once('dialog', (dialog) => dialog.accept());
+
     await exampleRow(page, 'sky130_fd_sc_hd__nand2_1.gds').click();
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('sky130_fd_sc_hd__nand2_1.gds');
-    await expect(page.locator('#examplePicker')).toBeVisible();
+    await expect(page.locator('#examplePicker')).toHaveCount(0);
 });
 
 test('the router resolves the viewer at the root, and says so for anything else', async ({ page }) => {
@@ -1022,8 +1073,12 @@ test('the full-screen button lines up with the rest of the bar', async ({ page }
 
             //The space either end of the bar: its edge to the first control, and the last control to its
             //edge. Two numbers that have to be one number.
+            //
+            //**The first control, not Open.** New was added ahead of it, and a selector naming Open measured
+            //the air before the bar's first control plus that whole button - a failure about a bar nothing
+            //had moved.
             ends: [
-                Math.round(document.querySelector('label[for="fileUpload"]').getBoundingClientRect().left
+                Math.round(document.querySelector('#newLayout').getBoundingClientRect().left
                     - document.querySelector('.viewToolbar').getBoundingClientRect().left),
                 Math.round(document.querySelector('.viewToolbar').getBoundingClientRect().right - button.right)
             ]
@@ -1040,7 +1095,7 @@ test('the full-screen button lines up with the rest of the bar', async ({ page }
     expect(lined.clear).toBeGreaterThan(40);
 
     //
-    //And inset from its end of the bar by what Open is inset from the other.
+    //And inset from its end of the bar by what the first control is inset from the other.
     //
     //This column had its gutter taken off, on the reading that the bar's own padding was enough for the
     //last thing in a row. What that produced was 22px of air at the left end and 12 at the right - a

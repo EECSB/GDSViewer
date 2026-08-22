@@ -44,17 +44,26 @@ public class LayerStackTests
         var information = MosfetLayers();
 
         //
-        //Not the first layer, which is the floor the stack grows from and stays at nought by design - a
-        //spread of anything times a rank of nought is nought, and the bottom of a stack is where the
-        //spreading is measured from rather than something that spreads.
+        //**Two measured layers, and this reads the upper one.**
         //
+        //Something has to be the floor the spread is measured from, and it gains nothing by definition - which
+        //is not the same as being skipped. Reading the lower of the two would be reading whatever happened
+        //to rest lowest, and a test that cannot tell "did not move" from "had nothing to gain" is not
+        //pinning what it names.
+        //
+        var floor = information.OrderedLayers()[1].Value;
+
+        floor.CustomHeight = 1000;
+        floor.Depth = 100;
+        floor.StackIsCustom = true;
+
         var layer = information.OrderedLayers()[2].Value;
 
         layer.CustomHeight = 12345;
         layer.Depth = 400;
         layer.StackIsCustom = true;
 
-        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         Assert.Equal(12345, layer.Offset);
         Assert.Equal(400, layer.Depth);
@@ -235,18 +244,45 @@ public class LayerStackTests
         Assert.True(layer.StackIsCustom);
     }
 
-    ///<summary>And it then survives the slider, which is the whole point of the flag.</summary>
+    ///
+    ///And it then survives the slider, which is the whole point of the flag.
+    ///
+    ///**Survives means the spread is measured from it**, not that it never moves. Every layer moves once the
+    ///slider is off its minimum - see SetStackingOffsets.
+    ///
+    ///It used to gain nothing, and that was not the flag working: it was this layer happening to be first in
+    ///the file, back when the spread counted down the layer numbers rather than up the stack. On sky130 that
+    ///difference put the implants - the highest numbers in the file and the lowest things on the wafer -
+    ///climbing past met3 as the slider was dragged.
+    ///
+    ///**Two rows, because the layer this reads must not be the floor.** The spread is measured from
+    ///whatever rests lowest and that layer gains nothing by definition, so a single mapped row could pass
+    ///this by being the floor rather than by carrying its height through the change.
+    ///gains nothing by definition, which would make this pass for the wrong reason.
+    ///
     [Fact]
     public void A_stack_out_of_a_mapping_survives_the_spacing_being_changed()
     {
         var information = MosfetLayers();
-        var key = information.OrderedLayers()[0].Key;
+        var floor = information.OrderedLayers()[0].Key;
+        var key = information.OrderedLayers()[1].Key;
 
-        LayerNames.Parse($"{key.Number},{key.DataType},named,#00ff00,3000,250\n").ApplyTo(information.Layers);
+        string mapping =
+            $"{floor.Number},{floor.DataType},lower,#00ff00,1000,100\n" +
+            $"{key.Number},{key.DataType},named,#00ff00,3000,250\n";
+
+        LayerNames.Parse(mapping).ApplyTo(information.Layers);
+
+        //At rest it is exactly what the mapping asked for.
+        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        Assert.Equal(3000, information.Layers[key].Offset);
 
         information.SetStackingOffsets(700);
 
-        Assert.Equal(3000, information.Layers[key].Offset);
+        //Still measured from its own height rather than reset to the automatic stack.
+        Assert.True(information.Layers[key].Offset > 3000);
+        Assert.True(information.Layers[key].StackIsCustom);
     }
 
     ///<summary>The round trip: what is written comes back as what it was.</summary>
@@ -259,6 +295,7 @@ public class LayerStackTests
         var layer = information.Layers[key];
         layer.Name = "named";
         layer.Offset = 3000;
+        layer.CustomHeight = 3000;
         layer.Depth = 250;
         layer.StackIsCustom = true;
 
@@ -318,18 +355,43 @@ public class LayerStackTests
             Assert.Equal(6, row.Split(',').Length);
     }
 
-    ///<summary>And it reads back as the stack that was on screen, which is what makes it worth editing.</summary>
+    ///
+    ///And it reads back as the stack that was on screen, which is what makes it worth editing.
+    ///
+    ///**Where a layer rests, not where the slider had pushed it.** This asserted `Offset` - the drawn
+    ///position, height plus the spread for its rank - and that is the assertion that let the export
+    ///compound. Exported at a wide spacing, every height came out inflated; loading it back applied the
+    ///inflated numbers as measured heights and the slider spread them again, so a file that had been
+    ///written out and read in a few times had a stack that no longer resembled anything. The session's
+    ///shorter row is written by the same method and carried the same fault onto the next file opened.
+    ///
+    ///So the property worth having is not "what was on screen" but **the same stack, reproduced**: loading
+    ///the export back and stacking at the spacing it was taken at gives the picture it was taken from.
+    ///That holds at every spacing, where the old assertion only held at the slider's own minimum.
+    ///
     [Fact]
-    public void An_untouched_export_reads_back_as_the_heights_it_was_showing()
+    public void An_untouched_export_reads_back_as_the_stack_it_was_taken_from()
     {
         var information = MosfetLayers();
 
         information.SetStackingOffsets(100);
 
+        var drawn = information.OrderedLayers().ToDictionary(entry => entry.Key, entry => entry.Value.Offset);
+
         var read = LayerNames.Parse(LayerNames.Export(information));
 
+        //The heights that go out are the resting ones, which is what the spread is measured from.
         foreach (var entry in information.OrderedLayers())
-            Assert.Equal((entry.Value.Offset, entry.Value.Depth), read.Stack[entry.Key]);
+            Assert.Equal((entry.Value.Resting, entry.Value.Depth), read.Stack[entry.Key]);
+
+        //And loading it back gives the same picture rather than a wider one.
+        var reopened = MosfetLayers();
+
+        read.ApplyTo(reopened.Layers);
+        reopened.SetStackingOffsets(100);
+
+        foreach (var entry in reopened.OrderedLayers())
+            Assert.Equal(drawn[entry.Key], entry.Value.Offset);
     }
 
     ///<summary>
@@ -353,6 +415,7 @@ public class LayerStackTests
         var key = information.OrderedLayers()[0].Key;
 
         information.Layers[key].Offset = 3000;
+        information.Layers[key].CustomHeight = 3000;
         information.Layers[key].Depth = 250;
         information.Layers[key].StackIsCustom = true;
 
@@ -530,8 +593,11 @@ public class LayerStackTests
 
         var heights = fresh.OrderedLayers().Select(entry => entry.Value.Offset).ToList();
 
+        //The even stack's own rung, plus what the slider opens on top of it.
+        const int step = AdditionalGDSInformation.DefaultLayerSpacing + 700;
+
         for (int at = 1; at < heights.Count; at++)
-            Assert.Equal(700, heights[at] - heights[at - 1]);
+            Assert.Equal(step, heights[at] - heights[at - 1]);
     }
 
     ///<summary>A fill in front of the stack columns does the same thing, for the same reason.</summary>
@@ -559,6 +625,7 @@ public class LayerStackTests
         var layer = information.Layers[key];
         layer.Role = LayerRole.Via;
         layer.Offset = 3000;
+        layer.CustomHeight = 3000;
         layer.Depth = 250;
         layer.StackIsCustom = true;
 
@@ -607,6 +674,7 @@ public class LayerStackTests
         if (setting == "stack")
         {
             layer.Offset = 3000;
+            layer.CustomHeight = 3000;
             layer.Depth = 250;
             layer.StackIsCustom = true;
         }
@@ -651,4 +719,86 @@ public class LayerStackTests
     }
 
     #endregion ***********************************************************************
+
+    #region Writing a stack back out *********************************************************
+
+    ///
+    ///**A stack written out is the one that was asked for, whatever the spacing slider is at.**
+    ///
+    ///This is the bug that made a layout come apart over repeated opens, and it compounded because the two
+    ///halves of it fed each other. A layer is drawn at its height plus the spread for its rank, and the
+    ///writer wrote the drawn position - so a map exported, or a session saved, while the slider was off its
+    ///minimum recorded the spread as though it were a measured height. Reopening applied it as one, the
+    ///slider spread it again, and the next save recorded that. On Mosfet.gds the bundled sky130 heights had
+    ///walked from -120..1370 to -16..2180 before anybody could say which number was wrong.
+    ///
+    ///Read at a wide spacing on purpose: at the slider's own minimum the spread is zero and the drawn
+    ///position and the height are the same number, which is exactly the reading that cannot fail.
+    ///
+    [Fact]
+    public void An_exported_stack_is_the_height_that_was_asked_for_rather_than_where_the_slider_put_it()
+    {
+        var information = MosfetLayers();
+        var floor = information.OrderedLayers()[0].Key;
+        var upper = information.OrderedLayers()[3].Key;
+
+        string mapping =
+            $"{floor.Number},{floor.DataType},lower,#00ff00,-120,120\n" +
+            $"{upper.Number},{upper.DataType},upper,#00ff00,1370,360\n";
+
+        LayerNames.Parse(mapping).ApplyTo(information.Layers);
+
+        //Pulled well open, so a spread written into the height column would be unmissable.
+        information.SetStackingOffsets(700);
+
+        var written = LayerNames.Parse(LayerNames.Export(information));
+
+        Assert.Equal((-120, 120), written.Stack[floor]);
+        Assert.Equal((1370, 360), written.Stack[upper]);
+    }
+
+    ///<summary>And the same for the shorter row a session keeps, which is the one that carries across files.</summary>
+    [Fact]
+    public void A_stack_kept_for_the_next_file_is_the_height_that_was_asked_for_too()
+    {
+        var information = MosfetLayers();
+        var upper = information.OrderedLayers()[3].Key;
+
+        LayerNames.Parse($"{upper.Number},{upper.DataType},upper,#00ff00,1370,360\n").ApplyTo(information.Layers);
+
+        information.SetStackingOffsets(700);
+
+        var written = LayerNames.Parse(LayerNames.Named(information));
+
+        Assert.Equal((1370, 360), written.Stack[upper]);
+    }
+
+    ///
+    ///**And writing it out and reading it back changes nothing, however many times.**
+    ///
+    ///The property the two above are really about. A round trip that moves a layer moves it again on the
+    ///next one, so the failure is not a wrong number once - it is a stack that never settles.
+    ///
+    [Fact]
+    public void A_stack_survives_being_written_out_and_read_back_any_number_of_times()
+    {
+        var information = MosfetLayers();
+        var upper = information.OrderedLayers()[3].Key;
+
+        LayerNames.Parse($"{upper.Number},{upper.DataType},upper,#00ff00,1370,360\n").ApplyTo(information.Layers);
+
+        for (int round = 0; round < 5; round++)
+        {
+            information.SetStackingOffsets(700);
+
+            LayerNames.Parse(LayerNames.Export(information)).ApplyTo(information.Layers);
+        }
+
+        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        Assert.Equal(1370, information.Layers[upper].Offset);
+        Assert.Equal(360, information.Layers[upper].Depth);
+    }
+
+    #endregion **************************************************************************
 }

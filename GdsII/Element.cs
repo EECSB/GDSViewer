@@ -253,7 +253,66 @@ namespace GdsII
         ///</summary>
         public const int DefaultLayerSpacing = 50;
 
+        ///<summary>
+        ///How far the 3D view's slider pulls the layers apart before anybody drags it, which is not at all.
+        ///
+        ///**Zero, so a file opens at the process stack and nothing else.** A layer's height and thickness
+        ///come out of the layermap in nanometers, and anything added on top of them is a number nobody
+        ///measured - so the view a file opens on is the one the PDK describes, and spreading it is a thing
+        ///somebody asks for when they want to see between the layers.
+        ///
+        ///Distinct from <see cref="DefaultLayerSpacing"/>, which reads like the same idea and is not. That
+        ///one is the rung height of the even stack invented for a file that was told no heights at all, and
+        ///it has to stay 50: at zero every untold layer would land on one plane. The two were one constant
+        ///doing both jobs, which is why the slider used to have to start at 50 to mean "add nothing".
+        ///</summary>
+        public const int DefaultLayerSpread = 0;
+
         public Dictionary<LayerKey, Layer> Layers { get; set; } = new Dictionary<LayerKey, Layer>();
+
+        ///<summary>
+        ///Whether this file has been told any real height at all - a process stack, rather than the even one
+        ///<see cref="SetStackingOffsets"/> makes up out of the order the layers happen to be in.
+        ///
+        ///**This is the question that decides whether an untold layer means anything.** On a file with no
+        ///layermap every layer is untold, the even stack is the only thing there is, and the 3D view draws
+        ///all of it - which is what it has always done and must go on doing. On a file carrying a process
+        ///table an untold layer is one the table does not cover: a marker, an area id, a pin purpose nobody
+        ///wrote a row for. Its height is then not a small error but a number that means nothing, so the 3D
+        ///view leaves it out rather than hanging a slab at it. Give it a height in the layer settings and it
+        ///is drawn like anything else. See <see cref="Layer.CustomHeight"/>.
+        ///</summary>
+        public bool HasProcessStack => Layers.Any(entry => entry.Value.CustomHeight is not null);
+
+        ///<summary>
+        ///The gray a layer arrives in when it was not there when the file was read, so nothing in the
+        ///gradient was divided out for it. Plain rather than picked, and the settings are where a color is
+        ///chosen - see <see cref="RestorePaletteColors"/>, which is what divides the gradient again.
+        ///</summary>
+        public const string NewLayerColor = "#808080";
+
+        ///
+        ///Puts a layer in the table that nothing is drawn on yet.
+        ///
+        ///**The format has no record for a layer**, only for the shapes carrying one - so this is a row in
+        ///the list and nothing in the file until something is drawn on it. Written down and read back, an
+        ///empty layer is gone, which is not a bug to fix but the thing GDSII actually stores.
+        ///
+        ///It exists because the table is built from what the layout draws: a new library has no layers at
+        ///all, and an existing one offers only the numbers it happens to use. Both are cases where the
+        ///answer to "draw on 66/44" was that there was nowhere to say it.
+        ///
+        ///False where the pair is already there, so a caller can say so rather than quietly doing nothing.
+        ///
+        public bool AddLayer(LayerKey key)
+        {
+            if (Layers.ContainsKey(key))
+                return false;
+
+            Layers[key] = new Layer(key, NewLayerColor);
+
+            return true;
+        }
 
         public void GetLayers(List<StructureModel> structures)
         {
@@ -277,7 +336,7 @@ namespace GdsII
             if (Layers.Count == 0)
                 return;
 
-            SetStackingOffsets(DefaultLayerSpacing);
+            SetStackingOffsets(DefaultLayerSpread);
             assignColors(OrderedLayers());
         }
 
@@ -320,30 +379,99 @@ namespace GdsII
         ///layer rests - see <see cref="Layer.CustomHeight"/> - and the spread is measured from the slider's
         ///own minimum, so at rest the stack is untouched and every step past it separates everything.
         ///
+        ///
+        ///**And the spread is counted up the stack, not down the layer numbers.**
+        ///
+        ///It used to multiply by the layer's place in the ordered list, which is layer number then datatype.
+        ///That is the same sequence as the resting stack only while the heights are the synthetic ones -
+        ///and the moment a real process table is loaded the two part company. sky130 puts its implants at
+        ///`93/44`, `94/20` and `95/20`: the highest numbers in the file and the lowest things on the wafer.
+        ///Multiplying those by 22, 23 and 24 sent them climbing past met3 as the slider was dragged, so
+        ///pulling the stack open scrambled the order it was meant to make legible.
+        ///
+        ///Ranked by level rather than by layer, so layers that were *told* to sit together travel together:
+        ///a pin and a label carry their metal's height, and a slider that lifted a pin off the wire it names
+        ///on its first step would be describing something that does not exist.
+        ///
+        ///**Told together, not merely equal.** A height a mapping gives can land by chance on one the
+        ///automatic stack computed, and those two have nothing to do with each other - separating them is
+        ///exactly what somebody drags the slider to see. So a level is shared only where every layer on it
+        ///was given its height; a computed one always takes a rank of its own.
+        ///
+        ///**A layer the file says nothing about keeps its meaningless place here, and the 3D view is what
+        ///declines to draw it.** This tried for one round to answer that question here, by parking such a
+        ///layer above the top of everything measured - and that is precisely what a person then saw. On a
+        ///sky130 standard cell eight layers had no height, four of them drawn to the full cell, so the
+        ///layout grew a ladder of cell-sized plates hanging over it with sky above and below each one.
+        ///
+        ///There is no height that is right. A marker, an area id, a pin drawn on no film - none of them is
+        ///anywhere on a wafer, so every height this could invent puts a slab somewhere it does not belong,
+        ///and the only question left is which lie is least visible. So the resting height of an untold
+        ///layer stays the arbitrary one it always was, and the view that would have to believe it skips it
+        ///instead - see <see cref="HasProcessStack"/> and Viewer3D.Render. Where nothing at all was told,
+        ///nothing is skipped and this even stack is the whole answer, which is what every file without a
+        ///layermap gets.
+        ///
         public void SetStackingOffsets(int spacing)
         {
-            int step = 0;
+            //
+            //**How much wider than resting the slider is asking for, which is what it now says.**
+            //
+            //This read `spacing - DefaultLayerSpacing`, so the slider had to sit at 50 to add nothing and
+            //its minimum was 50 for that reason alone - a control whose zero point was somewhere in the
+            //middle of a constant that also meant something else entirely. The number is the spread now, so
+            //nought is nought and the stack a file opens on is the process stack.
+            //
+            int spread = spacing;
 
-            //
-            //**How much wider than resting the slider is asking for.**
-            //
-            //Zero at the slider's own minimum, which is this default - so at rest every layer sits exactly
-            //where it sat before this arithmetic existed, a real height included. Everything above that is
-            //the spread, and it is applied to every layer rather than to some of them.
-            //
-            int spread = spacing - DefaultLayerSpacing;
+            var ordered = OrderedLayers();
 
-            foreach (var layer in OrderedLayers())
+            //Where each layer rests: told, or worked out from its place in the order the way it always was.
+            var resting = new int[ordered.Count];
+
+            for (int i = 0; i < ordered.Count; i++)
             {
-                int mine = step;
+                //
+                //A height a mapping gave, or the layer's place in the list - which is a position in a list
+                //and says only what order the layers are in. See HasProcessStack for who is allowed to
+                //believe the second kind.
+                //
+                if (ordered[i].Value.CustomHeight is int told)
+                    resting[i] = told;
+                else
+                    resting[i] = DefaultLayerSpacing * i;
+            }
 
-                step++;
+            //The same layers, read from the bottom of the wafer up. Ties keep the list's own order, so the
+            //walk below is the same one twice for a file whose numbers already climb with its stack.
+            var climbing = Enumerable
+                .Range(0, ordered.Count)
+                .OrderBy(i => resting[i])
+                .ThenBy(i => i)
+                .ToList();
 
-                //A layer told where it belongs starts from there. Everything else starts from its place in
-                //the order, which is the same number the resting stack has always used.
-                int from = layer.Value.CustomHeight ?? (DefaultLayerSpacing * mine);
+            int rank = 0;
 
-                layer.Value.Offset = from + (spread * mine);
+            for (int at = 0; at < climbing.Count; at++)
+            {
+                int mine = climbing[at];
+
+                if (at > 0)
+                {
+                    int below = climbing[at - 1];
+
+                    bool sharesTheLevel = resting[mine] == resting[below]
+                        && ordered[mine].Value.CustomHeight is not null
+                        && ordered[below].Value.CustomHeight is not null;
+
+                    if (!sharesTheLevel)
+                        rank++;
+                }
+
+                //Both, because they answer different questions: where it is drawn, and where it was asked to
+                //be. Only the second goes back out to a layermap - see Layer.Resting.
+                ordered[mine].Value.Resting = resting[mine];
+                ordered[mine].Value.Offset = resting[mine] + (spread * rank);
             }
         }
 
@@ -608,6 +736,25 @@ namespace GdsII
         ///or by a layermap when the real stack is known. See <see cref="StackIsCustom"/>.
         ///</summary>
         public int Offset { get; set; }
+
+        ///
+        ///Where this layer rests before the spacing slider spreads anything - <see cref="Offset"/> without
+        ///the spread in it.
+        ///
+        ///**This is the number that goes back out to a layermap**, and it exists because writing `Offset`
+        ///there compounded. A layer's drawn position is its height plus the spread for its rank, so a map
+        ///exported - or a session saved - while the slider was off its minimum carried the spread back in as
+        ///though it were a measured height. Reopening applied it, the slider spread it again, and every open
+        ///pushed the stack further apart: on Mosfet.gds the bundled sky130 heights had drifted from
+        ///-120..1370 to -16..2180, which reads as a layout coming apart rather than as a number being
+        ///recorded twice.
+        ///
+        ///Equal to <see cref="CustomHeight"/> where there is one, and to the layer's place in the order where
+        ///there is not - so it is the right answer for both kinds of row a layermap can hold. Written by
+        ///<see cref="AdditionalGDSInformation.SetStackingOffsets"/>, which is the only thing that knows the
+        ///difference between the two.
+        ///
+        public int Resting { get; set; }
 
         ///<summary>
         ///How far the layer is extruded, in database units - the **thickness** of a process file.

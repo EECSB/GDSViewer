@@ -30,7 +30,7 @@ public class LayerSpacingTests
         foreach (var key in keys)
             information.Layers[key] = new Layer(key, "#ffffff");
 
-        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         return information;
     }
@@ -40,7 +40,69 @@ public class LayerSpacingTests
     private static readonly LayerKey Li1 = new LayerKey(67, 20);
     private static readonly LayerKey Met1 = new LayerKey(68, 20);
 
-    ///<summary>The plain case, unchanged: one step per layer, from nothing.</summary>
+    ///
+    ///**A layer the file says nothing about keeps its meaningless place here, and the 3D view is what
+    ///leaves it out.**
+    ///
+    ///This tried for one round to answer that question in the stack itself, by parking such a layer above
+    ///the top of everything measured - and parking is exactly what a person then saw. Four of the eight
+    ///unmapped layers on a sky130 standard cell are drawn to the whole cell, so they hung over the layout
+    ///as a ladder of cell-sized plates with sky above and below each one. There is no height that is right
+    ///for a layer that is not on the wafer, so the stack stops guessing at one.
+    ///
+    [Fact]
+    public void A_layer_with_no_height_keeps_its_place_in_the_even_stack()
+    {
+        var stack = StackOf(Diff, Poly, Li1, Met1);
+
+        //Two films, measured, with the top of the upper one at 1370 + 360.
+        stack.Layers[Li1].CustomHeight = 940;
+        stack.Layers[Li1].Depth = 100;
+        stack.Layers[Met1].CustomHeight = 1370;
+        stack.Layers[Met1].Depth = 360;
+
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        //The two that were told sit where they were told.
+        Assert.Equal(940, stack.Layers[Li1].Offset);
+        Assert.Equal(1370, stack.Layers[Met1].Offset);
+
+        //And the two that were not keep the places their index gives them, which say only what order the
+        //layers are in. Nothing here claims otherwise - HasProcessStack below is what the 3D view asks
+        //before it believes one of these.
+        Assert.Equal(0, stack.Layers[Diff].Offset);
+        Assert.Equal(AdditionalGDSInformation.DefaultLayerSpacing, stack.Layers[Poly].Offset);
+    }
+
+    ///
+    ///**Whether the file was told anything at all**, which is the whole of what the 3D view asks before it
+    ///leaves a layer out.
+    ///
+    ///Both directions matter. On a file with no layermap every layer is untold, the even stack is the only
+    ///statement about order there is, and a view that skipped untold layers would draw nothing at all.
+    ///
+    [Fact]
+    public void A_file_has_a_process_stack_once_any_layer_has_been_given_a_height()
+    {
+        var stack = StackOf(Diff, Poly, Li1, Met1);
+
+        Assert.False(stack.HasProcessStack);
+        Assert.Equal(new[] { 0, 50, 100, 150 }, Heights(stack));
+
+        stack.Layers[Met1].CustomHeight = 1370;
+
+        Assert.True(stack.HasProcessStack);
+    }
+
+    ///
+    ///The plain case: one step per layer, from nothing.
+    ///
+    ///**The step is the rung plus the spread**, not the spread alone. A layer nobody measured rests at its
+    ///place in the even stack, which is DefaultLayerSpacing apart, and the slider opens its own gap on top
+    ///of that - so at a spread of 200 these step by 250 and at a spread of nought they step by the rung
+    ///they always had. The slider used to be read as the step itself, which is why it could not go below
+    ///50: there was no way to say "add nothing" without also collapsing this stack.
+    ///
     [Fact]
     public void Layers_with_no_height_of_their_own_step_evenly()
     {
@@ -48,7 +110,22 @@ public class LayerSpacingTests
 
         stack.SetStackingOffsets(200);
 
-        Assert.Equal(new[] { 0, 200, 400, 600 }, Heights(stack));
+        const int step = AdditionalGDSInformation.DefaultLayerSpacing + 200;
+
+        Assert.Equal(new[] { 0, step, step * 2, step * 3 }, Heights(stack));
+    }
+
+    ///<summary>And with nothing asked for, the even stack is exactly its own rung height.</summary>
+    [Fact]
+    public void Layers_with_no_height_rest_on_the_even_stack_when_nothing_is_spread()
+    {
+        var stack = StackOf(Diff, Poly, Li1, Met1);
+
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        const int rung = AdditionalGDSInformation.DefaultLayerSpacing;
+
+        Assert.Equal(new[] { 0, rung, rung * 2, rung * 3 }, Heights(stack));
     }
 
     ///
@@ -56,6 +133,11 @@ public class LayerSpacingTests
     ///
     ///This is the failure, stated. Before the fix Poly stayed at 900 whatever the slider said, while the
     ///layers around it walked away from it.
+    ///
+    ///**Two told heights, and the upper one is what this reads.** Something has to be the floor the spread
+    ///is measured from, and that is whatever rests lowest - it gains nothing by definition, which is not the
+    ///same as being skipped. A single told layer would be that floor here, so the assertion would hold for
+    ///the wrong reason.
     ///
     [Fact]
     public void A_layer_given_a_height_moves_with_the_slider_too()
@@ -65,13 +147,21 @@ public class LayerSpacingTests
         stack.Layers[Poly].CustomHeight = 900;
         stack.Layers[Poly].StackIsCustom = true;
 
-        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        stack.Layers[Met1].CustomHeight = 2000;
+        stack.Layers[Met1].StackIsCustom = true;
 
-        int atRest = stack.Layers[Poly].Offset;
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        int atRest = stack.Layers[Met1].Offset;
+
+        Assert.Equal(2000, atRest);
 
         stack.SetStackingOffsets(700);
 
-        Assert.NotEqual(atRest, stack.Layers[Poly].Offset);
+        Assert.NotEqual(atRest, stack.Layers[Met1].Offset);
+
+        //Measured from its own height rather than reset to the automatic stack.
+        Assert.True(stack.Layers[Met1].Offset > 2000);
     }
 
     ///
@@ -87,13 +177,16 @@ public class LayerSpacingTests
 
         stack.Layers[Poly].CustomHeight = 900;
 
-        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         Assert.Equal(900, stack.Layers[Poly].Offset);
 
-        //And the layers with no height of their own are where they always were.
+        //And the layers with no height of their own keep the places their index gives them - 0, 100 and
+        //150 - rather than being shuffled around the one film that was measured. Those numbers mean
+        //nothing, which is the point: see A_layer_with_no_height_keeps_its_place_in_the_even_stack.
         Assert.Equal(0, stack.Layers[Diff].Offset);
-        Assert.Equal(AdditionalGDSInformation.DefaultLayerSpacing * 2, stack.Layers[Li1].Offset);
+        Assert.Equal(100, stack.Layers[Li1].Offset);
+        Assert.Equal(150, stack.Layers[Met1].Offset);
     }
 
     ///
@@ -127,13 +220,13 @@ public class LayerSpacingTests
 
         stack.Layers[Poly].CustomHeight = 900;
 
-        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         var resting = Heights(stack);
 
         stack.SetStackingOffsets(700);
         stack.SetStackingOffsets(400);
-        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpacing);
+        stack.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         Assert.Equal(resting, Heights(stack));
     }
@@ -174,7 +267,10 @@ public class LayerSpacingTests
 
         Assert.Null(stack.Layers[Poly].CustomHeight);
         Assert.False(stack.Layers[Poly].StackIsCustom);
-        Assert.Equal(200, stack.Layers[Poly].Offset);
+
+        //Second on the even stack, so one rung up and one spread out - see Layers_with_no_height_of_their
+        //_own_step_evenly for why the two are added rather than the slider's number being the step.
+        Assert.Equal(AdditionalGDSInformation.DefaultLayerSpacing + 200, stack.Layers[Poly].Offset);
     }
 
     private static int[] Heights(AdditionalGDSInformation stack)

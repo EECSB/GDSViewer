@@ -6,7 +6,7 @@
 //What is only checkable here is the picker: that it says which layer they are on, that it says nothing when
 //they are not all on one, and that choosing from it moves them and shows it.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, elementPoints, elementFill, shapesDrawn, allFills, layersListed, CLEAR_OF_PANEL, chosenLayer, chooseLayer, layersOffered, dismissSelection, otherShapeClearOfPanel, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, elementPoints, elementFill, shapesDrawn, allFills, layersListed, CLEAR_OF_PANEL, chosenLayer, chooseLayer, layersOffered, dismissSelection, otherShapeClearOfPanel, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -258,7 +258,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

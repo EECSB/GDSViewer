@@ -5,7 +5,7 @@
 //interop, and what is actually being tested is a round trip through storage rather than a function's return
 //value - a history that saves and never restores would pass any test that did not reload.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, layerCheckbox, openLayerSettings, layerNameBox, svgCounts, selectExample, editorText, saveEditorText, expectEditorLoaded, selectView, MOSFET, SKY130_CELL, previewShapeCount, openedOnItsOwn } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, openFile, layerCheckbox, hideLayer, openLayerSettings, layerNameBox, svgCounts, selectExample, editorText, saveEditorText, expectEditorLoaded, selectView, MOSFET, MOSFET_POLYGONS, SKY130_CELL, previewShapeCount, openedOnItsOwn, uploadFile, acceptsClosingWhatIsOpen, answersClosingItself } = require('./helpers');
 
 //The picker lists files by their whole name; ?file= and the history both name them the same way. MOSFET
 //and SKY130_CELL are slugs, so the extension goes back on for anything that goes through the list.
@@ -70,9 +70,21 @@ async function clearHistory(page, { answer = 'accept' } = {}) {
     return asked;
 }
 
+///
+///Opens a row of the history, and says yes to the question that asks.
+///
+///A row replaces what is on screen exactly as Open and Examples do, so it asks first - see
+///discardsWhatIsOpen in Viewer.razor. Playwright dismisses a dialog nobody claimed, which is Cancel.
+///
+async function openRow(page, name) {
+    acceptsClosingWhatIsOpen(page);
+
+    await page.locator(`#historyPicker .historyRow[data-file="${name}"] .historyRowName`).click();
+}
+
 ///Puts a file on the page that did not come from the bundled list, the way a person would.
 async function upload(page, name, bytes) {
-    await page.locator('#fileUpload').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+    await uploadFile(page, { name, mimeType: 'application/octet-stream', buffer: bytes });
 
     await openedOnItsOwn(page, 60000);
 
@@ -159,7 +171,7 @@ test('a file larger than the browser default upload limit still opens', async ({
     //The shell sets the file's name before the parse, so waiting on that alone would pass against a file
     //that was refused. A history row is only written after a successful parse, and the drawing only has
     //polygons in it if the records came out - so between them they say the parse worked.
-    await expect.poll(async () => (await svgCounts(page)).polygons, { timeout: 60000 }).toBeGreaterThan(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons, { timeout: 60000 }).toBeGreaterThan(MOSFET_POLYGONS - 2);
 
     await openHistory(page);
     await expectHistory(page, ['big.gds']);
@@ -174,7 +186,7 @@ test('a file larger than the browser default upload limit still opens', async ({
 test('an example that is only opened is not kept', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     await selectExample(page, SKY130_FILE);
 
@@ -202,9 +214,9 @@ test('a file opened from this computer is kept even though nothing was changed',
 test('changing an example puts it in the history', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    await layerCheckbox(page).uncheck();
+    await hideLayer(page);
 
     await openHistory(page);
 
@@ -216,11 +228,11 @@ test('changing an example puts it in the history', async ({ page }) => {
 ///
 test('the most recently changed file is at the top', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await selectExample(page, SKY130_FILE);
-    await layerCheckbox(page).uncheck();
+    await hideLayer(page);
 
     await openHistory(page);
     await expectHistory(page, [SKY130_FILE, 'Mosfet.gds']);
@@ -242,14 +254,60 @@ test('the most recently changed file is at the top', async ({ page }) => {
 ///Through a reload, so this is a round trip through storage rather than through the page's own memory -
 ///which would pass whether or not anything was ever written.
 ///
+///
+///**A row closes what is open, so it asks first** - the same question New, Open and the Examples list ask.
+///
+///Here rather than beside those three, because a row has to be earned before it can be pressed: the write
+///goes through .NET to IndexedDB, and a test that navigates away the moment the file is on screen finds no
+///row at all. expectHistory is what waits for it.
+///
+test('opening a row asks before it closes what is open', async ({ page }) => {
+    await gotoExample(page, MOSFET);
+    await expect.poll(async () => openFile(page)).toBe(MOSFET_FILE);
+
+    await hideLayer(page);
+
+    //Somewhere else, so the row is not the file already on screen.
+    await selectExample(page, SKY130_FILE);
+    await expect.poll(async () => openFile(page)).toBe(SKY130_FILE);
+
+    await openHistory(page);
+    await expectHistory(page, [MOSFET_FILE]);
+
+    //selectExample above left a standing yes to this question, and this test is about answering it no.
+    answersClosingItself(page);
+
+    let asked = '';
+
+    page.once('dialog', dialog => {
+        asked = dialog.message();
+
+        return dialog.dismiss();
+    });
+
+    await page.locator(`#historyPicker .historyRow[data-file="${MOSFET_FILE}"] .historyRowName`).click();
+
+    //Both files named: the one arriving and the one going.
+    expect(asked).toContain(MOSFET_FILE);
+    expect(asked).toContain(SKY130_FILE);
+
+    //And nothing happened.
+    await expect.poll(async () => openFile(page), { timeout: 10000 }).toBe(SKY130_FILE);
+
+    //Saying yes does what the row always did.
+    await openRow(page, MOSFET_FILE);
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(MOSFET_FILE);
+});
+
 test('a file comes back out of the history in the state it was left in', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    await layerCheckbox(page).uncheck();
+    await hideLayer(page);
 
     const hidden = (await svgCounts(page)).polygons;
-    expect(hidden).toBeLessThan(18);
+    expect(hidden).toBeLessThan(MOSFET_POLYGONS);
 
     //Somewhere else entirely, so what comes back has to have come from the history.
     await selectExample(page, SKY130_FILE);
@@ -259,7 +317,7 @@ test('a file comes back out of the history in the state it was left in', async (
     await expectLoaded(page);
 
     await openHistory(page);
-    await page.locator('#historyPicker .historyRow[data-file="Mosfet.gds"] .historyRowName').click();
+    await openRow(page, 'Mosfet.gds');
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(hidden);
@@ -282,7 +340,7 @@ test('an edited file comes back edited', async ({ page }) => {
     await expect.poll(async () => openFile(page)).toBe(SKY130_FILE);
 
     await openHistory(page);
-    await page.locator('#historyPicker .historyRow[data-file="Mosfet.gds"] .historyRowName').click();
+    await openRow(page, 'Mosfet.gds');
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');
 
@@ -319,7 +377,7 @@ test('opening the bundled example does not overwrite an edited copy of it', asyn
     await selectView(page, 'View3D');
 
     await openHistory(page);
-    await page.locator('#historyPicker .historyRow[data-file="Mosfet.gds"] .historyRowName').click();
+    await openRow(page, 'Mosfet.gds');
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');
 
@@ -355,8 +413,8 @@ test('a file whose records were changed says so', async ({ page }) => {
 ///
 test('pointing at a row draws it without opening it', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await selectExample(page, SKY130_FILE);
     await expect.poll(async () => openFile(page)).toBe(SKY130_FILE);
@@ -374,8 +432,8 @@ test('pointing at a row draws it without opening it', async ({ page }) => {
 
 test('a row can be thrown away on its own', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await upload(page, 'uploaded.gds', exampleBytes('Mosfet.gds'));
 
@@ -390,8 +448,8 @@ test('a row can be thrown away on its own', async ({ page }) => {
 ///Deleting a row must not also open it - the delete button sits inside the row that opens the file.
 test('throwing a row away does not open it', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await upload(page, 'uploaded.gds', exampleBytes('Mosfet.gds'));
 
@@ -406,8 +464,8 @@ test('throwing a row away does not open it', async ({ page }) => {
 
 test('the whole history can be cleared', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await upload(page, 'uploaded.gds', exampleBytes('Mosfet.gds'));
 
@@ -460,8 +518,8 @@ test('declining the confirmation leaves the history alone', async ({ page }) => 
 ///
 test('the filter narrows the list', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await upload(page, 'uploaded.gds', exampleBytes('Mosfet.gds'));
 
@@ -488,8 +546,8 @@ test('the filter narrows the list', async ({ page }) => {
 ///Filtering hides rows; it must not delete them.
 test('a filtered-out file is still in the history', async ({ page }) => {
     await gotoExample(page, MOSFET);
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
-    await layerCheckbox(page).uncheck();
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await hideLayer(page);
 
     await upload(page, 'uploaded.gds', exampleBytes('Mosfet.gds'));
 

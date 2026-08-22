@@ -71,7 +71,28 @@ namespace GDSViewer.Models
         public LayerKey Id { get; set; }
 
         public required string Label { get; set; }
+
+        ///<summary>Whether this layer is drawn at all - what the eye on its row says.</summary>
         public bool IsSelected { get; set; }
+
+        ///
+        ///Whether this layer is locked: drawn, and not to be touched.
+        ///
+        ///**A third state, between shown and hidden.** Hiding a layer takes it off the screen, which is the
+        ///wrong answer when it is the thing you are working *against* - a via has to line up with the metal
+        ///over it, and you cannot line up with something you cannot see. Locking leaves it in the picture,
+        ///faded, and takes it out of everything that picks: a click passes through it, a band does not catch
+        ///it, and Select All leaves it alone.
+        ///
+        ///**Any number of them, which is the point.** This began as one isolated layer - press a row and
+        ///work on that alone - and one layer is not how a layout is edited: a via and its two metals are
+        ///three layers being worked on together. Locking says which layers are *not* in hand, so what is
+        ///left in hand can be as many as it needs to be.
+        ///
+        ///Off by default: a file opens with every layer live, so nothing is out of reach until somebody
+        ///says so.
+        ///
+        public bool IsLocked { get; set; }
 
         ///<summary>
         ///Whether this layer's TEXT elements are drawn. Per layer rather than one switch for the file,
@@ -104,6 +125,50 @@ namespace GDSViewer.Models
             }
 
             return visible;
+        }
+
+        ///
+        ///The pairs that can be worked on: drawn, and not locked.
+        ///
+        ///**What everything that picks is measured against**, where <see cref="VisibleLayers"/> is what
+        ///everything that draws is measured against. The two were one question while the only way to take a
+        ///layer out of reach was to hide it; a lock is the case where they differ, and keeping them apart is
+        ///what lets a locked layer stay on screen while a click goes straight through it.
+        ///
+        ///A hidden layer is not editable either, which is why this is an intersection rather than the
+        ///complement of the locked set: a shape nobody can see is not a shape anybody meant to choose.
+        ///
+        public static IReadOnlySet<LayerKey> EditableLayers(List<CheckboxItem> showLayers)
+        {
+            var editable = new HashSet<LayerKey>();
+
+            foreach (var item in showLayers)
+            {
+                if (item.IsSelected && !item.IsLocked)
+                    editable.Add(item.Id);
+            }
+
+            return editable;
+        }
+
+        ///
+        ///The pairs that are locked, as a set, for the rule that fades them.
+        ///
+        ///Not intersected with what is visible: a hidden layer is not drawn, so whether it would have been
+        ///faded is a question about nothing. Kept as what the rows say rather than as what is left over
+        ///after the editable set, so a reader of either one does not have to hold the other in mind.
+        ///
+        public static IReadOnlySet<LayerKey> LockedLayers(List<CheckboxItem> showLayers)
+        {
+            var locked = new HashSet<LayerKey>();
+
+            foreach (var item in showLayers)
+            {
+                if (item.IsLocked)
+                    locked.Add(item.Id);
+            }
+
+            return locked;
         }
 
         ///<summary>

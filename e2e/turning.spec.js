@@ -8,7 +8,7 @@
 //the format counts it upwards, so the button and the arithmetic disagree about what "right" means by exactly
 //one reflection - and nothing but a browser can say whether the arrow matches what happens.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, elementPoints, allPoints, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, elementPoints, allPoints, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -308,7 +308,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

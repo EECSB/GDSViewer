@@ -39,6 +39,11 @@ read at a glance, and `sky130_fd_sc_hd__nand2_1.gds`, a real SkyWater standard c
 anywhere — and **Examples** opens the 897 files the app ships with: the SkyWater sky130 standard-cell
 libraries plus the hand-made MOSFET.
 
+**Or drag the file onto the view.** The drawing area outlines itself while a file is held over it, and
+letting go is the same as choosing that file from the dialog — including the question below about what to do
+with the layout already open. Dropping anywhere else in the window does nothing at all, rather than the
+browser's own answer of navigating away from the app and taking your layout with it.
+
 ![The examples picker](images/examples.png)
 
 The list is filtered as you type and each row previews as you point at it, so a cell can be found by looking
@@ -46,6 +51,10 @@ rather than by remembering its name. Choosing one puts it in the address — `?f
 so it can be bookmarked or sent to someone, and the QR button carries it onto a phone.
 
 Uploading clears that, since a file off your own machine is not something a link can reach.
+
+**New** starts an empty one instead: a single cell called `TOP`, no layers, nothing drawn. Every other way in
+needs a file, so beginning a layout of your own used to mean opening somebody else's and deleting it. No PDK
+names are guessed onto it — a blank layout is not a sky130 cell, the same reason an upload gets none.
 
 ## The 2D editor
 
@@ -85,6 +94,16 @@ Names persist between visits and across files, since the numbers mean the same t
 The heading above the list is a switch: the same panel also holds the [design rules](#design-rules) the
 layout is checked against, and only one of the two is ever wanted at a time.
 
+**Add layer**, at the foot of the list, adds a layer/datatype nothing is drawn on yet. The list is built from
+what the layout draws, so a new file has no rows and an existing one offers only the numbers it already uses
+— this is how an empty layout gets somewhere to draw, and how you reach a pair a file does not carry. GDSII
+records a layer only through the shapes on it, so an empty one is gone when the file is written; draw on it
+or name it and it stays.
+
+The **×** at the end of a row takes that layer out, and its shapes with it — everywhere in the file, since a
+layer belongs to the library rather than to the cell you are inside. It asks first, and says how many shapes
+go with it; an undo puts the row back with its name, color and height rather than as a bare number.
+
 ### Fill patterns
 
 Color runs out before layers do. A file with twenty-two of them has shades that are genuinely hard to tell
@@ -109,6 +128,13 @@ converts between them. A bundled example arrives with the 30-rule sky130 starter
 nothing is loaded, **Example** offers it — point at it and press **Load sky130**. **Import** takes your own,
 and **Export** hands back the text that came in rather than the parse printed out, so comments and blank
 lines survive the round trip.
+
+**Add rule**, at the foot of the deck, adds one — and it takes a line of the deck's own grammar rather than a
+form of dropdowns: a rule can carry `except`, a window and a step, so a form covering the grammar would be
+most of a form builder and one that did not would quietly fail to express half the decks people write. What
+you type is checked by the same parser that reads a deck file, and its complaint appears under the box in its
+own words. The **×** on any row takes that rule out, asking first. Both edit the deck itself, so **Export**
+hands you exactly what the panel is showing.
 
 **DRC Check** runs it, whenever you press it. **check on edit** runs it again after every change as well —
 and with that off, an edit *takes the last result off the drawing* rather than leaving it: a marker is a
@@ -236,7 +262,15 @@ let go.
 ![The 3D view](images/3d-view.png)
 
 With a layermap carrying real heights and thicknesses, that stack is the wafer's rather than an even spacing:
-a contact sits between the two layers it joins because the process table says where it is.
+a contact sits between the two layers it joins because the process table says where it is. The bundled sky130
+mapping carries one, read from the PDK's own cross-section script, so an example opens on measured heights —
+li1 at 940 nm, met1 at 1370, and mcon spanning exactly the 330 between them.
+
+**The space between metals is the dielectric**, and no layer draws it. A via crosses that gap where a via
+shape exists and nothing crosses it where none does, which is the layout rather than a gap in the drawing —
+GDS3D shows the same. What a mapping does *not* cover — markers, area ids, a cell outline — is left out of
+this view rather than hung at a depth nobody measured, so nothing floats over or between the real films. It
+keeps its row in the sidebar and its 2D drawing, and a height in its layer settings brings it back.
 
 Pin labels come too, as camera-facing billboards so they stay readable from any angle. Scene backgrounds and a
 cinematic orbit are in the toolbar, along with **STL, OBJ and GLTF export** — and **VR and AR** buttons, which

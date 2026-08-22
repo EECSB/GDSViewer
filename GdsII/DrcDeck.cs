@@ -132,6 +132,17 @@ namespace GdsII
 
         public string Description { get; init; } = "";
 
+        ///
+        ///Which line of the deck this rule was read from, counting from one. Zero for a rule that came from
+        ///somewhere other than text.
+        ///
+        ///**So that a rule can be taken back out.** A deck *is* its text and everything else here is derived
+        ///from it, so removing a rule means removing its line and reading the deck again - not reaching into
+        ///a parsed list the text would then disagree with. Matching by id instead would nearly work, and fail
+        ///on a deck carrying the same id twice, which is exactly the deck somebody is in the middle of fixing.
+        ///
+        public int Line { get; init; }
+
         ///<summary>
         ///A layer inside which this rule does not apply, or null for one that always does.
         ///
@@ -669,7 +680,8 @@ namespace GdsII
                 Except = except,
                 Window = window,
                 Step = step,
-                Metric = metric
+                Metric = metric,
+                Line = lineNumber
             });
         }
 

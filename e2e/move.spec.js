@@ -7,7 +7,7 @@
 //hold of it. Aiming to move a shape and pulling a corner out of it instead is a slip that looks like the
 //tool working, which is why it is worth a spec of its own.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, shapePoints, elementPoints, shapesMarked } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, shapePoints, elementPoints, shapesMarked, allPoints, chosenShapeClearOfPanel } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -251,3 +251,73 @@ test('a band still catches several shapes', async ({ page }) => {
     await expect(page.locator('#selectionPanel')).toContainText('shapes');
     expect((await shapesMarked(page, 'inContext')).length).toBeGreaterThan(1);
 });
+
+///
+///**And a drag takes every one of them.** Choosing several says the next gesture is about all of them, and
+///a move is the gesture that says so most plainly: take hold of one of the chosen and the rest come.
+///
+///Nothing checked this, and it did not work. The press that begins a drag waits for the release before it
+///reports itself - a second click on a chosen shape descends into its cell, and reporting the press at once
+///would descend halfway through taking hold of a placement. That wait was written for a selection of one
+///and asked `chosen.length === 1`, so pressing on one of several was reported immediately and *replaced*
+///the selection with the shape under the pointer before the drag had begun. Everything downstream was
+///already right - the preview lifts the whole set, and the edit writes one move per distinct model - which
+///is what made it invisible: they were being handed a set of one. See onSelectClick in JavaScriptInterOp.
+///
+///Both tools, because the wait belongs to the picking and neither tool has its own copy of it.
+///
+for (const tool of ['#selectTool', '#moveTool']) {
+    test(`dragging one of several moves them all, under ${tool.slice(1)}`, async ({ page }) => {
+        await page.locator(tool).click();
+
+        //
+        //**Caught with a band rather than clicked one at a time.** A shape's middle is not always inside it,
+        //and this cell's are stacked - so a modifier-click aimed at a second shape can land on bare canvas,
+        //which clears the selection rather than growing it. The band takes whatever it crosses and says
+        //nothing about aim, which is also how somebody choosing several actually does it.
+        //
+        const view = await page.locator('#gdsSVG').boundingBox();
+
+        await page.mouse.move(view.x + 5, view.y + 5);
+        await page.mouse.down();
+        await page.mouse.move(view.x + view.width - 5, view.y + view.height - 5, { steps: 10 });
+        await page.mouse.up();
+
+        const chosen = page.locator('#gdsSVG .shapeSelected');
+
+        await expect.poll(async () => chosen.count(), { timeout: 15000 }).toBeGreaterThan(1);
+
+        const held = await chosen.count();
+        const before = await chosen.evaluateAll(nodes => nodes.map(node => node.getAttribute('points')));
+
+        //
+        //A point with a chosen shape actually under it, asked after the whole selection is made: the panel
+        //grows with what is in it, so somewhere clear of it with one shape chosen can be behind it with
+        //several.
+        //
+        const grab = await chosenShapeClearOfPanel(page, 'inContext');
+
+        expect(grab, 'every chosen shape is behind the panel').not.toBeNull();
+
+        //Sideways only, so anything that failed to come along still has a coordinate in common with where
+        //it was and shows up plainly as left behind.
+        await page.mouse.move(grab.x, grab.y);
+        await page.mouse.down();
+        await page.mouse.move(grab.x + 70, grab.y, { steps: 6 });
+        await page.mouse.up();
+
+        //
+        //Not one of them still where it was, asked of the whole picture and as a set: an edit is free to
+        //hand the shapes back in another order, and the question is not which went where but whether any of
+        //them stayed behind. One left standing is the whole bug.
+        //
+        await expect.poll(async () => {
+            const now = new Set(await allPoints(page));
+
+            return before.filter(shape => now.has(shape)).length;
+        }, { timeout: 30000 }).toBe(0);
+
+        //And all of them still chosen, so the group outlives the move that was made with it.
+        await expect(chosen).toHaveCount(held);
+    });
+}

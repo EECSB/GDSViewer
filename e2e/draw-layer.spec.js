@@ -32,6 +32,13 @@ function panTool(page) {
     return page.locator('#toolGroup').getByRole('button', { name: 'Pan', exact: true });
 }
 
+///
+///**The row itself is a control only while the Draw tool is out.**
+///
+///What a press on the row body can answer is "put the next shape here", and that is not a question with
+///the pointer in hand - so the rest of the time the row is the readout it always was. The eye, the lock and
+///the gear on it are their own buttons and are pressable throughout; this is about the row.
+///
 test('the rows are a readout until the Draw tool is out', async ({ page }) => {
     await expect(page.locator('.layerRow')).not.toHaveCount(0);
     await expect(page.locator('.layerRowPickable')).toHaveCount(0);
@@ -41,6 +48,7 @@ test('the rows are a readout until the Draw tool is out', async ({ page }) => {
     await page.locator('#drawTool').click();
 
     await expect(page.locator('.layerRowPickable')).not.toHaveCount(0);
+    await expect(page.locator('.layerRowDrawing')).not.toHaveCount(0);
 
     //And back to a readout when the tool is put down.
     await panTool(page).click();
@@ -161,9 +169,14 @@ test('a shape drawn after the click goes on that layer and not the last one', as
 
 ///
 ///The row had a click on it already, for renaming. Both firing would open a text box over the name of the
-///layer that had just been chosen, which is two answers to a question that was asked once.
+///layer that had just been chosen, which is two answers to a question that was asked once - so which of
+///them won had to be pinned here.
 ///
-test('the click chooses the layer rather than opening the name box', async ({ page }) => {
+///**There is only one answer now.** Renaming moved to the settings behind the gear, where the box has the
+///width of a popup rather than of a sidebar column, so the row's press is left meaning the one thing it
+///could ever answer: this is the layer the next shape goes on.
+///
+test('the click chooses the layer and opens no name box', async ({ page }) => {
     await enterCell(page);
     await page.locator('#drawTool').click();
 
@@ -172,25 +185,25 @@ test('the click chooses the layer rather than opening the name box', async ({ pa
     await expect(page.locator('.layerNameBox')).toHaveCount(0);
     await expect(page.locator('.layerRow').nth(2)).toHaveClass(/layerRowDrawing/);
 
-    //And renaming still works once the tool is put down.
+    //And with the tool put down it opens no box either - the press that used to.
     await panTool(page).click();
-    await page.locator('.layerRow').nth(2).locator('.layerName').click();
+    await page.locator('.layerRow').nth(3).locator('.layerName').click();
 
-    await expect(page.locator('.layerNameBox')).toHaveCount(1);
+    await expect(page.locator('.layerNameBox')).toHaveCount(0);
 });
 
 ///
-///Hiding a layer and taking it as the one to draw on are opposite answers, so the checkbox must not do both.
+///Hiding a layer and taking it as the one to draw on are opposite answers, so the eye must not do both.
 ///The gear is the same case: it opens that layer's settings, which is not a statement about where a shape
 ///goes.
 ///
-test('the visibility switch and the settings button leave the draw layer alone', async ({ page }) => {
+test('the eye and the settings button leave the draw layer alone', async ({ page }) => {
     await enterCell(page);
     await page.locator('#drawTool').click();
 
     const before = await drawingLayer(page);
 
-    await page.locator('.layerRow').nth(3).locator('.layerVisible').click();
+    await page.locator('.layerRow').nth(3).locator('.layerEyeButton').click();
 
     expect(await drawingLayer(page)).toBe(before);
 

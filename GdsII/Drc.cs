@@ -180,7 +180,12 @@ namespace GdsII
                 return;
             }
 
-            var regions = rule.Metric is DrcMetric named ? byEdges(rule, layers, named) : measure(rule, layers);
+            List<List<Element.Point>> regions;
+
+            if (rule.Metric is DrcMetric named)
+                regions = byEdges(rule, layers, named);
+            else
+                regions = measure(rule, layers);
 
             if (rule.Except is string except)
                 regions = DrcChecks.Outside(regions, layers.Of(except));
@@ -192,7 +197,10 @@ namespace GdsII
 
             //Indexed once per rule rather than per violation. Null for a rule whose layers nothing is drawn
             //on, which is a real case - a deck is written for a process and a cell uses some of it.
-            CandidateGrid? candidates = found.Count > 0 ? CandidateGrid.Of(found) : null;
+            CandidateGrid? candidates = null;
+
+            if (found.Count > 0)
+                candidates = CandidateGrid.Of(found);
 
             foreach (var region in regions)
             {

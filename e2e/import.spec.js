@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, openFile, selectView } = require('./helpers');
+const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, openFile, selectView, uploadFile } = require('./helpers');
 
 ///
 ///Opening a file while another one is already open.
@@ -19,7 +19,7 @@ const NAND = path.join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sk
 
 ///Uploads a real sky130 cell, which is a two-cell library and so has something to import.
 async function upload(page, name = 'nand2.gds') {
-    await page.locator('#fileUpload').setInputFiles({
+    await uploadFile(page, {
         name,
         mimeType: 'application/octet-stream',
         buffer: fs.readFileSync(NAND)

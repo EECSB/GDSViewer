@@ -95,15 +95,18 @@ test('the 3D view', async ({ page }) => {
     //of "layers extruded and stacked in space" shows a flat lump. The restack is live, so this settles in a
     //frame rather than needing a redraw.
     //
-    //**110 because the camera does not refit.** Only a headset gets one - see ThreeInterop's restack, which
+    //**60 because the camera does not refit.** Only a headset gets one - see ThreeInterop's restack, which
     //refits when xr.isPresenting so the layout does not walk off into the room. On a desktop the camera stays
     //where it is, so a stack opened wider than what was already in frame runs off the top: at 520 the upper
     //layers were gone entirely and at 200 the top one was still clipped. A wheel over the canvas does not fix
     //it either - Playwright's wheel does not reach OrbitControls here, which was tried and did nothing. This
     //is the number that fits, and it is worth knowing it is about the frame rather than about the feature.
     //
+    //**It read 110 while the slider's number was measured from 50 rather than from nought**, so it always
+    //meant this same 60 of spread. The framing it was tuned for is the thing to keep, not the digits.
+    //
     await page.locator('#layerSpacing').evaluate(slider => {
-        slider.value = '110';
+        slider.value = '60';
         slider.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
@@ -166,6 +169,17 @@ test('the examples picker', async ({ page }) => {
     await page.locator('#examplesButton').click();
 
     await expect(page.locator('#examplePicker')).toBeVisible();
+
+    //
+    //Pointed at a row, because the preview only draws for the row under the pointer.
+    //
+    //The frame used to hold the open file's thumbnail whenever nothing was hovered, so this shot got a
+    //picture without asking for one. That idle state is empty now - the picture is what pointing at a name
+    //gets you, and a documentation shot of the picker with an empty frame documents the wrong half of it.
+    //
+    await page.locator('.examplePickerOption').first().hover();
+
+    await expect(page.locator('svg.examplePreview')).toBeVisible();
     await page.waitForTimeout(600);
 
     await shoot(page, 'examples');
@@ -307,7 +321,16 @@ test('the rules panel, with the bundled deck loaded', async ({ page }) => {
     await drawn(page);
 
     await page.locator('#sidebarPanelRules').click();
-    await page.locator('#drcBundled').click();
+
+    //
+    //Offered only where nothing is loaded, which a bundled example is not any more.
+    //
+    //The deck now arrives with the example, the same way the layermap does - so on this cell the offer is
+    //already gone and pressing it waited thirty seconds for a control that had done its job. Pressed where
+    //it is there, skipped where it is not, so this keeps working whichever way that goes later.
+    //
+    if (await page.locator('#drcBundled').count() > 0)
+        await page.locator('#drcBundled').click();
 
     await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 

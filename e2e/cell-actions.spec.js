@@ -7,7 +7,7 @@
 //What is only checkable here is the wiring: that the buttons refuse what they should, that renaming does not
 //throw you out of the cell you are in, and that arraying a placement writes one element rather than many.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, shapeClearOfThePanel, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, shapeClearOfThePanel, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -291,7 +291,7 @@ test.describe('arraying a placement', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

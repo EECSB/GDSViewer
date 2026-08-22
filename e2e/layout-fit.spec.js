@@ -203,11 +203,15 @@ test('the full-screen button ends the bar the way the first control starts it', 
         const bar = document.querySelector('.viewToolbar').getBoundingClientRect();
 
         const button = document.querySelector('#fullScreen').getBoundingClientRect();
-        const open = document.querySelector('label[for="fileUpload"]').getBoundingClientRect();
+
+        //**Whichever control the bar starts with**, rather than the one it happened to start with when this
+        //was written. New was added ahead of Open, and naming Open here made the assertion measure the air
+        //before it *plus a whole button* - a failure about a bar that had not moved.
+        const first = document.querySelector('#newLayout').getBoundingClientRect();
 
         return {
-            bottoms: [Math.round(button.bottom), Math.round(open.bottom)],
-            ends: [Math.round(open.left - bar.left), Math.round(bar.right - button.right)],
+            bottoms: [Math.round(button.bottom), Math.round(first.bottom)],
+            ends: [Math.round(first.left - bar.left), Math.round(bar.right - button.right)],
 
             //Still at the far end: every other column ends before it starts. Its own column is left out -
             //that one is 10px wider than the button, since the gutter it keeps is inside it.
@@ -220,7 +224,7 @@ test('the full-screen button ends the bar the way the first control starts it', 
     //On the line the rest of the bar sits on.
     expect(placed.bottoms[0]).toBe(placed.bottoms[1]);
 
-    //Inset from its end by what Open is inset from the other.
+    //Inset from its end by what the first control is inset from the other.
     expect(placed.ends[0]).toBe(placed.ends[1]);
 
     expect(placed.last).toBe(true);

@@ -1,3 +1,4 @@
+using System.Text;
 using GdsII;
 
 namespace GDSViewer.Tests;
@@ -390,6 +391,61 @@ public class DrcEdgeTests
 
         //The wedge is 2000 tall; the part under 140 across is a small piece of it near the tip.
         Assert.True(box.Height < 2000, $"the marker spans {box.Height} of a 2000-tall wedge, so it is not bounded");
+    }
+
+    ///<summary>
+    ///And reported from the corner the two edges share, rather than from the far end of one of them.
+    ///
+    ///**The size check above cannot see this.** A marker anchored to the wrong end of an edge is the same
+    ///small size, just in the wrong place - so `Height` stays well under 2000 and the test passes while the
+    ///fault is marked over ground that is not at fault, which is the exact thing the bound exists to
+    ///prevent. Found by inverting the corner in <see cref="DrcEdges"/> and watching the whole suite stay
+    ///green.
+    ///
+    ///**The spike has three wedges, not one.** Its point is 11 degrees and its two base corners are 84,
+    ///all under the ninety-degree limit - so the three anchors are the triangle's own three corners, and
+    ///each must be marked once. Inverting the corner puts two markers on (0,0) and leaves (400,0) unmarked,
+    ///which is what this counts.
+    ///
+    ///The first two points are asserted to differ for the same reason: taking the wrong end collapses
+    ///`AFrom` onto `ATo` at the point, and a marker of no width marks nothing at all.
+    ///</summary>
+    [Fact]
+    public void A_wedge_is_reported_from_the_point_it_closes_to()
+    {
+        var pairs = DrcEdges.Width(One(Spike()), 140);
+
+        Assert.Equal(3, pairs.Count);
+
+        var anchors = new List<Element.Point>();
+
+        foreach (var pair in pairs)
+        {
+            var marker = pair.Marker();
+
+            Assert.NotEqual(marker[0], marker[1]);
+
+            anchors.Add(marker[0]);
+        }
+
+        //The spike's own corners, which are the three points its wedges close to.
+        var corners = new List<Element.Point> { At(0, 0), At(200, 2000), At(400, 0) };
+
+        foreach (var corner in corners)
+            Assert.True(anchors.Contains(corner), $"nothing was reported at ({corner.X}, {corner.Y}); the anchors were {Listed(anchors)}");
+
+        Assert.Equal(3, anchors.Distinct().Count());
+    }
+
+    ///<summary>Points as "(x, y) (x, y)", for a failure that has to say where things actually landed.</summary>
+    private static string Listed(List<Element.Point> points)
+    {
+        var builder = new StringBuilder();
+
+        foreach (var point in points)
+            builder.Append($"({point.X}, {point.Y}) ");
+
+        return builder.ToString().TrimEnd();
     }
 
     ///<summary>

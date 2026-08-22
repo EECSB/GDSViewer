@@ -4,7 +4,7 @@
 # run - because a change that crosses into the browser is not covered by any one of them. The e2e job
 # starts the app itself; playwright.config.js has the dotnet run in it.
 #
-# The C# tests are filtered. Twenty of them use KLayout as a second implementation to check this one
+# The C# tests are filtered. Thirty-three of them use KLayout as a second implementation to check this one
 # against, and it is not on a runner and not worth installing there: it is a desktop EDA tool, and what
 # those tests cover is agreement with somebody else's reader, which is a thing to check on a machine that
 # has one rather than a thing to gate a merge on.
@@ -94,19 +94,10 @@ jobs:
       - name: JS unit tests
         run: npm test
 
-      #
-      # Built before the suite starts, because one of the specs runs it *during* the suite.
-      #
-      # large-layout.spec.js generates its twenty-thousand-shape fixture by shelling out to
-      # `dotnet run -c Release --project GdsII.Cli`, and `dotnet run` builds first. That build lands in the
-      # same obj/ tree the Playwright web server is already running out of, so two dotnet builds end up in
-      # one directory and the second one fails with "The build failed" and no compiler error under it -
-      # which reads as a broken CLI and is nothing of the kind. Built here, the mid-suite `dotnet run`
-      # finds its output current and compiles nothing.
-      #
-      - name: Build the CLI the large-layout spec shells out to
-        run: dotnet build GdsII.Cli -c Release
-
+      # There is no step here building GdsII.Cli, and there used to be: large-layout.spec.js generated its
+      # fixture by shelling out to it mid-suite. That spec skips itself on a runner now - six tests opening
+      # a twenty-thousand-shape file on two shared cores took half the job and timed out twice - so the
+      # build it needed went with it. The spec says what putting it back would take.
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

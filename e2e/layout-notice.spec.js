@@ -7,7 +7,7 @@
 //
 //What the flags mean is covered in C#. What is only checkable here is that they reach the screen.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, openedOnItsOwn, uploadFile } = require('./helpers');
 
 ///A library whose top cell places a cell that is not in it, which is what a standalone cell file looks like.
 const DANGLING = [
@@ -44,7 +44,7 @@ test('a file placing cells it does not contain says so', async ({ page }) => {
 
     await expect.poll(async () => shapeCount(page), { timeout: 60000 }).toBeGreaterThan(0);
 
-    await page.locator('#fileUpload').setInputFiles({
+    await uploadFile(page, {
         name: 'dangling.dxf',
         mimeType: 'application/dxf',
         buffer: Buffer.from(DANGLING, 'utf8')
@@ -68,7 +68,7 @@ test('opening a whole layout afterwards clears it', async ({ page }) => {
 
     await expect.poll(async () => shapeCount(page), { timeout: 60000 }).toBeGreaterThan(0);
 
-    await page.locator('#fileUpload').setInputFiles({
+    await uploadFile(page, {
         name: 'dangling.dxf',
         mimeType: 'application/dxf',
         buffer: Buffer.from(DANGLING, 'utf8')

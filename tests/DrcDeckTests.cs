@@ -559,4 +559,69 @@ rule met1.1 width met1 met2 140 ""Two layers for a width""");
     }
 
     #endregion **************************************************************************
+
+    ///
+    ///Every rule remembers which line it was read from.
+    ///
+    ///**So that a rule can be taken back out.** A deck is its text - that is what gets exported, saved and
+    ///read again - so removing a rule means removing its line and reading the deck afresh, rather than
+    ///reaching into the parsed list and leaving the two disagreeing. The line is what says which one.
+    ///
+    [Fact]
+    public void Every_rule_remembers_the_line_it_came_from()
+    {
+        var lines = new[]
+        {
+            "layer met1 68/20",
+            "",
+            "#a comment, which is not a line any rule came from",
+            "rule met1.w width met1 140 \u0022Metal 1 width\u0022",
+            "rule met1.s space met1 140 \u0022Metal 1 space\u0022"
+        };
+
+        var read = DrcDeck.Parse(string.Join("\n", lines));
+
+        Assert.Empty(read.Problems);
+        Assert.Equal(2, read.Rules.Count);
+
+        //Counted from one, and past the blank and the comment - which is what makes it an index into the
+        //text somebody is holding rather than into the rules that came out of it.
+        Assert.Equal(4, read.Rules[0].Line);
+        Assert.Equal(5, read.Rules[1].Line);
+
+        //And the line it names is its own.
+        Assert.Contains(read.Rules[0].Id, lines[read.Rules[0].Line - 1]);
+        Assert.Contains(read.Rules[1].Id, lines[read.Rules[1].Line - 1]);
+    }
+
+    ///
+    ///And taking that line out takes exactly that rule out, on a deck that repeats an id.
+    ///
+    ///The case matching by id would get wrong, and the deck somebody is most likely to be in the panel
+    ///fixing.
+    ///
+    [Fact]
+    public void Removing_a_rules_line_removes_that_rule_even_when_an_id_repeats()
+    {
+        var lines = new List<string>
+        {
+            "layer met1 68/20",
+            "rule same width met1 140 \u0022The first\u0022",
+            "rule same space met1 200 \u0022The second\u0022"
+        };
+
+        var read = DrcDeck.Parse(string.Join("\n", lines));
+
+        Assert.Equal(2, read.Rules.Count);
+
+        var second = read.Rules[1];
+
+        lines.RemoveAt(second.Line - 1);
+
+        var after = DrcDeck.Parse(string.Join("\n", lines));
+
+        Assert.Single(after.Rules);
+        Assert.Equal(DrcCheck.Width, after.Rules[0].Check);
+        Assert.Equal("The first", after.Rules[0].Description);
+    }
 }

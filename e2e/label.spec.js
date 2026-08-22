@@ -9,7 +9,7 @@
 //the box opens where the label is drawn, that Enter and Escape mean what they say, and that placing and
 //naming is one press of undo rather than two.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, CLEAR_OF_PANEL, snapToGrid, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, CLEAR_OF_PANEL, snapToGrid, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -272,7 +272,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

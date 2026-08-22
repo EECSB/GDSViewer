@@ -718,19 +718,30 @@ namespace GdsII
             //every rotate mark in the world uses, and it is already this set's own vocabulary: the two
             //mirrors are solid triangles about a dashed axis.
             //
-            //Each one is an apex 1.9 along the tangent from the arc's end and a base 1.9 either side of it,
-            //1.1 back - so the triangle sits centered on the point it belongs to rather than beside it.
+            //Each one is an apex along the tangent from the arc's end and a base either side of it, 0.6 back
+            //- so the triangle sits centered on the point it belongs to rather than beside it.
+            //
+            //**And it is longer than it is wide, which it was not.** The measurements were an apex 1.9
+            //forward and a base 1.9 either side, 1.1 back: 3.8 across against 3.0 along, so the head was
+            //wider than it was long and its apex opened to 65 degrees. Every part of that is on the tangent
+            //where it belongs, and it still did not read as a point - an obtuse triangle sitting on a 1.3
+            //stroke is a lump on the end of a circle, which is what the arc already had before any of this.
+            //A head has to be at least as long as it is wide to read as one, so it is 3.2 by 3.2 now and its
+            //apex opens to 53.
+            //
+            //The arc is untouched: it still stops at 315 degrees, and the head still starts from that point.
+            //Only the triangle's proportions changed.
             //
             if (icon == ShapeIcon.TurnLeft)
             {
                 return $"<path d=\"M3 8A5 5 0 1 0 4.46 4.46\" {Edge} stroke-linecap=\"round\" />"
-                    + $"<path d=\"M3.12 5.8 3.89 2.34 6.58 5.03Z\" {Held} />";
+                    + $"<path d=\"M6.02 5.17 3.76 2.91 2.63 6.3Z\" {Held} />";
             }
 
             if (icon == ShapeIcon.TurnRight)
             {
                 return $"<path d=\"M13 8A5 5 0 1 1 11.54 4.46\" {Edge} stroke-linecap=\"round\" />"
-                    + $"<path d=\"M12.88 5.8 12.11 2.34 9.42 5.03Z\" {Held} />";
+                    + $"<path d=\"M9.98 5.17 12.24 2.91 13.37 6.3Z\" {Held} />";
             }
 
             //
@@ -738,17 +749,26 @@ namespace GdsII
             //about. The dashed axis is what says it is a reflection rather than two shapes side by side, and
             //solid-against-hollow is what says which one is the original.
             //
+            //**Both halves carry the stroke, so the axis is in the middle of the ink and not just of the
+            //numbers.** The two triangles are written symmetrically about it - 1.6 of clear space either
+            //side - and they were not symmetric on screen, because only the hollow one was stroked. A 1.3
+            //stroke is centered on the path, so that half grew 0.65 in every direction and the solid half
+            //grew none: the gap to the axis was 1.6 on one side and 0.95 on the other, and the whole glyph
+            //sat 0.33 off center in a box where the axis is the thing the eye measures from. Stroking the
+            //solid half as well - filled *and* stroked, so it stays solid - makes the two halves the same
+            //size again and puts the line back in the middle of them.
+            //
             if (icon == ShapeIcon.MirrorAcross)
             {
                 return "<path d=\"M8 1.2v13.6\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-dasharray=\"2 1.8\" stroke-linecap=\"round\" />"
-                    + $"<path d=\"M6.4 3.4v9.2L1.6 8z\" {Held} />"
+                    + $"<path d=\"M6.4 3.4v9.2L1.6 8z\" {Held} stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linejoin=\"round\" />"
                     + $"<path d=\"M9.6 3.4v9.2L14.4 8z\" {Edge} stroke-linejoin=\"round\" />";
             }
 
             if (icon == ShapeIcon.MirrorDown)
             {
                 return "<path d=\"M1.2 8h13.6\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-dasharray=\"2 1.8\" stroke-linecap=\"round\" />"
-                    + $"<path d=\"M3.4 6.4h9.2L8 1.6z\" {Held} />"
+                    + $"<path d=\"M3.4 6.4h9.2L8 1.6z\" {Held} stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linejoin=\"round\" />"
                     + $"<path d=\"M3.4 9.6h9.2L8 14.4z\" {Edge} stroke-linejoin=\"round\" />";
             }
 

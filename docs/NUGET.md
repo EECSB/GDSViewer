@@ -13,7 +13,10 @@ about how the two are built and released.
 - [What the library is](#what-the-library-is)
 - [Reading a file](#reading-a-file)
 - [Flattening and geometry](#flattening-and-geometry)
+- [Design rule checking](#design-rule-checking)
 - [Layers, names and the process stack](#layers-names-and-the-process-stack)
+- [Creating](#creating)
+- [Shapes, curves and routes](#shapes-curves-and-routes)
 - [Editing](#editing)
 - [Writing](#writing)
 - [What is deliberately not in it](#what-is-deliberately-not-in-it)
@@ -151,13 +154,157 @@ The format is `layer,datatype,name,color,height,thickness,role,fill,patterncolor
 the third column optional — [the CLI guide](CLI.md#layermaps) describes it in full, and it is the same file the
 web app's Import button takes.
 
-Height and thickness set `Layer.StackIsCustom`, and `SetStackingOffsets` steps past a layer that carries it —
-so placing part of a stack by hand and spacing out the rest evenly is one call and not a special case:
+**A mapping has to be followed by a restack.** `ApplyTo` writes heights onto layers; only `SetStackingOffsets`
+reads them back as a stack, and it is what places the layers the table says nothing about:
 
 ```csharp
 mapping.ApplyTo(gds.AdditionalInformation.Layers);        //place what the table places
 gds.AdditionalInformation.SetStackingOffsets(50);          //space out whatever it did not
 ```
+
+The spacing argument is a viewing control, not part of the stack. Every layer moves with it, a mapped one
+included — `Layer.CustomHeight` is the height that was asked for, `Layer.Resting` is that height before the
+spread, and `Layer.Offset` is where the layer actually sits. Write `Resting` back out to a layermap, never
+`Offset`, or the spread is recorded as though it had been measured and compounds on the next read.
+
+The table is built from the shapes a file draws, so it holds only the pairs that file uses. `AddLayer` puts
+in one that nothing is drawn on yet — which is what makes an empty library somewhere you can start:
+
+```csharp
+gds.AdditionalInformation.AddLayer(new LayerKey(66, 44));   //false if the pair is already there
+```
+
+**GDSII has no record for a layer**, only for the shapes carrying one, so a layer added and left empty is
+gone when the file is written and read back. Draw on it and it is in the file like any other.
+
+## Creating
+
+Shapes, labels, cells and placements are all built from code, through the same edit classes the editor uses.
+There is no separate builder API and no fluent object model: a shape added by a generator and one drawn with
+the mouse are the same call, which is what keeps them from drifting apart.
+
+```csharp
+//A new library with one empty cell. A database unit is a nanometer unless you say otherwise, and the
+//other half of UNITS is derived from that so the two cannot disagree.
+var gds = GDS.NewLibrary("AUTHORED");
+
+var top = Hierarchy.Named(gds, "TOP")!;
+
+//A boundary from its corners, closed for you when the last does not repeat the first.
+new AddElement(gds, top, new LayerKey(68, 20), corners).Apply();
+
+//A path down a centerline, with a width and an end style.
+new AddElement(gds, top, new LayerKey(67, 20), centerline, 140, Paths.Ends.Extended).Apply();
+
+//A label at a point.
+new AddElement(gds, top, new LayerKey(68, 5), new Element.Point(500, 300), "VDD").Apply();
+
+//A cell, and an instance of it turned 90 degrees.
+new AddStructure(gds, "LEAF", contents).Apply();
+new AddElement(gds, top, Hierarchy.PlacementRecords("LEAF", at, mirrored: false, angle: 90), "Place").Apply();
+
+File.WriteAllBytes("authored.gds", gds.Serialize());
+```
+
+`AddElement` also takes a raw `List<Record>`, which is how anything the typed constructors do not cover gets
+in: `Hierarchy.PlacementRecords` and `Hierarchy.AsArray` build `SREF` and `AREF` records, `Paths.Records`
+builds a path's. `AddElement.CopyOf` duplicates an element **by its records rather than its outline**, so a
+path copies as a path and anything carrying properties keeps them.
+
+Every one of these is a `LayoutEdit` — `Apply`, `Revert`, `Describe` — so the section below applies to
+creation as much as to change.
+
+## Shapes, curves and routes
+
+**A layout format has no curves.** GDSII stores polygons and polylines and nothing else, so a circle is a
+many-sided polygon and the side count is a decision somebody has to make - too few and it is visibly a
+hexagon, too many and every file carrying it is larger for a difference no process can hold. These take it
+as an argument rather than making it quietly.
+
+Everything here hands back **corners rather than elements**. The corners are what varies; putting one on a
+layer is `AddElement` and is the same call whichever shape it was - so a shape can be measured, moved,
+combined with `Booleans` or fed to another builder before it has been in a file.
+
+```csharp
+Shapes.Rectangle(centerX: 0, centerY: 0, width: 1000, height: 600);   //centered, like the rest
+Shapes.Between(0, 0, 1000, 600);                                      //or corner to corner
+Shapes.Circle(centerX: 0, centerY: 0, radius: 500, vertices: 128);
+Shapes.Ellipse(0, 0, radiusX: 800, radiusY: 300);
+Shapes.RegularPolygon(0, 0, radius: 500, sides: 6, turnDegrees: 30);
+Shapes.Ring(0, 0, outerRadius: 500, innerRadius: 300);                //two loops - GDSII has no hole
+```
+
+A circle's corners sit **on** it rather than outside, so the polygon is inscribed and its edges run inside
+the radius - the conservative reading where a radius was chosen to satisfy a spacing rule. To within a
+database unit: a corner at 45° on a radius of 500 is at 353.553, and the nearest whole coordinate is 0.63
+further out. Rounding inward would buy the stronger claim by shrinking every shape systematically.
+
+### Bézier curves
+
+By de Casteljau rather than through the NURBS evaluator in `DxfCurves` - a Bézier is a NURBS with a clamped
+uniform knot vector, and a caller placing four control points should not have to know what a knot is. The
+curve passes through its first and last control point and no others; the ones between pull it towards them.
+
+```csharp
+var ribbon = new BezierBuilder()
+    .AddPoint(0, 0).AddPoint(0, 1000).AddPoint(1000, 1000).AddPoint(1000, 0)
+    .BuildPolygon(width: 200, vertices: 128);
+```
+
+`BuildPolygon` is preferred over keeping the curve as a `PATH`: a path's width and ends are applied by
+whatever reads the file and readers differ about the ends, where an outline is the shape itself and cannot
+be read two ways. `BuildCenterline` hands back the open run for a caller who wants the `PATH`.
+
+### Routes
+
+A route carries a **heading**, so `Straight` goes the way the last segment pointed and `BendDeg` turns from
+there - which is the whole difference between this and a list of points. Positive turns left.
+
+```csharp
+var route = new PathBuilder(new Element.Point(-3100, -3300), headingDegrees: 0)
+    .Straight(2000)
+    .BendDeg(-45, radius: 500)      //a radius, not a square corner - radius 0 is the square corner
+    .Straight(1000)
+    .BendDeg(180, 300)
+    .Bezier(b => b.AddPoint(0, 0).AddPoint(0, 1000).AddPoint(2000, 1000).AddPoint(1000, 0));
+
+var outline = route.BuildPolygon(width: 140);
+var pieces = route.Build(maxVertices: 200);   //centerlines short enough to be elements
+```
+
+A curve dropped into a route is placed **relative to where the route has reached and which way it points**,
+so the same curve can be used at any angle without its numbers changing. `Build` cuts a long route into
+pieces that overlap by a point, because a cut that does not overlap is a dotted line - and on a wire that is
+an open circuit that looks like a rendering artefact.
+
+### A width that changes along the route
+
+Give the route a width to start with and any segment can change it: `widthEnd` on a straight or a bend, and
+a function of how far along a curve is. The taper is spread over the points the segment already has, so a
+straight becomes a wedge and a bend narrows as it turns.
+
+```csharp
+var taper = new PathBuilder(new Element.Point(0, 0), headingDegrees: 0, width: 200)
+    .Straight(1000, widthEnd: 50)
+    .BendDeg(90, radius: 400, widthEnd: 200)
+    .Bezier(
+        b => b.AddPoint(0, 0).AddPoint(0, 1000).AddPoint(2000, 1000).AddPoint(1000, 0),
+        t => 250 - ((250 - 50) * t))
+    .BuildPolygon();                 //no argument: the widths the route is carrying
+```
+
+**A tapering wire is not a GDSII path.** The format's `WIDTH` is one number for the whole element, so a wire
+that narrows has to be written as a boundary - which is what this builds. `Widths()` hands back the width at
+each point of `Centerline()`, in the shape `PathOutline.Build` takes, for a caller outlining it themselves.
+
+**One outliner, generalized rather than duplicated.** `PathOutline` takes a width per point now and the
+constant case goes through the same code with the same number repeated - the alternative was a second
+offsetter, and two of them would eventually disagree about what a sharp corner does. Where the width changes
+along a segment that segment's offset edge is not parallel to it: it runs from the start point offset by the
+start's half-width to the end point offset by the end's, and a corner is where two such edges meet.
+
+Outlining goes through the same `PathOutline` a drawn path and a read `PATH` go through, so what is built
+here is mitered, capped and wound exactly like everything else.
 
 ## Editing
 

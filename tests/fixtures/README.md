@@ -11,7 +11,7 @@ only files this project produced or was given.
 
 - `klayout-written.gds` — built by KLayout from scratch: a box, a triangle (three points, so a boundary
   our own writer would never emit that shape for), and a text. 268 bytes.
-- `klayout-resaved.gds` — `Mosfet.gds` read and written back out by KLayout. 1386 bytes, the same size as
+- `klayout-resaved.gds` — `Mosfet.gds` read and written back out by KLayout. 1514 bytes, the same size as
   the original.
 
 They are checked in because the alternative is a test that only runs where KLayout happens to be
@@ -24,7 +24,7 @@ Neither file has padding after `ENDLIB`, which is itself one of the findings: KL
 
 `Mosfet.gds` written out as DXF by the same KLayout, so the DXF reader has one file it did not make
 itself and one it can be checked against — the original is right there, and a conversion that loses or
-moves anything shows up as a difference rather than as a number somebody has to judge. 5047 bytes.
+moves anything shows up as a difference rather than as a number somebody has to judge. 5525 bytes.
 
 Every other DXF fixture is a string inside a test, which is the right way to isolate one group code and
 has one blind spot: a hand-written file contains only what the person writing it knew to put in. This one

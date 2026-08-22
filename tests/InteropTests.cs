@@ -263,7 +263,7 @@ public class InteropTests
         var came = GdsTestData.Geometry(theirs);
 
         //Enough of it that a comparison of two empty lists cannot pass.
-        Assert.Equal(21, went.Count);
+        Assert.Equal(23, went.Count);
 
         Assert.Equal(went.Count, came.Count);
     }

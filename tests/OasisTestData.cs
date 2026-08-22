@@ -236,7 +236,12 @@ public static class OasisTestData
     ///</summary>
     public static int RuleViolations(string absolutePath, int layer, int type, string check, int limit, bool square = false)
     {
-        return RuleViolations(absolutePath, layer, type, check, limit, square ? "Square" : "Euclidian");
+        string metric = "Euclidian";
+
+        if (square)
+            metric = "Square";
+
+        return RuleViolations(absolutePath, layer, type, check, limit, metric);
     }
 
     ///<summary>
@@ -309,11 +314,18 @@ public static class OasisTestData
 
             string[] lines = File.ReadAllText(target).Replace("\r\n", "\n").Split('\n');
 
-            var categories = lines[0].Length == 0
-                ? new List<string>()
-                : lines[0].Split(',').ToList();
+            var categories = new List<string>();
 
-            return (categories, int.Parse(lines[1], System.Globalization.CultureInfo.InvariantCulture), lines.Length > 2 ? lines[2] : "");
+            if (lines[0].Length > 0)
+                categories = lines[0].Split(',').ToList();
+
+            //A report with no items has no third line, which is not a fault - there is simply no first value.
+            string firstValue = "";
+
+            if (lines.Length > 2)
+                firstValue = lines[2];
+
+            return (categories, int.Parse(lines[1], System.Globalization.CultureInfo.InvariantCulture), firstValue);
         }
     }
 

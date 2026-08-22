@@ -39,7 +39,25 @@ async function openRules(page) {
     await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
 }
 
-///Picks a deck file through the real input.
+///
+///Picks a deck file through the real input, and waits for *that* deck to be the one showing.
+///
+///**Waiting for the Check button was waiting for something already true.** A sky130 example arrives with a
+///bundled deck of thirty rules, so `#drcRun` is visible before the upload even starts - measured:
+///`isVisible()` is already true on the line above this one. So the wait passed instantly and loadDeck
+///returned with the read, the parse and the save all still in flight.
+///
+///That is harmless until something acts immediately afterwards. `a deck outlives a reload` calls
+///`page.reload()` on the very next line, and a reload that beats the save takes the page down before the
+///deck is written - so what comes back is the *bundled* deck, which finds nothing. The failure surfaced two
+///assertions later as a run with no markers, which looks nothing like a deck that went missing. About one
+///run in a hundred and sixty, because the round trip after this is normally enough for the import to land.
+///
+///Counting the deck's own `rule` lines rather than asserting "not thirty", so it says what it means and
+///holds for a deck of any size. A refused rule renders as a `.rulesRow` too, which is what `CANNOT_MEASURE`
+///needs. And the rows only render when the handler completes - which is after the `saveSession` it
+///awaits - so this covers the persistence and not merely the parse.
+///
 async function loadDeck(page, contents, name = 'probe.drc') {
     await page.locator('#drcDeckImport').setInputFiles({
         name,
@@ -47,8 +65,12 @@ async function loadDeck(page, contents, name = 'probe.drc') {
         buffer: Buffer.from(contents, 'utf8')
     });
 
-    //The read and the parse go through .NET before the Check button appears. Generous for the same reason
-    //the layermap spec is: the suite shares one dev server and this round trip is not quick under load.
+    const rules = contents.split('\n').filter(line => line.trim().startsWith('rule ')).length;
+
+    //Generous for the same reason the layermap spec is: the suite shares one dev server and this round trip
+    //is not quick under load.
+    await expect(page.locator('.rulesRow')).toHaveCount(rules, { timeout: 60000 });
+
     await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 }
 
@@ -552,10 +574,11 @@ test.describe('the markers', () => {
     test('survive a redraw', async ({ page }) => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
 
-        //The checkboxes are on the layer list, so switch the panel back to it.
+        //The eyes are on the layer list, so switch the panel back to it. Hiding a layer is a redraw, which
+        //is all this needs - the markers have to survive being rebuilt into the new picture.
         await page.locator('#sidebarPanelLayers').click();
 
-        await page.locator('#layerSidebar .layerList input[type=checkbox]').last().click();
+        await page.locator('#layerSidebar .layerList .layerEyeButton').last().click();
 
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
     });
@@ -625,5 +648,107 @@ test.describe('the markers', () => {
         await expect(page.locator('#drcRun')).toHaveCount(0);
         await expect(page.locator('.rulesRow')).toHaveCount(0);
         await expect(page.locator('#drcExampleOffer')).toBeVisible();
+    });
+});
+
+///
+///One rule's settings, behind the same gear a layer row carries.
+///
+///**A rule is a line of the deck**, which is what these all turn on. The deck's text is what gets parsed,
+///saved, exported and read back - so the popup edits that line rather than a form of its parts, and a
+///DrcRule carries more than a form would show it: an except clause, a window, a step, a metric, each on
+///some rules and not others. Composing a line back from boxes would drop whichever this rule used and
+///leave it listed while checking something narrower than it says.
+///
+test.describe('a rule\'s settings', () => {
+    test.beforeEach(async ({ page }) => {
+        await gotoExample(page, MOSFET, 'View2DSvg');
+
+        await openRules(page);
+        await loadDeck(page, FINDS_NOTHING);
+
+        //
+        //**Waited for by row count, not by the Check button appearing.**
+        //
+        //A deck outlives a reload - there is a test above saying so - so this page can arrive with one
+        //already loaded and briefly show its rows while the probe deck is still going through .NET. Every
+        //test below reaches for "the" gear and "the" limit, which means the one row this deck has; without
+        //this they can land on the thirty the bundled deck has and fail on strict mode rather than on
+        //anything real.
+        //
+        await expect(page.locator('.rulesRow')).toHaveCount(1);
+    });
+
+    ///The gear is on every row, the way it is on every layer row.
+    test('every rule row offers one', async ({ page }) => {
+        await expect(page.locator('.rulesRow')).toHaveCount(1);
+        await expect(page.locator('.rulesSettingsButton')).toHaveCount(1);
+    });
+
+    ///
+    ///What it opens is a readout of the parsed rule and the line it came from.
+    ///
+    ///The readout is not editable on purpose: every one of those values is decided by the line, and showing
+    ///them as boxes would offer to change a thing that is really changed somewhere else.
+    ///
+    test('it opens on the rule as the deck holds it', async ({ page }) => {
+        await page.locator('.rulesSettingsButton').click();
+
+        await expect(page.locator('.ruleSettingsPopup')).toBeVisible();
+
+        const shown = await page.locator('.ruleSettingsValue').allTextContents();
+
+        expect(shown).toEqual(['poly.1a', 'width', 'poly', '100']);
+
+        await expect(page.locator('.ruleSettingsLine')).toHaveValue(
+            'rule poly.1a width poly 100 "Poly width"');
+    });
+
+    ///
+    ///A typed line is applied by putting it back where it came from and reading the whole deck again.
+    ///
+    test('a changed line changes the rule', async ({ page }) => {
+        await page.locator('.rulesSettingsButton').click();
+
+        await page.locator('.ruleSettingsLine').fill('rule poly.1a width poly 250 "Poly width"');
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
+
+        //Closed, because it was accepted.
+        await expect(page.locator('.ruleSettingsPopup')).toHaveCount(0);
+
+        //The row says the new limit, and there is still exactly one rule.
+        await expect(page.locator('.rulesRow')).toHaveCount(1);
+        await expect(page.locator('.rulesLimit')).toHaveText('250');
+    });
+
+    ///
+    ///**A line the parser will not take leaves the deck alone and says why.**
+    ///
+    ///Refused rather than half-applied, which is the same pair of refusals adding a rule can hit: a line the
+    ///parser complains about, and one it understands but this build cannot measure.
+    ///
+    test('a line that cannot be read is refused and nothing changes', async ({ page }) => {
+        await page.locator('.rulesSettingsButton').click();
+
+        await page.locator('.ruleSettingsLine').fill('rule poly.1a spaceparallel poly 75 "Not measurable"');
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
+
+        //Still open, with a complaint in it.
+        await expect(page.locator('.ruleSettingsPopup')).toBeVisible();
+        await expect(page.locator('.ruleSettingsProblem')).not.toHaveText('');
+
+        //And the rule is exactly as it was.
+        await expect(page.locator('.rulesLimit')).toHaveText('100');
+    });
+
+    ///Cancel leaves the deck alone whatever was typed into the box.
+    test('cancel keeps the rule', async ({ page }) => {
+        await page.locator('.rulesSettingsButton').click();
+
+        await page.locator('.ruleSettingsLine').fill('rule poly.1a width poly 999 "Poly width"');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+        await expect(page.locator('.ruleSettingsPopup')).toHaveCount(0);
+        await expect(page.locator('.rulesLimit')).toHaveText('100');
     });
 });

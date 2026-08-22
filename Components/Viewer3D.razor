@@ -124,7 +124,11 @@
     ///value is applied to a file, which is what <see cref="Render"/> does below, so it has to be the same
     ///default the library stacks with rather than a number that only looked right while nothing read it.
     ///
-    private int userSetlayerSpacing = AdditionalGDSInformation.DefaultLayerSpacing;
+    ///That number is nought now, and the slider's minimum is nought with it: the spacing is the spread
+    ///added to the process stack rather than a distance measured from the even stack's rung height, so a
+    ///file opens at the heights its layermap gives it. See DefaultLayerSpread.
+    ///
+    private int userSetlayerSpacing = AdditionalGDSInformation.DefaultLayerSpread;
 
     ///<summary>The scene backdrop, kept so it can be written into a session and put back.</summary>
     private string background = "none";
@@ -397,6 +401,30 @@
     }
 
     ///
+    ///Whether this layer has a place on the wafer, and so a place in this view.
+    ///
+    ///**True for everything on a file with no process table**, which is every file that has not been given
+    ///a layermap with heights in it. There the even stack this view draws is the only statement about
+    ///order there is, and leaving layers out of it would empty the view of most files.
+    ///
+    ///Once a file does carry heights, though, a layer without one is not a layer sitting a little wrong -
+    ///it is a layer the process table says nothing about, and its offset is its index in a list. That is
+    ///a marker, an area id, a pin or label purpose no row was written for. It is drawn in 2D as it always
+    ///was and it keeps its row in the sidebar; what it does not get is a slab at a height nobody chose.
+    ///Give it a height in the layer settings and it comes back, because then somebody has chosen one.
+    ///
+    private bool stacked(Layer layer)
+    {
+        if (Gds is null)
+            return true;
+
+        if (!Gds.AdditionalInformation.HasProcessStack)
+            return true;
+
+        return layer.CustomHeight is not null;
+    }
+
+    ///
     ///Moves the layers already in the scene, rather than building it again.
     ///
     ///**This is what makes the slider live.** It was settled instead - one redraw once the drag stopped -
@@ -645,6 +673,32 @@
         await js.InvokeVoidAsync("centerCameraInterOp");
     }
 
+    ///<summary>
+    ///Flashes one layer's slabs, for a press on its row in the layer list.
+    ///
+    ///**Which slab is which is the one thing this view cannot say.** Nine slabs seen at an angle, several of
+    ///them the same size and some of them hidden behind others, and a list of names beside them that says
+    ///nothing about where any of them is. In 2D a press on a row picks the layer to draw on; here there is
+    ///nothing to draw, so the press is free to answer the question the view actually raises.
+    ///
+    ///Handed over as the stacking index rather than the layer pair, because that is what a slab was built
+    ///knowing - see <see cref="stackedAt"/> and the userData a mesh carries for restacking.
+    ///
+    ///A layer with nothing on it has no slab and no place in the stack; nothing flashes, which is its own
+    ///answer.
+    ///</summary>
+    public async Task PulseLayer(LayerKey key)
+    {
+        if (!stackingOrder.ContainsKey(key))
+            return;
+
+        try
+        {
+            await js.InvokeVoidAsync("pulseLayerInterOp", stackedAt(key));
+        }
+        catch { }
+    }
+
     private async Task download3DObject()
     {
         await js.InvokeVoidAsync("download3DModelInterOp", FileName, ModelDownloadFileType);
@@ -737,6 +791,19 @@
             if (!visible.Contains(outline.Layer.Key))
                 continue;
 
+            //
+            //**A layer this file was never told the height of takes no part in the stack.**
+            //
+            //Only where the file carries a process table at all - see HasProcessStack, which is the whole
+            //of the condition. Without one every layer is in this case and the even stack is what the view
+            //is for; with one, an untold layer is one the table does not cover, and its offset is a number
+            //nobody chose. Drawing it anyway is what put a ladder of cell-sized plates over every sky130
+            //cell: nwell.pin, pwell.pin, areaid.standardc and the cell outline are each drawn to the full
+            //cell, so each became a slab hanging in the sky over the layout with nothing underneath it.
+            //
+            if (!stacked(outline.Layer))
+                continue;
+
             //An extrusion needs a closed outline, which takes at least three corners.
             if (outline.Boundary.Count < 3)
                 continue;
@@ -749,6 +816,11 @@
         foreach (var element in layout.Elements)
         {
             if (element.Text is null || !visible.Contains(element.Layer.Key))
+                continue;
+
+            //A label hangs off its layer's height, so a layer with no place in the stack has nowhere to
+            //put one either. Same rule as the shapes above.
+            if (!stacked(element.Layer))
                 continue;
 
             if (labeled.Contains(element.Layer.Key) && element.Text.Length > 0 && element.Points.Count > 0)

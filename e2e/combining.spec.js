@@ -6,7 +6,7 @@
 //What is only checkable here is the wiring: that the buttons act on what is chosen, that the shapes which
 //went in come out, that the result lands on the right layer, and that the lot is one step.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, allPoints, shapesDrawn, CLEAR_OF_PANEL, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, allPoints, shapesDrawn, CLEAR_OF_PANEL, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -315,7 +315,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

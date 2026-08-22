@@ -94,6 +94,93 @@ public class PackageReadmeTests
         Assert.NotEmpty(gate);
     }
 
+    ///
+    ///The creating example: a new library, a boundary, a path, a label, a second cell and a placement.
+    ///
+    ///**The one that most needed writing down.** Everything else in the readme starts from a file that
+    ///already exists, so a reader asking whether this library can build a layout rather than only read one
+    ///had nothing to look at - and the answer was yes the whole time.
+    ///
+    [Fact]
+    public void The_creating_example_runs()
+    {
+        var gds = GDS.NewLibrary("AUTHORED");
+
+        var top = Hierarchy.Named(gds, "TOP")!;
+
+        var square = new[]
+        {
+            new Element.Point(0, 0),
+            new Element.Point(1000, 0),
+            new Element.Point(1000, 600),
+            new Element.Point(0, 600)
+        };
+
+        new AddElement(gds, top, new LayerKey(68, 20), square).Apply();
+
+        var run = new[] { new Element.Point(0, 900), new Element.Point(2000, 900) };
+
+        new AddElement(gds, top, new LayerKey(67, 20), run, 140, Paths.Ends.Extended).Apply();
+        new AddElement(gds, top, new LayerKey(68, 5), new Element.Point(500, 300), "VDD").Apply();
+
+        new AddStructure(gds, "LEAF", Paths.Records(new LayerKey(66, 20), run, 200, Paths.Ends.Flush)!).Apply();
+        new AddElement(gds, top, Hierarchy.PlacementRecords("LEAF", new Element.Point(3000, 0), false, 90), "Place").Apply();
+
+        byte[] bytes = gds.Serialize();
+
+        //Both cells, and the placement resolved: three shapes drawn in TOP plus the one LEAF holds.
+        Assert.Equal(new[] { "TOP", "LEAF" }, Hierarchy.Names(gds));
+        Assert.Equal(4, GdsFlattener.Flatten(gds).Elements.Count);
+
+        //And what came out is a file, not just an object that agreed with itself.
+        var reopened = new GDS(bytes);
+
+        Assert.Equal(4, GdsFlattener.Flatten(reopened).Elements.Count);
+    }
+
+    ///
+    ///The shapes, curves and routes example.
+    ///
+    ///**Named arguments on purpose**, exactly as the readme writes them. A snippet using `x:` against a
+    ///parameter called `centerX` reads perfectly and does not compile, and that is the class of mistake a
+    ///transcribed example exists to catch - it was in this section before this test was written.
+    ///
+    [Fact]
+    public void The_shapes_and_routes_example_runs()
+    {
+        Assert.Equal(4, Shapes.Rectangle(centerX: 0, centerY: 0, width: 1000, height: 600).Count);
+        Assert.Equal(4, Shapes.Between(0, 0, 1000, 600).Count);
+        Assert.Equal(128, Shapes.Circle(centerX: 0, centerY: 0, radius: 500, vertices: 128).Count);
+        Assert.NotEmpty(Shapes.Ellipse(0, 0, radiusX: 800, radiusY: 300));
+        Assert.Equal(6, Shapes.RegularPolygon(0, 0, radius: 500, sides: 6, turnDegrees: 30).Count);
+
+        var ribbon = new BezierBuilder()
+            .AddPoint(0, 0).AddPoint(0, 1000).AddPoint(1000, 1000).AddPoint(1000, 0)
+            .BuildPolygon(width: 200, vertices: 128);
+
+        Assert.NotEmpty(ribbon);
+
+        var gds = GDS.NewLibrary("ROUTED");
+        var top = Hierarchy.Named(gds, "TOP")!;
+
+        var route = new PathBuilder(new Element.Point(-3100, -3300), headingDegrees: 0)
+            .Straight(2000)
+            .BendDeg(-45, radius: 500)
+            .Straight(1000)
+            .BendDeg(180, 300)
+            .Bezier(b => b.AddPoint(0, 0).AddPoint(0, 1000).AddPoint(2000, 1000).AddPoint(1000, 0));
+
+        new AddElement(gds, top, new LayerKey(68, 20), route.BuildPolygon(width: 140)).Apply();
+
+        foreach (var piece in route.Build(maxVertices: 200))
+            new AddElement(gds, top, new LayerKey(68, 20), piece, 140, Paths.Ends.Flush).Apply();
+
+        //The outline plus a path element per piece, and all of it a file that reads back.
+        var drawn = GdsFlattener.Flatten(new GDS(gds.Serialize()));
+
+        Assert.True(drawn.Elements.Count >= 2);
+    }
+
     [Fact]
     public void The_text_editing_example_runs()
     {

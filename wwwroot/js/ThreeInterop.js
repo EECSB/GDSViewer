@@ -52,11 +52,22 @@ const XR_NEAR = 0.1;
 const XR_FAR = 1000;
 
 //Every extrusion is built in the layout's own XY plane and then tipped onto its back, which is what
-//turns a flat layout into a stack with the layer offsets running up Y. This is the value the view has
-//always used - it is a little short of a right angle (pi/2 is 1.5708), so the stack leans very slightly
-//towards the camera. Named here because labels have to be placed by the same amount to land on the
-//geometry they name.
-const LAYOUT_ROTATION_X = 1.5;
+//turns a flat layout into a stack with the layer offsets running up Y. Named here because labels have to
+//be placed by the same amount to land on the geometry they name.
+//
+//**A right angle exactly, and it has to be one.** This read 1.5 for a long time, which is 4.06 degrees
+//short of pi/2, so every layout in this view leaned that far towards the camera. The comment that used to
+//sit here recorded the lean as a property of the view rather than as the typo it was.
+//
+//It did not stay a display quirk. Three's exporters write world transforms, so the lean went into every
+//STL, OBJ and GLTF the app produced - and a model tilted off level has no flat face anywhere in it.
+//Measured against an independent extrusion of the same cell, the exported sky130_fd_sc_hd__nand2_1 had
+//2966 tilted facets and not one horizontal cap, and its Z took over two hundred continuous values where
+//the layer heights allow exactly ten. Every facet normal in it was sin(1.5), -cos(1.5), which is what
+//pointed at this line.
+//
+//A lean is something a camera does. It is not something geometry carries.
+const LAYOUT_ROTATION_X = Math.PI / 2;
 
 //A label is drawn to a canvas at this pixel height, then mapped onto a camera-facing quad sized in
 //layout units. Drawing bigger than it usually appears keeps the glyphs sharp when the camera comes in
@@ -70,6 +81,45 @@ const LABEL_FONT = `bold ${LABEL_PIXEL_HEIGHT}px sans-serif`;
 //A fraction rather than a fixed distance so it stays in proportion to the slab: enough to sit clear of
 //the surface, not so much that it drifts towards the layer above when the stack is closed right up.
 const LABEL_CLEARANCE = 0.2;
+
+///
+///Turns every triangle in an unindexed geometry the other way round.
+///
+///Paired with the axis swap in buildForExport. Swapping two axes puts the geometry exactly where it should
+///be and leaves every face pointing the wrong way, because which side of a triangle is outside is said by
+///the order of its corners and by nothing else. Exchanging the first and last of the three is the whole of
+///it.
+///
+///Unindexed only: three positions per triangle, so the corners are the coordinates themselves. Indexed
+///geometry would need its index turned instead, and buildForExport unindexes first for this reason.
+///
+function reverseWinding(geometry) {
+    const position = geometry.getAttribute('position');
+    const points = position.array;
+
+    for (let at = 0; at + 9 <= points.length; at += 9) {
+        for (let axis = 0; axis < 3; axis++) {
+            const held = points[at + axis];
+
+            points[at + axis] = points[at + 6 + axis];
+            points[at + 6 + axis] = held;
+        }
+    }
+
+    position.needsUpdate = true;
+}
+
+//
+//How a layer answers being pointed at: three beats over a second and a quarter. See pulseLayer.
+//
+//Long enough to be seen as three rather than as one flicker, short enough that it is over before anybody
+//wonders whether they broke something. The strength is emissive on a lit material, so it brightens the
+//layer's own color rather than replacing it - which is the point, since the color is how the row and the
+//slab are matched up in the first place.
+//
+const PULSE_BEATS = 3;
+const PULSE_MS = 1250;
+const PULSE_STRENGTH = 0.55;
 
 /////////////////////////////////////////////////
 
@@ -164,6 +214,15 @@ window.restackLayers = function (offsets) {
         return;
 
     app.restack(offsets);
+}
+
+
+///Flashes one layer's slabs, so a row in the sidebar and a slab in the stack can be told to be the same one.
+window.pulseLayerInterOp = function (at) {
+    if (app == null || at == null)
+        return;
+
+    app.pulseLayer(at);
 }
 
 
@@ -537,8 +596,88 @@ class Viewer3D {
         //Perform animations of objects or movements of camera.
         this.runCinematicView();
 
+        this.runPulse();
+
         //Call renderer to render the scene.
         this.renderer.render(this.scene, this.camera);
+    }
+
+    //Pointing a layer out///////////////////////////////////////
+
+    ///
+    ///Lights one layer's slabs for a moment, for a press on its row in the sidebar.
+    ///
+    ///**The answer to "which one is this?"**, which is the only question a row can ask in this view: there is
+    ///nothing to draw on in 3D, so the press that picks a layer to draw on in 2D has nothing to do here. A
+    ///stack of nine slabs seen at an angle does not say which of them is `met1`, and the name in the list
+    ///does not say which slab it is - so the two have to be joined by something, and a flash is the cheapest
+    ///thing that joins them without changing what is on screen.
+    ///
+    ///Keyed on the same `stackAt` restack uses, since that is already what a slab knows about the layer it
+    ///belongs to. Every slab carries its own material - they are built one per polygon - so lighting these
+    ///cannot light anything else.
+    ///
+    pulseLayer(at) {
+        if (this.chipObjectsGroup == null)
+            return;
+
+        //Whatever was flashing stops where it is, so pressing a second row restarts rather than fights.
+        this.endPulse();
+
+        const lit = [];
+
+        for (const drawn of this.chipObjectsGroup.children) {
+            if (drawn.userData.stackAt !== at)
+                continue;
+
+            //Labels are sprites, and a sprite's material has no emissive to raise.
+            if (drawn.material == null || drawn.material.emissive == null)
+                continue;
+
+            lit.push({ material: drawn.material, was: drawn.material.emissive.getHex() });
+        }
+
+        if (lit.length === 0)
+            return;
+
+        this.pulsing = { lit: lit, started: performance.now() };
+    }
+
+    ///
+    ///One frame of that, from the render loop.
+    ///
+    ///A sine over the whole run, squared. Squaring is what makes it read as a pulse rather than a flicker:
+    ///it holds near nothing for most of each beat and swells briefly, and it starts and ends at exactly
+    ///nothing, so the layer is left the color it was without a step at either end.
+    ///
+    runPulse() {
+        if (this.pulsing == null)
+            return;
+
+        const gone = performance.now() - this.pulsing.started;
+
+        if (gone >= PULSE_MS) {
+            this.endPulse();
+
+            return;
+        }
+
+        const wave = Math.sin((gone / PULSE_MS) * Math.PI * PULSE_BEATS);
+        const strength = wave * wave * PULSE_STRENGTH;
+
+        for (const one of this.pulsing.lit)
+            one.material.emissive.setScalar(strength);
+    }
+
+    ///Puts the colors back. Called when the run ends, when another starts, and when the scene is thrown away.
+    endPulse() {
+        if (this.pulsing == null)
+            return;
+
+        for (const one of this.pulsing.lit)
+            one.material.emissive.setHex(one.was);
+
+        this.pulsing = null;
     }
 
     //XR///////////////////////////////////////////////////////
@@ -684,8 +823,23 @@ class Viewer3D {
                 shape.holes.push(path);
             }
 
+            //
+            //**Squared off, because ExtrudeGeometry bevels by default.**
+            //
+            //Left unsaid, three chamfers every edge over three segments, 0.2 deep and 0.1 wide. Those are
+            //its own numbers and it has no idea what a unit means here - in a layout they are nanometers,
+            //so on a 360nm metal the chamfer is off by a factor of about two thousand and nothing on the
+            //screen ever showed it.
+            //
+            //What it did show up in is the geometry. A slab stopped being a prism: every edge became three
+            //tilted strips, the vertex count roughly quadrupled, and a cell that is 660 triangles when it
+            //is extruded squarely came out of here as 3176. It also made each slab 0.4nm taller than the
+            //thickness the process table asks for, at both ends, which is a layer height that is quietly
+            //not the one it says it is.
+            //
             const extrudeSettings = {
-                depth: polygon.layer.depth
+                depth: polygon.layer.depth,
+                bevelEnabled: false
             };
 
             const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
@@ -699,7 +853,23 @@ class Viewer3D {
             const mesh = new THREE.Mesh(geometry, material);
 
             mesh.rotation.set(LAYOUT_ROTATION_X, 0.0, 0);
-            mesh.position.set(0, polygon.layer.offset, 0);
+
+            //
+            //**Its offset plus its thickness, because the slab hangs downward from wherever it is put.**
+            //
+            //ExtrudeGeometry builds from local z 0 to z depth, and tipping the layout onto its back maps
+            //local +Z onto world -Y - so a mesh placed at its offset occupies offset-depth to offset, and
+            //the process table means the opposite: a layer *starts* at its height and is thick upward.
+            //
+            //Left uncorrected, every layer sat below where it belonged by its own thickness - and since
+            //thicknesses differ, that is not a stack shifted down but a stack pulled apart. Measured against
+            //an independent extrusion of the same cells: licon1 came out at -940..0 where the table puts it
+            //at 0..940, with li1 floating at 840..940 - so the contact did not reach the metal it exists to
+            //join. Both cells came out 460 and 440nm taller than the process they were built from.
+            //
+            //Placing the top face at offset + depth is what puts the underside back on offset.
+            //
+            mesh.position.set(0, polygon.layer.offset + polygon.layer.depth, 0);
 
             //Which layer it belongs to and the height it was built at, so restackLayers can move it without
             //the scene being handed over again. See restackLayers.
@@ -755,6 +925,10 @@ class Viewer3D {
     //Empties the group and releases what the GPU was holding for it. The layer-spacing slider redraws on
     //every input event, so leaving the old textures and buffers behind would pile them up as it moves.
     clearChipObjects() {
+        //Before anything is disposed: a pulse in flight holds materials from this group, and putting their
+        //colors back after they have been thrown away is writing to something that is gone.
+        this.endPulse();
+
         for (let i = this.chipObjectsGroup.children.length - 1; i >= 0; --i) {
             const child = this.chipObjectsGroup.children[i];
 
@@ -867,11 +1041,12 @@ class Viewer3D {
             //rotation of its own: the anchor sits on the top face of its layer's slab, then the layout
             //tips onto its back and the layer's stacking offset lifts it.
             //
-            //z is 0 rather than the layer's depth, which is the trap here. An extrusion is built running
-            //from z 0 to z depth, and the tip maps local +Z onto world -Y - so the slab hangs *below* the
-            //plane it was drawn on, and z depth is its underside. Anchoring there buried every label
-            //inside the shape it names: measured on Mosfet.gds, a label sat at y 189.9 in a slab spanning
-            //149.4 to 220.9.
+            //**z is 0, and the slab's thickness is added in world Y below.** An extrusion is built running
+            //from z 0 to z depth, and the tip maps local +Z onto world -Y - so a slab hangs below the plane
+            //it was drawn on. That used to mean the slab's top face was its offset and a label anchored
+            //there landed on it; the meshes are placed at offset + depth now, so the top face is offset +
+            //depth and the label has to be lifted by the same amount or it is buried again. Measured before
+            //that was understood: a label sat at y 189.9 inside a slab spanning 149.4 to 220.9.
             const position = new THREE.Vector3(label.x, label.y, 0);
             position.applyEuler(new THREE.Euler(LAYOUT_ROTATION_X, 0, 0));
 
@@ -887,7 +1062,7 @@ class Viewer3D {
 
             //And then a gap, so the glyphs sit off the surface rather than resting on it - co-planar is
             //the case that flickers, and touching reads as painted on.
-            position.y += label.offset + hangsBelow + (label.depth * LABEL_CLEARANCE);
+            position.y += label.offset + label.depth + hangsBelow + (label.depth * LABEL_CLEARANCE);
 
             sprite.position.copy(position);
 
@@ -1013,29 +1188,107 @@ class Viewer3D {
         });
     }
 
+    ///
+    ///A Z-up copy of the chip, for handing to an exporter.
+    ///
+    ///**The scene is Y-up and every tool that reads these files is not.** three.js puts Y up, so the layout
+    ///is laid on its back with the stack running up Y. STL, OBJ and glTF are opened by CAD and EDA tools
+    ///that put Z up, and a cell exported straight out of the scene arrives in all of them lying on its
+    ///side. Measured against an independent extrusion of the same cells: X matched to the nanometer, the
+    ///scene's Z was the reference's Y, and the scene's Y was its Z.
+    ///
+    ///**Y and Z change places rather than being rotated into position.** A rotation about X cannot do this
+    ///job - a quarter turn one way inverts the height and the other way mirrors the footprint, and neither
+    ///is the same object. The swap lands every coordinate exactly where the reference has it.
+    ///
+    ///**Which costs the winding, so the winding is paid back.** Swapping two axes is a reflection: its
+    ///determinant is -1, so it turns every triangle inside out and leaves a solid whose faces point into
+    ///themselves. STL says which side is outside by the order of the corners and nothing else, so each
+    ///triangle is wound back the other way and the normals are computed again from the result.
+    ///
+    ///**Clones, and only the chip.** The view is still on screen while this runs, so nothing here may move
+    ///what is being drawn - and the scene carries a grid, lights and a backdrop that are furniture rather
+    ///than layout. What an exported model is for is the geometry the file describes.
+    ///
+    buildForExport() {
+        const group = new THREE.Group();
+
+        if (this.chipObjectsGroup == null)
+            return group;
+
+        const swap = new THREE.Matrix4().set(
+            1, 0, 0, 0,
+            0, 0, 1, 0,
+            0, 1, 0, 0,
+            0, 0, 0, 1);
+
+        this.chipObjectsGroup.updateMatrixWorld(true);
+
+        for (const drawn of this.chipObjectsGroup.children) {
+            if (!drawn.isMesh)
+                continue;
+
+            //Unindexed first, so a triangle is three positions of its own: the winding can then be turned
+            //by moving coordinates, and computeVertexNormals gives each face its own normal rather than
+            //averaging across the corners a box shares.
+            let geometry = drawn.geometry;
+
+            if (geometry.getIndex() != null)
+                geometry = geometry.toNonIndexed();
+            else
+                geometry = geometry.clone();
+
+            //The mesh's own placement first - where the slab actually sits - and then the axes.
+            geometry.applyMatrix4(drawn.matrixWorld);
+            geometry.applyMatrix4(swap);
+
+            reverseWinding(geometry);
+            geometry.computeVertexNormals();
+
+            group.add(new THREE.Mesh(geometry, drawn.material));
+        }
+
+        return group;
+    }
+
+    ///<summary>Lets go of the geometries buildForExport cloned, which nothing else is holding.</summary>
+    disposeExport(group) {
+        for (const drawn of group.children)
+            drawn.geometry.dispose();
+    }
+
     download3DModel(fileName, fileType) {
+        const model = this.buildForExport();
+
         let exporter;
         let data;
 
         switch (fileType) {
             case ".stl":
                 exporter = new STLExporter();
-                data = exporter.parse(this.scene);
+                data = exporter.parse(model);
                 BlazorDownloadFile(fileName + '.stl', 'application/octet-stream', data);
                 break;
             case ".obj":
                 exporter = new OBJExporter();
-                data = exporter.parse(this.scene);
+                data = exporter.parse(model);
                 BlazorDownloadFile(fileName + '.obj', 'application/octet-stream', data);
                 break
             case ".gltf":
                 exporter = new GLTFExporter();
-                exporter.parse(this.scene, function (gltf) {
+                exporter.parse(model, function (gltf) {
                     data = JSON.stringify(gltf, null, 2);
                     BlazorDownloadFile(fileName + '.gltf', 'application/octet-stream', data);
                 });
                 break;
         }
+
+        //
+        //**Not disposed for glTF**, whose parse takes a callback and is still reading the geometry when
+        //this returns. The other two are done by the time their BlazorDownloadFile has been called.
+        //
+        if (fileType !== ".gltf")
+            this.disposeExport(model);
     }
 
     /////////////////////////////////////////////////////////

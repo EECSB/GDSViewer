@@ -5,7 +5,7 @@
 //part that only exists once it is rendered: whether the bar is in the page at all, whether a control is
 //actually unusable rather than merely faded, and whether a setting the address named beat the session.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, showGrid, MOSFET } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, openFile, showGrid, MOSFET , acceptsClosingWhatIsOpen } = require('./helpers');
 
 ///Opens the app on a query of its own, and waits for a file to be on screen.
 async function embed(page, query) {
@@ -264,6 +264,11 @@ test.describe('the files an embedder brings', () => {
 
         await picker(page);
 
+        //Opening one closes what is open, and the app asks first.
+
+        acceptsClosingWhatIsOpen(page);
+
+
         await page.locator('.examplePickerOption[data-file="Chip A"]').click();
 
         //Under the name the page gave it, and with the kind taken off the address - the name it was given
@@ -284,6 +289,8 @@ test.describe('the files an embedder brings', () => {
 
         //Listed twice, since the bundled one is still there under its own heading - and the injected row
         //is the first, which is the one this opens.
+        acceptsClosingWhatIsOpen(page);
+
         await page.locator('.examplePickerOption[data-file="Mosfet"]').first().click();
 
         await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');
@@ -363,6 +370,19 @@ test.describe('how much of the app is offered', () => {
         await expect(page.locator('#moveTool')).toBeDisabled();
         await expect(page.locator('#drawTool')).toBeDisabled();
         await expect(page.locator('#historyButton')).toBeDisabled();
+
+        //Starting a layout is opening a different one by another route, so it goes the same way Open does.
+        await expect(page.locator('#newLayout')).toBeDisabled();
+
+        //
+        //And a layer cannot be removed, because removing one takes its shapes out of the file.
+        //
+        //And no way to add one either: a page with no draw tool has nothing to put on a new layer, so
+        //offering the control would be offering a step that leads nowhere.
+        //
+        await expect(page.locator('.layerRow')).not.toHaveCount(0);
+        await expect(page.locator('.layerRemove')).toHaveCount(0);
+        await expect(page.locator('#addLayer')).toHaveCount(0);
 
         //The file button is a label, which cannot be disabled - it loses its `for` and its pointer events.
         const upload = await page.evaluate(() => {

@@ -1026,7 +1026,7 @@ public class OasisWriterTests
     ///A ceiling rather than an equality, so a writer that gets *smaller* does not fail here. Deflate's
     ///output is deterministic for a given input, but not across .NET versions, so there is a couple of per
     ///cent of room in it - enough to absorb a library change and nowhere near enough to hide a technique
-    ///being lost. Measured at 1,191,819 bytes against the 9,632,854 of GDSII they came from - which is
+    ///being lost. Measured at 1,191,819 bytes against the 9,632,982 of GDSII they came from - which is
     ///under the 1,206,187 KLayout writes the same corpus in.
     ///
     ///The file count is asserted too, since a total is only a measurement if it is over what you think.
@@ -1048,7 +1048,7 @@ public class OasisWriterTests
         }
 
         Assert.Equal(897, files);
-        Assert.Equal(9632854, asGds);
+        Assert.Equal(9632982, asGds);
 
         //Invariant, so the number in a failure reads the same wherever it was produced - this machine
         //writes thousands with dots, and a report saying 2.444.116 is a report nobody can search for.

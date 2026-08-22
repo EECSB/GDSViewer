@@ -4,7 +4,8 @@ const {
     gotoExample,
     svgCounts,
     layerPairs,
-    layerCheckbox,
+    hideLayer,
+    showLayer,
     MOSFET,
     MOSFET_POLYGONS,
     MOSFET_LABELS,
@@ -37,17 +38,15 @@ test('coordinates and opacity are written so a browser can read them', async ({ 
     expect(svg.points).not.toContain(',,');
 });
 
-test('unchecking a layer stops its geometry being drawn, and checking it brings it back', async ({ page }) => {
+test('hiding a layer stops its geometry being drawn, and showing it brings it back', async ({ page }) => {
     //Waited for rather than read once: reading the count while the file is still being drawn gives a
     //smaller number to compare against, and then "fewer than before" can never be true.
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    const firstLayer = layerCheckbox(page);
-
-    await firstLayer.uncheck();
+    await hideLayer(page);
     await expect.poll(async () => (await svgCounts(page)).polygons).toBeLessThan(MOSFET_POLYGONS);
 
-    await firstLayer.check();
+    await showLayer(page);
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 });
 

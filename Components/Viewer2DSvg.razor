@@ -1712,6 +1712,27 @@
     [Parameter]
     public List<CheckboxItem>? ShowLayers { get; set; }
 
+    ///
+    ///Whether a lock stops this element being touched.
+    ///
+    ///**Only the lock**, where <see cref="CheckboxItem.EditableLayers"/> also carries the visible set.
+    ///HitTest has always refused a hidden layer and keeps doing so through that set; a band never has, and
+    ///it is not a lock's business to decide whether it should - so with nothing locked this says yes to
+    ///everything and the band behaves exactly as it did.
+    ///
+    ///**The fade alone does not do it.** Whether a shape can be chosen is settled here, in C#, by
+    ///<see cref="Picking.At"/> walking the layout - the browser only reports where the pointer was. So a
+    ///`pointer-events` rule over the drawing greys the shapes out and changes nothing about which of them
+    ///answers: they go pale and go on being picked up and dragged around. That was measured, the hard way.
+    ///
+    private bool notLocked(Element element)
+    {
+        if (ShowLayers is null)
+            return true;
+
+        return !CheckboxItem.LockedLayers(ShowLayers).Contains(element.Layer.Key);
+    }
+
     ///<summary>
     ///Design rule markers, as markup to lay over the drawing. Empty when no check has been run.
     ///
@@ -2323,10 +2344,63 @@
     ///</summary>
     protected override void OnParametersSet()
     {
+        dropWhatLockingPutOutOfReach();
+
         if (Markers == markersDrawn)
             return;
 
         redraw();
+    }
+
+    ///<summary>Which layers were locked when this last looked, so a change can be spotted.</summary>
+    private string locksDrawnFor = "";
+
+    ///
+    ///Lets go of anything a new lock has put out of reach.
+    ///
+    ///**Narrowed rather than cleared**, so locking a layer nothing chosen is on leaves the selection alone.
+    ///Only the part that has just gone out of reach is dropped.
+    ///
+    ///Without this, locking with a selection already made leaves shapes chosen on the locked layer and the
+    ///move tool goes on dragging them: they were picked while they were still pickable, and nothing asks
+    ///again on the way into a drag. That is the same fault the fade-only attempt had, reached from the
+    ///other side.
+    ///
+    ///Compared as a string rather than by set equality: this runs on every parameter set, and building two
+    ///sets to compare them per render is more than a joined list of the few pairs that are ever locked.
+    ///
+    private void dropWhatLockingPutOutOfReach()
+    {
+        if (ShowLayers is null)
+            return;
+
+        string locks = string.Join("|", CheckboxItem.LockedLayers(ShowLayers).OrderBy(key => key));
+
+        if (locks == locksDrawnFor)
+            return;
+
+        locksDrawnFor = locks;
+
+        if (layout is null || chosenIndexes.Count == 0)
+            return;
+
+        var kept = new List<int>();
+
+        foreach (int index in chosenIndexes)
+        {
+            if (index < 0 || index >= layout.Elements.Count)
+                continue;
+
+            if (notLocked(layout.Elements[index]))
+                kept.Add(index);
+        }
+
+        if (kept.Count == chosenIndexes.Count)
+            return;
+
+        //Not awaited: this runs inside OnParametersSet, and what choose does past setting the selection is
+        //a redraw this render is about to do anyway.
+        _ = choose(kept);
     }
 
     //Async Task rather than async void: an exception out of a void one cannot be awaited by anything, so
@@ -3008,6 +3082,10 @@
 
         for (int i = 0; i < layout.Elements.Count; i++)
         {
+            //"Everything" means everything that can be worked on, which is one layer while one is isolated.
+            if (!notLocked(layout.Elements[i]))
+                continue;
+
             if (context is null || context.Holds(layout.Elements[i]))
                 picked.Add(i);
         }
@@ -3039,7 +3117,7 @@
 
         var at = new Element.Point((int)Math.Round(x), (int)Math.Round(y));
 
-        int found = Picking.At(layout, at, CheckboxItem.VisibleLayers(ShowLayers), context);
+        int found = Picking.At(layout, at, CheckboxItem.EditableLayers(ShowLayers), context);
 
         //A label the browser found under the pointer, if there was one. Labels are still drawn as their
         //own nodes, so the two answers have to be reconciled - see Picking.Preferred.
@@ -3176,6 +3254,11 @@
         for (int i = 0; i < layout.Elements.Count; i++)
         {
             if (!box.Intersects(layout.Elements[i].Box))
+                continue;
+
+            //A band takes what a click would take. Dragging one over an isolated layout used to sweep up
+            //every faded shape it crossed, which is the same fault as clicking one - see notLocked.
+            if (!notLocked(layout.Elements[i]))
                 continue;
 
             if (!picked.Contains(i))
@@ -8749,13 +8832,30 @@
         await OnToolChanged.InvokeAsync();
     }
 
-    ///<summary>The layers the file already has, in the order the sidebar lists them.</summary>
+    ///
+    ///The layers the file already has, in the order the sidebar lists them, less any that are locked.
+    ///
+    ///**A locked layer is not one to draw on**, for the same reason a click cannot land on it: locking says
+    ///this layer is not being worked on. Filtered here rather than at the press, so the one list answers
+    ///both questions - which row a press may take (see UseDrawLayer, which asks this) and which layer the
+    ///pen opens on (see startDrawingShapes, which asks the same).
+    ///
+    ///Locked layers only. A hidden one is left in: hiding is about the picture, and the layer somebody is
+    ///about to draw a shape onto is a reasonable thing to have out of sight while they place it.
+    ///
     private List<Layer> drawableLayers()
     {
         if (Gds is null)
             return new List<Layer>();
 
-        return Gds.AdditionalInformation.OrderedLayers().Select(entry => entry.Value).ToList();
+        var all = Gds.AdditionalInformation.OrderedLayers().Select(entry => entry.Value);
+
+        if (ShowLayers is null)
+            return all.ToList();
+
+        var locked = CheckboxItem.LockedLayers(ShowLayers);
+
+        return all.Where(layer => !locked.Contains(layer.Key)).ToList();
     }
 
     ///<summary>How many microns one database unit is, from the file's UNITS record, or null when it cannot be read.</summary>

@@ -5,7 +5,7 @@
 //its name, that a drawing draws, and that what comes back out of the download button is GDSII under a name
 //somebody's tools will take - which is the one thing about reading a format nothing writes.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, selectView, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, selectView, openedOnItsOwn, uploadFile } = require('./helpers');
 
 ///
 ///A drawing with one square, one wire and a block placed twice.
@@ -44,7 +44,7 @@ const DRAWING = [
 
 ///Uploads a drawing under whatever name is given, and waits for something to be drawn.
 async function openDrawing(page, name = 'parts.dxf', contents = DRAWING) {
-    await page.locator('#fileUpload').setInputFiles({
+    await uploadFile(page, {
         name,
         mimeType: 'application/dxf',
         buffer: Buffer.from(contents, 'utf8')
@@ -106,7 +106,7 @@ test.describe('opening one', () => {
         await page.exposeFunction('reportAlert', message => said.push(String(message)));
         await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
 
-        await page.locator('#fileUpload').setInputFiles({
+        await uploadFile(page, {
             name: 'notes.txt',
             mimeType: 'text/plain',
             buffer: Buffer.from('this is not a layout of any kind at all', 'utf8')

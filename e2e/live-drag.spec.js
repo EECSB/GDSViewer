@@ -9,7 +9,7 @@
 //shapes that is a third of a second each. What moves instead is a copy lifted out of the picture. These
 //tests watch that copy, because it is the thing the eye follows.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, elementPoints, chooseShape } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, elementPoints, chooseShape, MOSFET_POLYGONS } = require('./helpers');
 
 const LIFTED = '#draggingShapes';
 
@@ -107,7 +107,7 @@ test('the drop puts the picture back and moves the shape', async ({ page }) => {
     await expect.poll(async () => page.locator('#gdsSVG > path[data-elements]').count(), { timeout: 15000 })
         .toBe(nodes);
 
-    expect(await shapeCount(page)).toBe(18);
+    expect(await shapeCount(page)).toBe(MOSFET_POLYGONS);
 });
 
 ///Nothing is lifted for a click, or every click would rebuild the picture twice for no movement.

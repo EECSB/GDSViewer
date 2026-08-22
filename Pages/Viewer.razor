@@ -115,6 +115,30 @@
                                     accept=".gds,.gds2,.gdsii,.oas,.oasis,.dxf" />
 
                          @*
+                             A layout to start from nothing, which every other way in needs a file for.
+
+                             **First in the group, ahead of Open.** The two answer the same question - what
+                             am I working on - and this is the answer for somebody who has nothing yet, so
+                             it reads in the order the two are reached in. Off in a read-only embed for the
+                             same reason opening a file is: that page has said this viewer does not take a
+                             different layout, and making one is the same thing by another route.
+
+                             A page with a fold in the corner and a plus beside it, which is what every
+                             other application draws for this.
+                         *@
+                         <button id="newLayout"
+                                 class="buttonStyle2 toolbarButton buttonIcon fileButton @(noEditing ? "toolbarButtonOff" : "")"
+                                 disabled="@noEditing"
+                                 @onclick="newLayout"
+                                 title="@(noEditing ? "This viewer is read-only - starting a layout is turned off on this page" : "Start an empty layout: one cell, no layers, nothing drawn")">
+                             <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" role="img" aria-label="New layout">
+                                 <path fill="none" stroke="currentColor" stroke-width="1.6"
+                                       stroke-linecap="round" stroke-linejoin="round"
+                                       d="M9.2 1.8H4.2A1.2 1.2 0 0 0 3 3v10a1.2 1.2 0 0 0 1.2 1.2H8M9.2 1.8 13 5.6v2.2M12.4 10.4v4M10.4 12.4h4" />
+                             </svg>
+                         </button>
+
+                         @*
                              Turned off rather than taken away, so the bar keeps its shape and somebody can
                              see that opening a file is a thing this does - it is the page they are on that
                              has said no, not the app that lacks it.
@@ -272,7 +296,7 @@
                                                        @oninput="onHistoryFilterInput" />
 
                                                 <div id="historyPicker" class="examplePickerOptions" role="listbox"
-                                                     @onmouseleave="showSelectedPreview">
+                                                     @onmouseleave="clearPreview">
                                                     @if (historyEntries.Count == 0)
                                                     {
                                                         @*
@@ -330,13 +354,22 @@
                                                 {
                                                     <svg class="examplePreview" viewBox="@previewViewBox"
                                                          xmlns="http://www.w3.org/2000/svg"
-                                                         role="img" aria-label="Preview of @(historyPreviewFor.Length > 0 ? historyPreviewFor : CurrentlySelectedFileName)">
+                                                         role="img" aria-label="Preview of @historyPreviewFor">
                                                         @((MarkupString)previewMarkup)
                                                     </svg>
                                                 }
-                                                else
+                                                else if (historyPreviewFor.Length > 0)
                                                 {
                                                     <div class="examplePreviewEmpty">No preview</div>
+                                                }
+                                                else
+                                                {
+                                                    @*
+                                                        Nothing is being pointed at, which is not the same as a file that has no
+                                                        picture - so it does not say "No preview", which would be a sentence about a
+                                                        file nobody named. The wording is the cell tree's, for the same empty state.
+                                                    *@
+                                                    <div class="examplePreviewEmpty">Point at a file</div>
                                                 }
                                             </div>
                                         </div>
@@ -420,7 +453,7 @@
                                                        @oninput="onExampleFilterInput" />
 
                                                 <div id="examplePicker" class="examplePickerOptions" role="listbox"
-                                                     @onmouseleave="showSelectedPreview">
+                                                     @onmouseleave="clearPreview">
                                                     @if (filteredExamples.Count == 0)
                                                     {
                                                         <div class="examplePickerNone">Nothing matches "@exampleFilter"</div>
@@ -467,13 +500,18 @@
                                                 {
                                                     <svg class="examplePreview" viewBox="@previewViewBox"
                                                          xmlns="http://www.w3.org/2000/svg"
-                                                         role="img" aria-label="Preview of @(previewFor.Length > 0 ? previewFor : selectedExample)">
+                                                         role="img" aria-label="Preview of @previewFor">
                                                         @((MarkupString)previewMarkup)
                                                     </svg>
                                                 }
-                                                else
+                                                else if (previewFor.Length > 0)
                                                 {
                                                     <div class="examplePreviewEmpty">No preview</div>
+                                                }
+                                                else
+                                                {
+                                                    @*Nothing pointed at. See the history popup's frame for why the two read differently.*@
+                                                    <div class="examplePreviewEmpty">Point at a file</div>
                                                 }
                                             </div>
                                         </div>
@@ -802,13 +840,31 @@
     
                 <!-- ************************************************** View ********************************************************* -->
 
-                @*height: inherit is gone - the row is a flex line now, so this stretches to it on its own.*@
-                <div class="col viewBorderBackground viewPane" style="background-color: white; padding: 0; width: 80%;">
+                @*
+                    height: inherit is gone - the row is a flex line now, so this stretches to it on its own.
+
+                    Named, and told whether it takes a dropped file, for js/fileDrop.js. Both belong on this
+                    box rather than on a view inside it: a file may be dropped in whichever view is up, and
+                    this is the one element all three are mounted into. The attribute carries noEditing
+                    rather than the script reading it off the disabled Open control, because what the script
+                    needs to know is whether this page opens files at all - which is a thing the page can
+                    say plainly, not a thing to infer from the state of a button somewhere else.
+                *@
+                <div id="viewPane" class="col viewBorderBackground viewPane" data-file-drop="@(noEditing ? "off" : "on")"
+                     style="background-color: white; padding: 0; width: 80%;">
                             @switch (view)
                             {
                                 case ViewType.ViewText: <TextEditor @ref="viewer" Gds="gds" OnFileChanged="onFileEdited"></TextEditor>;
                                     break;
                                 case ViewType.View2DSvg: <Viewer2DSvg @ref="viewer" Gds="gds" Prepared="preparedLayout" ShowLayers="checkboxItems" Markers="@drcMarkers" Notice="@drcNotice" NoticeIsFault="@drcNoticeIsFault" OnNoticeDismissed="dismissDrcNotice" History="editHistory" ReadOnly="noEditing" CellTreeOpen="cellTreeOpen" OnCellTreeClosed="toggleCellTree" OnSettingsChanged="saveSession" OnToolChanged="redrawToolbar" OnFileChanged="onFileEdited" OnLayerRenamed="renamed => applyLayerName(renamed.Key, renamed.Name)"></Viewer2DSvg>;
+                                    @*
+                                        The rule that fades the locked layers, beside the view it applies to
+                                        rather than inside it. Which layers are locked is the shell's
+                                        question - the rows that say so are in the shell's own sidebar - and
+                                        the view is handed a picture rather than asked to take a mode. See
+                                        lockedStyle.
+                                    *@
+                                    @lockedStyle()
                                     break;
                                 case ViewType.View3D: <Viewer3D @ref="viewer" Gds="gds" ShowLayers="checkboxItems" FileName="@CurrentlySelectedFileName" OnSettingsChanged="saveSession" OnToolChanged="redrawToolbar"></Viewer3D>;
                                     break;
@@ -1162,6 +1218,7 @@
                                           title="Write the deck in force back out as a file">
                                         <img src="./resources/Images/Icons/download.png" alt="" /> Export
                                     </span>
+
                                 }
 
                                 @if (drcDeck is not null)
@@ -1277,6 +1334,50 @@
                                             {
                                                 <span class="rulesCount">@countFor(id)</span>
                                             }
+
+                                            @*
+                                                What this rule is, behind one control - the same gear the
+                                                layer rows carry, drawn the same way and in the same place,
+                                                because it answers the same kind of question.
+
+                                                **Stopped from reaching the row**, which is otherwise a press
+                                                that jumps the view to this rule's first violation. Opening a
+                                                rule to look at it is not a request to go and see where it
+                                                failed, and a panel that did both would move the layout out
+                                                from under whoever was reading it.
+                                            *@
+                                            @if (!noEditing)
+                                            {
+                                                var opening = rule;
+
+                                                <button type="button"
+                                                        class="rulesSettingsButton"
+                                                        title="What this rule checks, and the line it is written on"
+                                                        @onclick="e => openRuleSettings(opening, e)"
+                                                        @onclick:stopPropagation="true">
+                                                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                                        <path fill="currentColor" d="M6.8 1h2.4l.3 1.9.9.5 1.7-.9 1.7 1.7-.9 1.7.5.9 1.9.3v2.4l-1.9.3-.5.9.9 1.7-1.7 1.7-1.7-.9-.9.5-.3 1.9H6.8l-.3-1.9-.9-.5-1.7.9-1.7-1.7.9-1.7-.5-.9L.7 9.2V6.8l1.9-.3.5-.9-.9-1.7 1.7-1.7 1.7.9.9-.5L6.8 1z" />
+                                                        <circle cx="8" cy="8" r="2.4" fill="#fff" />
+                                                    </svg>
+                                                </button>
+                                            }
+
+                                            @*
+                                                Taking the rule out, on its own row rather than in a menu.
+
+                                                Stopped from reaching the row, or removing a rule would also
+                                                be the click that jumps the view to its first violation -
+                                                a fault in a rule that is on its way out.
+                                            *@
+                                            @if (!noEditing)
+                                            {
+                                                var going = rule;
+
+                                                <button class="rulesRemove"
+                                                        @onclick="() => removeRule(going)"
+                                                        @onclick:stopPropagation="true"
+                                                        title="Remove this rule from the deck">×</button>
+                                            }
                                         </div>
                                     }
 
@@ -1290,6 +1391,42 @@
                                         <div class="rulesRow rulesRowRefused" title="@refused">
                                             <span class="rulesId">@refused.Split(':')[0]</span>
                                             <span class="rulesRefusedWord">not measurable</span>
+                                        </div>
+                                    }
+                                }
+
+                                @*
+                                    A rule typed straight in, at the foot of the deck it joins - the same
+                                    place, and for the same reason, as + Layer one panel over.
+
+                                    One box in the deck's own grammar: the guide is a press away above, the
+                                    parser already says exactly what is wrong with a line, and a form of
+                                    dropdowns would either be most of a form builder or quietly unable to
+                                    write half the decks people have.
+                                *@
+                                @if (drcDeck is not null && !noEditing)
+                                {
+                                    @if (addingRule)
+                                    {
+                                        <div class="addRuleRow">
+                                            <input id="newRuleLine" type="text" class="addRuleBox"
+                                                   placeholder="rule met1.w1 width met1 140 &quot;Metal 1 minimum width&quot;"
+                                                   @bind="newRuleLine" @bind:event="oninput" @onkeydown="onAddRuleKey" />
+
+                                            <button id="addRuleConfirm" class="buttonStyle2 smallButton rulesButton" @onclick="addRule">Add</button>
+                                            <button id="addRuleCancel" class="buttonStyle2 smallButton rulesButton" @onclick="cancelAddingRule">Cancel</button>
+                                        </div>
+
+                                        @if (addRuleProblem.Length > 0)
+                                        {
+                                            <div id="addRuleProblem" class="addLayerProblem">@addRuleProblem</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="listAddRow">
+                                            <button id="addRule" class="listAddButton" @onclick="startAddingRule"
+                                                    title="Add one rule line to the deck, in the format the guide above describes">Add rule</button>
                                         </div>
                                     }
                                 }
@@ -1316,6 +1453,7 @@
                                     <span id="layerNamesExport" class="layerSidebarAction" @onclick="exportLayerNames" title="Write this file's layers out as a CSV: their names, colors, heights and thicknesses">
                                         <img src="./resources/Images/Icons/download.png" alt="" /> Export
                                     </span>
+
                                 }
 
                                 @if (layerNamesLoaded)
@@ -1392,7 +1530,7 @@
                                                 3D and text views there is no such component and no menu, which
                                                 is right: neither of them can act on a shape.
                                             *@
-                                            <div class="layerRow @(drawingView is not null ? "layerRowPickable" : "") @(drawingOnLayer(item) ? "layerRowDrawing" : "")"
+                                            <div class="layerRow @(layerRowsRespondToPress ? "layerRowPickable" : "") @(drawingOnLayer(item) ? "layerRowDrawing" : "") @(pulsingLayer == item.Id ? "layerRowPulsing" : "")"
                                                  @onclick="() => useDrawLayer(item)"
                                                  @oncontextmenu="e => openLayerRowMenu(item, e)"
                                                  @oncontextmenu:preventDefault="true"
@@ -1439,41 +1577,87 @@
                                                 }
 
                                                 @*
-                                                    The row turns into a text box while it is the one being
-                                                    renamed. Editing in place rather than in a dialog because
-                                                    naming a layer is only useful next to the geometry it
-                                                    names - you look at the shape to work out what it is.
+                                                    The name, and only the name.
+
+                                                    **Renaming lives in the settings behind the gear**, which
+                                                    has had a box for it all along. This used to turn into a
+                                                    text box when it was clicked, and that made the row's own
+                                                    click mean two things at once: the draw tool wanted it to
+                                                    choose the layer to draw on, and draw-layer.spec had to
+                                                    pin which of the two won. A row that is a control has to
+                                                    be one control, and what it does now is choose the layer -
+                                                    see useDrawLayer.
                                                 *@
-                                                @if (editingLayer == item.Id)
-                                                {
-                                                    <input type="text"
-                                                           class="layerNameBox"
-                                                           value="@editingName"
-                                                           @oninput="onLayerNameInput"
-                                                           @onkeydown="onLayerNameKey"
-                                                           @onblur="commitLayerName"
-                                                           @ref="layerNameBox"
-                                                           placeholder="@item.Id.ToString()" />
-                                                }
-                                                else
-                                                {
-                                                    <span class="layerName"
-                                                          @onclick="() => startRenaming(item)"
-                                                          title="Click to name this layer">@item.Label</span>
-                                                }
+                                                <span class="layerName">@item.Label</span>
 
                                                 @*
-                                                    Stopped at the checkbox and at the gear, so a press on
-                                                    either is only what it is. Hiding a layer and taking it as
-                                                    the one to draw on in the same click are two answers to
-                                                    opposite questions.
+                                                    Whether this layer is drawn, as an eye.
+
+                                                    **A drawn eye rather than a checkbox**, because a
+                                                    checkbox says "on" and this says "shown" - and the row
+                                                    beside it now carries a second switch that is also on or
+                                                    off, and two identical boxes down a column say nothing
+                                                    about which is which. Open and struck through are two
+                                                    shapes, and the closed one is dimmed as well, so which
+                                                    layers are on screen can be read down the list rather
+                                                    than checked one row at a time.
+
+                                                    Stopped at the button, so a press on it is only what it
+                                                    is. Hiding a layer and taking it as the one to draw on in
+                                                    the same click are two answers to opposite questions.
                                                 *@
-                                                <input type="checkbox"
-                                                       class="layerVisible"
-                                                       @onchange="async e => await layersChanged(e, item)"
-                                                       @onclick:stopPropagation="true"
-                                                       checked="@item.IsSelected"
-                                                       title="Draw this layer" />
+                                                <button type="button"
+                                                        class="layerEyeButton @(item.IsSelected ? "" : "layerEyeOff")"
+                                                        @onclick="async () => await layerShownToggled(item)"
+                                                        @onclick:stopPropagation="true"
+                                                        aria-pressed="@(item.IsSelected ? "true" : "false")"
+                                                        title="@(item.IsSelected ? "Drawn. Click to hide this layer" : "Hidden. Click to draw this layer")">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                                                        <path fill="none" stroke="currentColor" stroke-width="1.3"
+                                                              d="M1 8s2.5-4.2 7-4.2S15 8 15 8s-2.5 4.2-7 4.2S1 8 1 8Z" />
+                                                        <circle cx="8" cy="8" r="1.9" fill="currentColor" />
+
+                                                        @if (!item.IsSelected)
+                                                        {
+                                                            <path stroke="currentColor" stroke-width="1.3" stroke-linecap="round" d="M2.5 13.5 13.5 2.5" />
+                                                        }
+                                                    </svg>
+                                                </button>
+
+                                                @*
+                                                    Whether this layer can be worked on, as a padlock.
+
+                                                    **The third state the list was missing.** Hiding takes a
+                                                    layer off the screen, which is the wrong answer when it
+                                                    is the thing being worked *against*: a via has to line up
+                                                    with the metal over it, and nothing lines up with what it
+                                                    cannot see. A lock leaves it drawn and takes it out of
+                                                    reach - see CheckboxItem.IsLocked.
+
+                                                    Shackle up for open and down for shut, which is the one
+                                                    difference between the two glyphs, so the row reads at a
+                                                    glance without a color to carry it.
+                                                *@
+                                                <button type="button"
+                                                        class="layerLockButton @(item.IsLocked ? "layerLockOn" : "")"
+                                                        @onclick="async () => await layerLockToggled(item)"
+                                                        @onclick:stopPropagation="true"
+                                                        aria-pressed="@(item.IsLocked ? "true" : "false")"
+                                                        title="@(item.IsLocked ? "Locked. Click to work on this layer again" : "Click to lock this layer: still drawn, but not selectable")">
+                                                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                                                        <rect x="3.2" y="7" width="9.6" height="6.6" rx="1.1"
+                                                              fill="none" stroke="currentColor" stroke-width="1.3" />
+
+                                                        @if (item.IsLocked)
+                                                        {
+                                                            <path fill="none" stroke="currentColor" stroke-width="1.3" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <path fill="none" stroke="currentColor" stroke-width="1.3" d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0" />
+                                                        }
+                                                    </svg>
+                                                </button>
 
                                                 @*
                                                     Everything about how this one layer is drawn, behind one
@@ -1481,18 +1665,82 @@
                                                     as an inline SVG rather than an icon file, so it inherits
                                                     the row's color and stays sharp at any zoom without another
                                                     asset to vendor.
+
+                                                    **Gone in 3D**, with the rest of what this row can be made
+                                                    to do. A color is a property of the layer and lives in the
+                                                    layermap once it is changed, so setting one is an edit like
+                                                    any other - see layersAreEditable. What is left in that
+                                                    view is a press that flashes the slab and a box that hides
+                                                    it, neither of which changes anything.
                                                 *@
-                                                <button type="button"
-                                                        class="layerSettingsButton"
-                                                        title="Color and labels for this layer"
-                                                        @onclick="e => openLayerSettings(item, e)"
-                                                        @onclick:stopPropagation="true">
-                                                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                                                        <path fill="currentColor" d="M6.8 1h2.4l.3 1.9.9.5 1.7-.9 1.7 1.7-.9 1.7.5.9 1.9.3v2.4l-1.9.3-.5.9.9 1.7-1.7 1.7-1.7-.9-.9.5-.3 1.9H6.8l-.3-1.9-.9-.5-1.7.9-1.7-1.7.9-1.7-.5-.9L.7 9.2V6.8l1.9-.3.5-.9-.9-1.7 1.7-1.7 1.7.9.9-.5L6.8 1z" />
-                                                        <circle cx="8" cy="8" r="2.4" fill="#fff" />
-                                                    </svg>
-                                                </button>
+                                                @if (layersAreEditable)
+                                                {
+                                                    <button type="button"
+                                                            class="layerSettingsButton"
+                                                            title="Color and labels for this layer"
+                                                            @onclick="e => openLayerSettings(item, e)"
+                                                            @onclick:stopPropagation="true">
+                                                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                                            <path fill="currentColor" d="M6.8 1h2.4l.3 1.9.9.5 1.7-.9 1.7 1.7-.9 1.7.5.9 1.9.3v2.4l-1.9.3-.5.9.9 1.7-1.7 1.7-1.7-.9-.9.5-.3 1.9H6.8l-.3-1.9-.9-.5-1.7.9-1.7-1.7.9-1.7-.5-.9L.7 9.2V6.8l1.9-.3.5-.9-.9-1.7 1.7-1.7 1.7.9.9-.5L6.8 1z" />
+                                                            <circle cx="8" cy="8" r="2.4" fill="#fff" />
+                                                        </svg>
+                                                    </button>
+                                                }
+
+                                                @*
+                                                    Taking the layer out, at the end of its own row.
+
+                                                    **Stopped from reaching the row**, which is otherwise a
+                                                    press that chooses this layer to draw on - so removing a
+                                                    layer would also be the click that picked it.
+                                                *@
+                                                @if (layersAreEditable)
+                                                {
+                                                    var going = item;
+
+                                                    <button class="layerRemove"
+                                                            @onclick="() => removeLayer(going)"
+                                                            @onclick:stopPropagation="true"
+                                                            title="Remove this layer, and any shapes on it">×</button>
+                                                }
                                             </div>
+                                    }
+                                }
+
+                                @*
+                                    A layer nothing is drawn on yet, at the foot of the list it joins.
+
+                                    **In the card rather than in the row of controls above it.** Import,
+                                    Export and Clear all act on the mapping as a whole; this puts one row in
+                                    a list, so it belongs at the end of that list where the row will appear -
+                                    the same place every list that can be added to puts its add.
+                                *@
+                                @if (gds is not null && layersAreEditable)
+                                {
+                                    @if (addingLayer)
+                                    {
+                                        <div class="addLayerRow">
+                                            <input id="newLayerNumber" type="number" min="0" class="addLayerBox" placeholder="layer"
+                                                   @bind="newLayerNumber" @bind:event="oninput" @onkeydown="onAddLayerKey" />
+                                            <span class="addLayerSlash">/</span>
+                                            <input id="newLayerDataType" type="number" min="0" class="addLayerBox" placeholder="type"
+                                                   @bind="newLayerDataType" @bind:event="oninput" @onkeydown="onAddLayerKey" />
+
+                                            <button id="addLayerConfirm" class="buttonStyle2 smallButton rulesButton" @onclick="addLayer">Add</button>
+                                            <button id="addLayerCancel" class="buttonStyle2 smallButton rulesButton" @onclick="cancelAddingLayer">Cancel</button>
+                                        </div>
+
+                                        @if (addLayerProblem.Length > 0)
+                                        {
+                                            <div id="addLayerProblem" class="addLayerProblem">@addLayerProblem</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="listAddRow">
+                                            <button id="addLayer" class="listAddButton" @onclick="startAddingLayer"
+                                                    title="Add a layer to draw on. The format records a layer only through the shapes on it, so an empty one is gone when the file is written">Add layer</button>
+                                        </div>
                                     }
                                 }
                             </div>
@@ -1540,7 +1788,12 @@
                             <div class="layerSpacing">
                                 <label for="layerSpacing">Distance</label>
 
-                                <input id="layerSpacing" type="range" min="50" max="700"
+                                @*
+                                    **From nought**, which is the process stack and nothing added to it.
+                                    The minimum was 50 because the number used to be measured from the even
+                                    stack's rung height rather than from zero - see DefaultLayerSpread.
+                                *@
+                                <input id="layerSpacing" type="range" min="0" max="700"
                                        value="@stacked.LayerSpacing"
                                        @oninput="stacked.AdjustLayerSpacing"
                                        title="How far apart the layers are stacked, to pull the layout open and see between them" />
@@ -1616,6 +1869,89 @@
                         title="Keep what is open and forget this file">
                     Cancel
                 </button>
+            </div>
+        </div>
+    }
+
+    <!-- ************************************************************************************************************** -->
+
+    @*
+        One rule's settings, laid out like one layer's and opened from the same gear.
+
+        **It edits the rule's line, not a form of its parts.** A rule is a line of the deck - that is what is
+        parsed, saved, exported and read back, which is what addRule's own note is about - and a DrcRule
+        carries more than the four things a form would show it: an except clause, a window, a step, a metric,
+        each present on some rules and not others. Composing a line back from boxes would quietly drop
+        whichever of those this rule happened to use, and the rule would go on being listed while checking
+        something narrower than it says. The line is lossless because it is the thing itself.
+
+        So the boxes above it are a readout of what the parser made of that line, and the line is what can be
+        typed. Applying re-reads the whole deck exactly as adding does, and refuses on the same terms.
+    *@
+    @if (ruleSettingsFor is not null)
+    {
+        <div class="popupDiv popupZIndex_0 ruleSettingsPopup"
+             style="left: @(ruleSettingsLeft.ToString(CultureInfo.InvariantCulture))px; top: @(ruleSettingsTop.ToString(CultureInfo.InvariantCulture))px; max-height: calc(100vh - @(ruleSettingsTop.ToString(CultureInfo.InvariantCulture))px - 12px);">
+            <div class="layerSettingsHeader">
+                <span class="layerSettingsTitle">Rule settings</span>
+
+                <button type="button" class="buttonStyle2 closeButton" @onclick="closeRuleSettings"
+                        title="Close. Nothing is applied until Apply is pressed">&times;</button>
+            </div>
+
+            <hr class="layerSettingsRule" />
+
+            @*
+                What the deck currently makes of this rule. Read-only, because every one of them is decided
+                by the line below - showing them as boxes would be offering to change a thing that is really
+                changed somewhere else.
+            *@
+            <label class="layerSettingsRow" title="What this rule is called in the deck">
+                <span>Name:</span>
+                <span class="ruleSettingsValue">@ruleSettingsFor.Id</span>
+            </label>
+
+            <label class="layerSettingsRow" title="What this rule measures">
+                <span>Check:</span>
+                <span class="ruleSettingsValue">@ruleSettingsFor.Check.ToString().ToLowerInvariant()</span>
+            </label>
+
+            <label class="layerSettingsRow" title="The layers this rule is measured on">
+                <span>Layers:</span>
+                <span class="ruleSettingsValue">@string.Join(", ", ruleSettingsFor.Operands)</span>
+            </label>
+
+            <label class="layerSettingsRow" title="The limit this rule holds the layout to, in database units">
+                <span>Limit:</span>
+                <span class="ruleSettingsValue">@ruleSettingsFor.Value</span>
+            </label>
+
+            <hr class="layerSettingsRule" />
+
+            @*
+                The line itself, which is the only thing here that can be typed into.
+
+                A textarea rather than an input: a rule with an except clause and a metric runs well past the
+                width of this popup, and a line that has to be scrolled sideways to be read is one that gets
+                edited blind.
+            *@
+            <label class="layerSettingsRow ruleSettingsLineRow" title="This rule as the deck holds it. The guide under the list says what one looks like">
+                <span>Line:</span>
+            </label>
+
+            <textarea class="ruleSettingsLine"
+                      rows="2"
+                      @bind="ruleSettingsLine"
+                      @bind:event="oninput"></textarea>
+
+            @if (ruleSettingsProblem.Length > 0)
+            {
+                <div class="addLayerProblem ruleSettingsProblem">@ruleSettingsProblem</div>
+            }
+
+            <div class="ruleSettingsActions">
+                <button type="button" class="buttonStyle2 smallButton rulesButton" @onclick="commitRuleSettings">Apply</button>
+                <button type="button" class="buttonStyle2 smallButton rulesButton" @onclick="closeRuleSettings">Cancel</button>
             </div>
         </div>
     }
@@ -1956,6 +2292,14 @@
                 {
                     <span class="layerSidebarAction" @onclick="resetStack" title="Put this layer back on the even spacing the view works out for itself">Reset stack</span>
                 }
+
+                @*
+                    Removing the layer is the × at the end of its row, not a line in here.
+
+                    It was both for a while, which is one thing said in two places - and the row is the
+                    better of the two: it is where the layer is, it is one press rather than two, and every
+                    other list in the app that can be shortened is shortened from its own rows.
+                *@
             </div>
         </div>
     }
@@ -2085,16 +2429,6 @@
     ///</summary>
     private string previewMarkup = "";
     private string previewViewBox = "0 0 1 1";
-
-    ///<summary>
-    ///The open file's own thumbnail, kept so that leaving the list puts it back. Null until something asks to
-    ///see one; see buildExamplePreview.
-    ///
-    ///Held apart from what is on screen because hovering shows a *different* file: the pointer wanders
-    ///across the list and the picture follows it, and when the pointer leaves the answer is the file that
-    ///is actually open, not whichever row it happened to pass over last.
-    ///</summary>
-    private (string Markup, string ViewBox)? selectedPreview = null;
 
     ///<summary>What the list is narrowed to, and the rows that survive it.</summary>
     private string exampleFilter = "";
@@ -2602,14 +2936,6 @@
     ///</summary>
     private string historyPreviewFor = "";
 
-    ///<summary>The row being renamed, or null when none is. Only one at a time.</summary>
-    private LayerKey? editingLayer = null;
-    private string editingName = "";
-
-    ///<summary>Set when the box has just appeared, so the next render can put the caret in it.</summary>
-    private bool focusLayerNameBox = false;
-    private ElementReference layerNameBox;
-
     ///<summary>
     ///Where typed names are kept between visits. Not per file: the numbers mean the same thing across every
     ///file of one technology, so naming them while looking at one cell should name them for all 897.
@@ -2790,6 +3116,90 @@
         get { return embedding.Mode == AppMode.NoEdit; }
     }
 
+    ///
+    ///Whether the layer list may be added to and taken from.
+    ///
+    ///**Not in 3D**, on top of the read-only case. Adding a layer is for putting a shape on it and removing
+    ///one takes its shapes with it, and neither of those is a thing this view can show you doing: there is no
+    ///draw tool, and a stack rebuilt under a press that gave no sign of being an edit is a surprise. The list
+    ///is still there to say what is in the file and to turn slabs on and off, which is what it is for here.
+    ///
+    ///The text view has no layer list at all, so 2D is the only place this is true.
+    ///
+    private bool layersAreEditable
+    {
+        get { return !noEditing && view == ViewType.View2DSvg; }
+    }
+
+    ///
+    ///Whether pressing a row does anything at all, which is what earns it a pointer.
+    ///
+    ///Two different somethings. In 2D the press takes that layer as the one a shape goes on, which is only a
+    ///question while there is a tool out to draw with; in 3D there is no shape to place, so it flashes the
+    ///slab the row names instead. Both are a press with an answer, so both get the cursor that says one is
+    ///there - and in the text view, where neither is true, the list is not drawn at all.
+    ///
+    ///The eye and the lock are their own buttons and carry their own cursors, so a row with no draw tool out
+    ///is still a row with two things on it that can be pressed.
+    ///
+    private bool layerRowsRespondToPress
+    {
+        get { return drawingView is not null || viewer is Viewer3D; }
+    }
+
+    ///
+    ///How long a row stays lit, and how many times it brightens while it does.
+    ///
+    ///**The same pair as the slab's own flash** in ThreeInterop's PULSE_MS and PULSE_BEATS. A row that beats
+    ///at a different rate from the thing it names reads as two events rather than as one thing answering.
+    ///
+    private const int ROW_PULSE_MS = 1250;
+
+    ///
+    ///Which row is flashing, and a count of how many flashes have been started.
+    ///
+    ///The count is what lets a second press cancel the first one's clear. Without it the first flash's timer
+    ///comes back a moment into the second flash and puts the light out, so pressing two rows in a row leaves
+    ///the second one dark - the bug looks like the flash being unreliable rather than like a stale timer.
+    ///
+    private LayerKey? pulsingLayer;
+    private int pulseRun;
+
+    ///
+    ///Lights a row, and puts it out again when the flash has run.
+    ///
+    ///**Cleared before it is set**, with a render in between. A CSS keyframe animation runs when the class
+    ///arrives and not again while it stays, so pressing the same row twice would light it once: the class is
+    ///already there and the browser has already finished with it. Taking it off, letting a render carry that,
+    ///then putting it back is what makes the second press flash.
+    ///
+    private async Task flashLayerRow(LayerKey id)
+    {
+        pulseRun++;
+
+        var mine = pulseRun;
+
+        pulsingLayer = null;
+
+        StateHasChanged();
+
+        await Task.Delay(1);
+
+        pulsingLayer = id;
+
+        StateHasChanged();
+
+        await Task.Delay(ROW_PULSE_MS);
+
+        //A later press owns the light now, and putting it out here would cut that one short.
+        if (pulseRun != mine)
+            return;
+
+        pulsingLayer = null;
+
+        StateHasChanged();
+    }
+
     ///<summary>
     ///Applies ?view= from the address, on the first load and on every later change to it - which covers
     ///arriving on a shared link, and the back button walking through one.
@@ -2814,15 +3224,6 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await openFileFromQuery();
-
-        //The rename box only exists after the render that swapped it in, so the caret has to be put there
-        //from here rather than when the click was handled.
-        if (focusLayerNameBox)
-        {
-            focusLayerNameBox = false;
-
-            await layerNameBox.FocusAsync();
-        }
 
         //A restored session's own controls, once the view that owns them exists - which is this render.
         await applyRestoredSettings();
@@ -3147,6 +3548,299 @@
 
         StateHasChanged();
     }
+
+    #region Adding and removing a rule **********************************
+
+    ///<summary>Whether the box for a new rule line is open.</summary>
+    private bool addingRule = false;
+
+    private string newRuleLine = "";
+
+    ///<summary>What the parser said about what was typed, shown under the box.</summary>
+    private string addRuleProblem = "";
+
+    private void startAddingRule()
+    {
+        addingRule = true;
+        newRuleLine = "";
+        addRuleProblem = "";
+    }
+
+    private void cancelAddingRule()
+    {
+        addingRule = false;
+        addRuleProblem = "";
+    }
+
+    ///<summary>Enter adds and Escape closes, the same as the layer boxes one panel over.</summary>
+    private async Task onAddRuleKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await addRule();
+        else if (e.Key == "Escape")
+            cancelAddingRule();
+    }
+
+    ///
+    ///Adds a rule by adding its line to the deck and reading the deck again.
+    ///
+    ///**One box holding a line of the deck's own grammar, rather than a form of dropdowns.** A rule is a
+    ///check, some layers, a number and a description, and it can also carry `except`, a window and a step -
+    ///so a form that covered the grammar would be most of a form builder, and one that did not would be a
+    ///panel that quietly cannot express half the decks people write. The grammar is documented, the guide
+    ///is a press away in this same panel, and the parser already says exactly what is wrong with a line.
+    ///
+    ///**Read back as a whole deck rather than appended to the parsed one.** The text is what a deck is -
+    ///it is what gets saved, exported and re-read - so a rule that existed only in the parsed list would
+    ///vanish the next time anything re-read the text, and a rule referring to a layer the deck derives
+    ///would be accepted here and rejected there.
+    ///
+    private async Task addRule()
+    {
+        string line = newRuleLine.Trim();
+
+        if (line.Length == 0)
+        {
+            addRuleProblem = "Type a rule line - the guide above says what one looks like.";
+
+            return;
+        }
+
+        string was = drcDeckText;
+        string proposed = was;
+
+        if (proposed.Length > 0 && !proposed.EndsWith('\n'))
+            proposed += "\n";
+
+        proposed += line + "\n";
+
+        var deck = DrcDeck.Parse(proposed);
+
+        //The parser reports by line, and the line that changed is the one that was added - so a complaint
+        //about any other line was already there and is not this rule's fault.
+        string? complaint = deck.Problems.FirstOrDefault();
+
+        if (complaint is not null)
+        {
+            addRuleProblem = complaint;
+
+            return;
+        }
+
+        //Understood but not measurable is still a refusal, and one worth showing here rather than letting
+        //the rule land in the list as "not measurable" with no explanation of when that happened.
+        if (deck.Rules.Count <= (drcDeck?.Rules.Count ?? 0))
+        {
+            addRuleProblem = deck.Refused.LastOrDefault() ?? "That line added no rule.";
+
+            return;
+        }
+
+        await useDeck(deck, proposed);
+
+        addingRule = false;
+        addRuleProblem = "";
+        newRuleLine = "";
+    }
+
+    ///
+    ///Takes a rule out by removing its line and reading the deck again.
+    ///
+    ///By line rather than by id, because a deck may carry the same id twice - and that deck is exactly the
+    ///one somebody is in this panel to fix. See DrcRule.Line.
+    ///
+    private async Task removeRule(DrcRule rule)
+    {
+        if (drcDeck is null || noEditing || rule.Line <= 0)
+            return;
+
+        var lines = drcDeckText.Replace("\r\n", "\n").Split('\n').ToList();
+
+        if (rule.Line > lines.Count)
+            return;
+
+        //Asked, the same as taking a layer out - a × at the end of a row is one press from the row itself,
+        //and a rule removed by accident is a check that silently stops being made.
+        if (!await js.InvokeAsync<bool>("confirm", $"Remove rule {rule.Id}?"))
+            return;
+
+        lines.RemoveAt(rule.Line - 1);
+
+        string proposed = string.Join("\n", lines);
+
+        await useDeck(DrcDeck.Parse(proposed), proposed);
+    }
+
+    ///<summary>Which rule's settings are open, or null when none are. One at a time.</summary>
+    private DrcRule? ruleSettingsFor = null;
+
+    ///<summary>That rule's line as it is being typed, and whatever the parser said about it last.</summary>
+    private string ruleSettingsLine = "";
+    private string ruleSettingsProblem = "";
+
+    ///<summary>Where the popup sits. Its own pair rather than the layer picker's, so opening one does not
+    ///move the other - the two panels are in different sidebars and can both be up.</summary>
+    private double ruleSettingsLeft = 0;
+    private double ruleSettingsTop = 0;
+
+    ///
+    ///Opens one rule's settings, filled from the deck's own text.
+    ///
+    ///**Read out of the text by line rather than rebuilt from the parsed rule**, for the reason the popup's
+    ///own note gives: the line is the rule, and everything a DrcRule holds came from it. Reading it back is
+    ///also what makes Apply a no-op when nothing was typed.
+    ///
+    private async Task openRuleSettings(DrcRule rule, MouseEventArgs e)
+    {
+        ruleSettingsFor = rule;
+        ruleSettingsProblem = "";
+        ruleSettingsLine = lineOfRule(rule);
+
+        //Against the right-hand edge of the view, level with the row - the same placement and the same
+        //reasoning as openLayerSettings, which that method's own note sets out.
+        double edge = 0;
+
+        try
+        {
+            edge = await js.InvokeAsync<double>("viewRightEdge");
+        }
+        catch { }
+
+        double beside = e.ClientX - PickerWidth - 16;
+
+        if (edge > 0)
+            beside = edge - PickerWidth - 6;
+
+        ruleSettingsLeft = Math.Max(8, beside);
+        ruleSettingsTop = Math.Max(8, e.ClientY - 24);
+    }
+
+    ///<summary>
+    ///The deck line a rule was parsed from, or empty where the deck no longer has one there.
+    ///
+    ///<see cref="DrcRule.Line"/> is one-based and counted in the text as it was parsed, so this reads the
+    ///same text back the same way removeRule does.
+    ///</summary>
+    private string lineOfRule(DrcRule rule)
+    {
+        var lines = drcDeckText.Replace("\r\n", "\n").Split('\n');
+
+        if (rule.Line < 1 || rule.Line > lines.Length)
+            return "";
+
+        return lines[rule.Line - 1];
+    }
+
+    private void closeRuleSettings()
+    {
+        ruleSettingsFor = null;
+        ruleSettingsProblem = "";
+    }
+
+    ///
+    ///Applies a typed rule line by putting it back where it came from and reading the whole deck again.
+    ///
+    ///**The whole deck, not this rule on its own**, which is addRule's reasoning exactly: the text is what a
+    ///deck is, so a rule that existed only in the parsed list would vanish the next time anything re-read
+    ///the text - and a line naming a layer this deck derives has to be judged against the deck that derives
+    ///it rather than against itself.
+    ///
+    ///**Refused rather than half-applied.** A line the parser complains about, or one that reads as no rule
+    ///at all, leaves the deck exactly as it was and says so in the popup - the same two refusals adding a
+    ///rule can hit, for the same reasons.
+    ///
+    private async Task commitRuleSettings()
+    {
+        if (ruleSettingsFor is not DrcRule rule)
+            return;
+
+        string typed = ruleSettingsLine.Trim();
+
+        if (typed.Length == 0)
+        {
+            ruleSettingsProblem = "A rule needs a line. Use the × on the row to take it out.";
+
+            return;
+        }
+
+        var lines = drcDeckText.Replace("\r\n", "\n").Split('\n').ToList();
+
+        if (rule.Line < 1 || rule.Line > lines.Count)
+        {
+            ruleSettingsProblem = "That rule is no longer where the deck had it. Close this and try again.";
+
+            return;
+        }
+
+        //Unchanged is not an edit, and re-reading the deck for it would throw away the results on screen.
+        if (lines[rule.Line - 1] == typed)
+        {
+            closeRuleSettings();
+
+            return;
+        }
+
+        lines[rule.Line - 1] = typed;
+
+        string proposed = string.Join("\n", lines);
+
+        var deck = DrcDeck.Parse(proposed);
+
+        //
+        //**Complaints about this line only.**
+        //
+        //A deck can arrive already carrying problems on other lines - that is what the panel is for - so
+        //taking the first complaint the way addRule does would blame this edit for a fault it did not make.
+        //The parser reports by line, and the line that changed is this one.
+        //
+        string? complaint = deck.Problems.FirstOrDefault(each => each.Contains($"Line {rule.Line}"));
+
+        if (complaint is not null)
+        {
+            ruleSettingsProblem = complaint;
+
+            return;
+        }
+
+        //Understood but not measurable is still a refusal - see addRule. Counted rather than searched,
+        //because a deck may carry the same id twice and this one is edited by line.
+        if (deck.Rules.Count < (drcDeck?.Rules.Count ?? 0))
+        {
+            ruleSettingsProblem = deck.Refused.LastOrDefault() ?? "That line reads as no rule.";
+
+            return;
+        }
+
+        await useDeck(deck, proposed);
+
+        closeRuleSettings();
+    }
+
+    ///<summary>
+    ///Puts a changed deck in place: the parsed form, the text it came from, and everything the last one's
+    ///results were about. Shared by adding and removing so the two cannot leave different things behind.
+    ///</summary>
+    private async Task useDeck(DrcDeck deck, string text)
+    {
+        drcDeck = deck;
+        drcDeckText = text;
+
+        //What the last deck found is not what this one would find - the same reset a loaded deck does.
+        drcResult = null;
+        drcMarkers = "";
+
+        summarizeDrc();
+
+        //Re-checked where that was asked for, so the markers on screen are about the deck in the panel.
+        if (drcContinuous && gds is not null)
+            await runDrc();
+
+        await saveSession();
+
+        StateHasChanged();
+    }
+
+    #endregion ***********************************************
 
     ///<summary>
     ///Where the deliberately-failing deck is served from, for seeing what a violation looks like.
@@ -3572,7 +4266,7 @@
             said.Append($"{found.Violations.Count} violations");
 
         if (brokenRules.Count > 0)
-            said.Append($" \u00b7 {string.Join(", ", brokenRules.OrderBy(rule => rule, StringComparer.Ordinal))}");
+            said.Append($" \u00b7 {string.Join("; ", brokenRules.OrderBy(rule => rule, StringComparer.Ordinal).Select(describeRule))}");
 
         if (found.Complete)
             said.Append($" \u00b7 all {drcDeck!.Rules.Count} rule(s) ran");
@@ -3580,6 +4274,28 @@
             said.Append($" \u00b7 not fully checked: {string.Join("; ", found.NotRun.Concat(found.Problems))}");
 
         return said.ToString();
+    }
+
+    ///
+    ///A broken rule, named and then said in words.
+    ///
+    ///**The description as well as the id**, which is the same sentence the rule's own row shows on hover.
+    ///An id like "poly.1a" says which rule without saying what it wanted, and this message is the one place
+    ///a run's result is read - so it was naming rules at somebody who then had to go and point at each one
+    ///in turn to find out what had actually gone wrong.
+    ///
+    ///**The first rule carrying that id**, because a deck may hold the same id twice - see removeRule - and
+    ///an id is all a violation carries back. A rule with no description of its own falls back to the bare
+    ///id rather than trailing a colon with nothing after it.
+    ///
+    private string describeRule(string id)
+    {
+        var rule = drcDeck?.Rules.FirstOrDefault(each => each.Id == id);
+
+        if (rule is null || rule.Description.Length == 0)
+            return id;
+
+        return $"{id}: {rule.Description}";
     }
 
     #endregion **************************************************************************
@@ -3655,6 +4371,11 @@
         var names = LayerNames.Parse(text);
 
         applied = names.ApplyTo(gds!.AdditionalInformation.Layers);
+
+        //And the stack worked out over the heights it just brought, which is what puts the layers it says
+        //nothing about clear of the ones it does. ApplyTo writes heights onto layers; only this reads them
+        //back as a stack. See SetStackingOffsets.
+        gds!.AdditionalInformation.SetStackingOffsets(layerSpacing());
 
         layerNamesLoaded = applied > 0;
 
@@ -3770,6 +4491,11 @@
             return;
 
         LayerNames.Clear(gds.AdditionalInformation);
+
+        //And the heights worked out again at the distance the 3D view is currently holding, which is the one
+        //thing Clear cannot know for itself. Without this the layers keep the mapping's heights after the
+        //mapping has gone, and the settings popup goes on reporting them.
+        gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
 
         layerNamesLoaded = false;
 
@@ -3927,15 +4653,34 @@
         await showPreviewOf(fileName);
     }
 
-    ///<summary>Puts the open file's thumbnail back, for when the pointer leaves either list.</summary>
-    private void showSelectedPreview()
+    ///<summary>
+    ///Empties the frame, for when the pointer leaves either list.
+    ///
+    ///**It used to put the open file's thumbnail there instead**, on the reasoning that when the pointer
+    ///leaves the list the answer is the file that is actually open. What that produced is a popup for
+    ///choosing a file whose picture, most of the time, is of the file you already have - and the drawing on
+    ///the canvas behind it, shrunk into a box. It reads as though a row is selected when none is, and the
+    ///one moment the picture is worth anything is the moment the pointer is on a row, which is exactly when
+    ///it is not showing this.
+    ///
+    ///So the idle state is empty and says what to do. Three things went with the picture: the field holding
+    ///it, the pair of methods that deferred building it, and the call on every file open that rebuilt it -
+    ///which was a flatten and a full-fidelity SVG build of the whole layout, about half the cost of opening
+    ///a large file, for a thumbnail nobody asked for.
+    ///
+    ///**And this is only ever called by the pointer leaving.** It used to be called on file open as well,
+    ///to throw away a thumbnail that had gone stale. With no thumbnail there is nothing stale about a
+    ///preview of the row under the pointer, and clearing it there blanked the picture at the exact moment a
+    ///row was clicked - which is the moment somebody is looking at it.
+    ///</summary>
+    private void clearPreview()
     {
         previewWait?.Cancel();
 
         previewFor = "";
         historyPreviewFor = "";
-        previewMarkup = selectedPreview?.Markup ?? "";
-        previewViewBox = selectedPreview?.ViewBox ?? "0 0 1 1";
+        previewMarkup = "";
+        previewViewBox = "0 0 1 1";
     }
 
     ///<summary>
@@ -4027,10 +4772,8 @@
         showExamples = false;
         showHistory = true;
 
-        drawSelectedPreview();
-
-        //Whatever is open, until a row is pointed at. The same starting picture the Examples popup shows.
-        showSelectedPreview();
+        //Empty until a row is pointed at, the same as the Examples popup opens.
+        clearPreview();
     }
 
     ///<summary>The same for the bundled ones, which need no store read to list.</summary>
@@ -4042,7 +4785,7 @@
         showHistory = false;
         showExamples = true;
 
-        drawSelectedPreview();
+        clearPreview();
     }
 
     ///
@@ -4052,6 +4795,25 @@
     ///descendant of it, so crossing from a button onto a list - or from one button to the other - never
     ///leaves the host, and the list does not flicker on the way.
     ///
+    ///<remarks id="closeOnChoice">
+    ///**And when a file is chosen out of one**, which is a reversal worth writing down because the other way
+    ///round used to be the point.
+    ///
+    ///The list stayed up so several cells could be looked at without reopening it each time, and that was
+    ///right when clicking a row was how you looked at one. It is not any more. Pointing at a row previews it
+    ///without opening anything, which is the looking; and a row that is *chosen* now asks first, so clicking
+    ///through a list is a dialog per cell rather than a glance. What is left after a choice is a list nobody
+    ///is reading, sitting over the file it just opened.
+    ///
+    ///**At the moment of the choice, not when the file finishes arriving.** Closing it at the end read
+    ///better - the list would survive a file that failed to parse - and it is a race: opening one is a
+    ///fetch and a parse, and the name is on screen well before that returns. Reach for the list again in
+    ///that window and it opens, then the tail of the previous choice runs and shuts it under you. Three
+    ///specs caught it as flakiness, which is what it looks like from outside.
+    ///
+    ///A question answered with Cancel still returns before this, which is the case worth keeping. An open
+    ///that then fails says so with an alert and leaves the list to be reopened, which is a keystroke.
+    ///</remarks>
     private void closeLists()
     {
         showExamples = false;
@@ -4203,6 +4965,24 @@
             return;
         }
 
+        //
+        //**After the row is known to be good, and not before.**
+        //
+        //A row whose payload has gone opens nothing, so asking whether it may close the open file is asking
+        //about something that is not going to happen - and the answer either way ends in the same place,
+        //with the row dropped and an alert. The question belongs to the press that is actually going to
+        //replace what is on screen.
+        //
+        //Answering yes to a row naming the file already open is not a no-op either: what comes back is the
+        //*saved* session, so anything changed since goes. The question names one file twice there, which
+        //reads oddly and is true.
+        //
+        if (!await discardsWhatIsOpen($"Open {name}"))
+            return;
+
+        //Chosen, so the list has done its job - see closeOnChoice.
+        closeLists();
+
         //The address does not win here. Choosing a row *is* the deliberate request, so it is the address
         //that gets rewritten to match rather than the other way round.
         if (!await applySavedState(session, addressWins: false))
@@ -4255,7 +5035,7 @@
         previewCache.Remove(HistoryPreviewPrefix + name);
 
         if (historyPreviewFor == name)
-            showSelectedPreview();
+            clearPreview();
     }
 
     ///<summary>
@@ -4293,7 +5073,7 @@
         //Whatever is on screen stays on screen - this clears a list of files, not the one being looked at.
         //It does mean the open file can earn its row back on the next change, which is right: it is still
         //an uploaded or edited file.
-        showSelectedPreview();
+        clearPreview();
     }
 
     ///<summary>Keeps history thumbnails out of the way of the example ones. See showHistoryPreviewOf.</summary>
@@ -4311,57 +5091,6 @@
     ///is upside down against a layout tool - a long-standing thing recorded under Known gaps. A preview
     ///that quietly corrected it would be the one picture in the app that disagreed with the rest.
     ///</summary>
-    ///
-    ///Marks the open file's thumbnail as needing to be drawn, without drawing it.
-    ///
-    ///**A thumbnail is only ever seen inside the Examples or History popup**, and drawing one is a flatten
-    ///and a full-fidelity SVG build of the whole layout - the same work the viewer does, for a picture two
-    ///hundred pixels across. Measured at twenty thousand elements it was about half the cost of opening the
-    ///file, paid every time, for something most people never look at.
-    ///
-    ///So it is deferred to <see cref="drawSelectedPreview"/>, which runs when a popup opens. Still once per
-    ///file rather than per keystroke, which is why this was moved out of the popup's own render in the first
-    ///place - the point was never to do it eagerly, only to stop doing it repeatedly.
-    ///
-    private void buildExamplePreview()
-    {
-        selectedPreview = null;
-
-        //
-        //**Unless a popup is already open, in which case it is on screen and has to change now.**
-        //
-        //Choosing a cell from the Examples list leaves the list open - that is what makes it worth having,
-        //since it is the difference between reading names and seeing what they are. Invalidating without
-        //drawing blanked the picture the moment a row was clicked.
-        //
-        //So what is actually deferred is the case where nobody is looking: an upload, a link, a restored
-        //session. Which is also the case where the file is most likely to be a large one.
-        //
-        if (showExamples || showHistory)
-        {
-            drawSelectedPreview();
-
-            return;
-        }
-
-        //Nothing is being hovered when a file has just been opened, so this is also what to show.
-        showSelectedPreview();
-    }
-
-    ///<summary>Draws the open file's thumbnail if it has not been drawn yet. Called when a popup opens.</summary>
-    private void drawSelectedPreview()
-    {
-        if (selectedPreview is not null)
-            return;
-
-        if (gds is null)
-            selectedPreview = ("", "0 0 1 1");
-        else
-            selectedPreview = previewOf(gds, CurrentlySelectedFileName);
-
-        showSelectedPreview();
-    }
-
     ///
     ///Draws any file into a thumbnail: the markup, and a viewBox framing it.
     ///
@@ -5131,6 +5860,229 @@
         await saveChangedFile();
     }
 
+    #region Adding and removing a layer *********************************
+
+    ///<summary>Whether the two boxes for a new layer's pair are open. Closed is the ordinary state.</summary>
+    private bool addingLayer = false;
+
+    private string newLayerNumber = "";
+
+    private string newLayerDataType = "";
+
+    ///<summary>What was wrong with what was typed, shown under the boxes rather than in a dialog.</summary>
+    private string addLayerProblem = "";
+
+    private void startAddingLayer()
+    {
+        addingLayer = true;
+        newLayerNumber = "";
+        newLayerDataType = "0";
+        addLayerProblem = "";
+    }
+
+    private void cancelAddingLayer()
+    {
+        addingLayer = false;
+        addLayerProblem = "";
+    }
+
+    ///<summary>Enter adds and Escape closes, so two numbers do not need the mouse to finish.</summary>
+    private async Task onAddLayerKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await addLayer();
+        else if (e.Key == "Escape")
+            cancelAddingLayer();
+    }
+
+    ///
+    ///Puts a layer in the list that no shape is on yet.
+    ///
+    ///**Which is the only way to draw on a layer a file does not already use.** The list is built from what
+    ///the layout draws, so a new layout has none at all and an existing one offers only the numbers it
+    ///happens to carry - and the draw tool draws onto a row of that list. Without this, an empty layout was
+    ///somewhere you could not put anything.
+    ///
+    ///**An empty layer is not something GDSII can record**, and that is worth saying plainly rather than
+    ///hiding: the format stores elements, and a layer is only the number written on one. So a layer added
+    ///here and left empty is gone when the file is written and read back. Draw on it and it is in the file
+    ///like any other. Naming it is enough to keep it too, since a name is carried in the layermap the
+    ///session stores.
+    ///
+    private async Task addLayer()
+    {
+        if (gds is null)
+            return;
+
+        if (!short.TryParse(newLayerNumber.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out short number) || number < 0)
+        {
+            addLayerProblem = "The layer is a whole number, 0 or more.";
+
+            return;
+        }
+
+        if (!short.TryParse(newLayerDataType.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out short dataType) || dataType < 0)
+        {
+            addLayerProblem = "The datatype is a whole number, 0 or more.";
+
+            return;
+        }
+
+        var key = new LayerKey(number, dataType);
+
+        if (gds.AdditionalInformation.Layers.ContainsKey(key))
+        {
+            addLayerProblem = $"{key} is already in the list.";
+
+            return;
+        }
+
+        gds.AdditionalInformation.AddLayer(key);
+
+        //A new row changes what the stack is spaced over, so it is worked out again at the spacing in force
+        //- the same restack every other route that changes the layer table does. See SetStackingOffsets.
+        gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
+
+        addingLayer = false;
+        addLayerProblem = "";
+
+        getLayers();
+
+        await RenderGDS();
+
+        await saveChangedFile();
+    }
+
+    ///
+    ///Takes a layer out of the list, and its shapes out of the file.
+    ///
+    ///**Every shape on it, in every cell.** A layer belongs to the library rather than to the cell you
+    ///happen to be inside, so removing it from one cell would leave it in the list, in the file, and drawn
+    ///the moment you stepped into another cell - which is not what the word means.
+    ///
+    ///The shapes go through the edit history as one step, so it takes back in one press. The row itself is
+    ///dropped outside that, which needs no undo of its own: putting an element back registers its layer
+    ///again - see LayoutEdit.Put - so an undo restores both halves.
+    ///
+    private async Task removeLayer(CheckboxItem item)
+    {
+        //Guarded here as well as in the markup, because this takes shapes out of the file and a control being
+        //absent is not the same as an action being refused.
+        if (gds is null || noEditing)
+            return;
+
+        var key = item.Id;
+        var edits = new List<LayoutEdit>();
+
+        foreach (var structure in gds.StreamFormat.Structures)
+        {
+            foreach (var group in Hierarchy.LayersIn(structure))
+            {
+                if (group.Layer != key)
+                    continue;
+
+                foreach (var model in group.Shapes)
+                    edits.Add(new DeleteElement(gds, structure, model));
+            }
+        }
+
+        //
+        //**Always asked, because the control is one press at the end of a row.**
+        //
+        //It was asked only where shapes would go with the layer, on the reading that an empty row is
+        //nothing to lose. That was right while this lived behind a gear and two clicks; on a × beside the
+        //checkbox it is a mis-click away from the thing next to it, and a row with a name, a color and a
+        //height on it is not nothing even when no shape carries it.
+        //
+        string question = $"Remove {item.Label}?";
+
+        if (edits.Count > 0)
+            question = $"Delete {edits.Count} shape{(edits.Count == 1 ? "" : "s")} on {item.Label} and remove the layer?";
+
+        if (!await js.InvokeAsync<bool>("confirm", question))
+            return;
+
+        if (edits.Count > 0)
+            editHistory.Do(new CompoundEdit("Remove layer", edits));
+
+        //
+        //Kept, so taking the deletion back puts the row back as it was.
+        //
+        //Putting an element in registers its layer - see LayoutEdit.Put - so an undo does restore the row
+        //on its own. What it cannot restore is what the row *said*: a re-registered layer arrives with the
+        //gray a new one gets and no name, no height and no role, because none of that is in the file. So
+        //the object itself is held here and put back by restoreRemovedLayer.
+        //
+        //Only where something was deleted. With nothing to undo there is nothing that can bring the row
+        //back, and holding the object would just be waiting for a key that never returns.
+        //
+        if (edits.Count > 0)
+            removedLayer = (key, gds.AdditionalInformation.Layers[key]);
+
+        gds.AdditionalInformation.Layers.Remove(key);
+        gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
+
+        settingsFor = null;
+
+        getLayers();
+
+        await RenderGDS();
+
+        await saveChangedFile();
+    }
+
+    ///<summary>The row last taken out, and what it said. See removeLayer.</summary>
+    private (LayerKey Key, Layer Was)? removedLayer;
+
+    ///
+    ///Puts a removed layer's settings back on the row an undo has just re-registered.
+    ///
+    ///Run after every edit rather than hooked onto the undo, because the shell does not own the undo - the
+    ///2D view does, and it reports an edit having happened without saying which way round it went. Asking
+    ///"is the row I am holding back, and bare?" answers the same question without the two having to agree
+    ///about anything.
+    ///
+    private void restoreRemovedLayer()
+    {
+        if (gds is null || removedLayer is not (LayerKey key, Layer was))
+            return;
+
+        if (!gds.AdditionalInformation.Layers.TryGetValue(key, out var now))
+            return;
+
+        //Only the bare row a re-registered layer arrives as. Somebody who has drawn on that pair again and
+        //set it up themselves has said something about it, and this has nothing to put back over that.
+        if (now.Name is not null || now.Color != AdditionalGDSInformation.NewLayerColor)
+            return;
+
+        gds.AdditionalInformation.Layers[key] = was;
+        gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
+
+        removedLayer = null;
+    }
+
+    ///<summary>How many shapes are on a layer, for the row that offers to remove it.</summary>
+    private int shapesOn(LayerKey key)
+    {
+        if (gds is null)
+            return 0;
+
+        int found = 0;
+
+        foreach (var structure in gds.StreamFormat.Structures)
+        {
+            foreach (var group in Hierarchy.LayersIn(structure))
+            {
+                if (group.Layer == key)
+                    found += group.Shapes.Count;
+            }
+        }
+
+        return found;
+    }
+
+    #endregion ***********************************************
+
     ///<summary>
     ///Where the 3D view's spacing slider is, or the default when that view has not been opened. The shell
     ///does not own the slider - the view does - so this reads it back out of a written session rather than
@@ -5139,16 +6091,25 @@
     private int layerSpacing()
     {
         if (gds is null)
-            return DefaultLayerSpacing;
+            return DefaultLayerSpread;
 
         var settings = new SavedSession();
 
         viewer?.WriteSettings(settings);
 
-        if (settings.LayerSpacing > 0)
+        //
+        //**Any spread at all, nought included.**
+        //
+        //This asked for one greater than zero, from when zero was below the slider's own minimum and could
+        //only mean "the view has not been opened, so it wrote nothing". Zero is now where the slider starts
+        //and the commonest thing it will ever report, and reading it as "unset" would put the default back
+        //in its place - which happens to be the same number today and would stop being one the moment the
+        //default moved. A spread cannot be negative, so that is the test.
+        //
+        if (settings.LayerSpacing >= 0)
             return settings.LayerSpacing;
 
-        return DefaultLayerSpacing;
+        return DefaultLayerSpread;
     }
 
     ///<summary>
@@ -5156,8 +6117,13 @@
     ///
     ///It was a 50 written next to a comment saying it matched two other 50s. Three copies of one number,
     ///and the third - the 3D view's slider - had already drifted to 10.
+    ///
+    ///Now nought: a file opens on the heights the layermap gives it, with nothing added between them. The
+    ///50 it used to be lives on as <see cref="AdditionalGDSInformation.DefaultLayerSpacing"/>, which was
+    ///always doing a second job - the rung height of the even stack a file with no layermap at all gets -
+    ///and keeps doing only that.
     ///</summary>
-    private const int DefaultLayerSpacing = AdditionalGDSInformation.DefaultLayerSpacing;
+    private const int DefaultLayerSpread = AdditionalGDSInformation.DefaultLayerSpread;
 
     ///<summary>The custom stack, as "65/20=100,50" - height then thickness - for storing in a session.</summary>
     private List<string> customStack()
@@ -5321,7 +6287,7 @@
         return drawingView is Viewer2DSvg svg && svg.DrawOn == item.Id;
     }
 
-    ///<summary>What a click on the row does, which is not the same thing while a shape is being drawn.</summary>
+    ///<summary>What a click on the row does, which is only a question while a shape is being drawn.</summary>
     private string rowTitle(CheckboxItem item)
     {
         if (drawingView is null)
@@ -5333,8 +6299,69 @@
         return "Draw on this layer";
     }
 
+    ///
+    ///The rule that fades the locked layers, or nothing at all when none are locked.
+    ///
+    ///**A stylesheet rather than a redraw.** The picture already carries a class per layer - see
+    ///SvgWriter.ClassFor - so which layers recede is a question CSS can answer on its own, and locking one
+    ///costs a style recalculation instead of rebuilding every path in the document. Unlocking is then exact:
+    ///nothing about the drawing was changed to get into it.
+    ///
+    ///**This is the half that only *looks* like the feature.** Fading says which layers are not in hand;
+    ///what actually puts them out of reach is <see cref="CheckboxItem.EditableLayers"/> over in the view,
+    ///because whether a shape answers a click is settled in C# by Picking.At walking the layout. A
+    ///`pointer-events` rule is worth having for the labels, which are real nodes - but on its own it greys
+    ///the shapes out and changes nothing about which of them can be picked up and dragged.
+    ///
+    ///Scoped by id, so it beats the per-layer opacity the picture sets on itself without needing to shout.
+    ///
+    private MarkupString lockedStyle()
+    {
+        var locked = CheckboxItem.LockedLayers(checkboxItems);
+
+        if (locked.Count == 0)
+            return new MarkupString("");
+
+        var selectors = locked.Select(key => $"#gdsSVG path.{SvgWriter.ClassFor(key)}");
+
+        return new MarkupString(
+            $"<style>{string.Join(",", selectors)}{{opacity:0.12;pointer-events:none}}</style>");
+    }
+
     private async Task useDrawLayer(CheckboxItem item)
     {
+        //
+        //**In 3D the same press asks a different question, because the first one has no answer there.**
+        //
+        //Picking a layer to draw on means nothing in a view with no draw tool, so the press did nothing at
+        //all - and the question that view *does* raise is which of the slabs the row names. So it flashes
+        //the one it names. See Viewer3D.PulseLayer.
+        //
+        if (viewer is Viewer3D stack)
+        {
+            await stack.PulseLayer(item.Id);
+
+            //
+            //And the row that was pressed, so the answer starts where the press did.
+            //
+            //A slab flashing somewhere in the stack is easy to miss: it can be behind another one, off the
+            //side of the view, scrolled past, or turned off entirely - and a press that appears to do
+            //nothing reads as a press that was not registered. The row is the one part of this that is
+            //certainly in front of you, because it is what was just clicked.
+            //
+            await flashLayerRow(item.Id);
+
+            return;
+        }
+
+        //
+        //**In 2D the press says where a new shape goes, and only that.**
+        //
+        //It briefly meant more: a press isolated that layer and worked on it alone. That was one layer at a
+        //time, and a layout is not edited one layer at a time - a via and the two metals it joins are three
+        //layers in hand together. Which layers are in hand is said by the locks on the rows now, so the
+        //press is back to the one question it can answer.
+        //
         if (drawingView is not Viewer2DSvg svg)
             return;
 
@@ -5356,63 +6383,13 @@
         await editor.OpenLayerMenu(e, item.Id);
     }
 
-    private void startRenaming(CheckboxItem item)
-    {
-        if (gds is null)
-            return;
-
-        //Not while a shape is being drawn. There a click on the row is choosing which layer that shape goes
-        //on, and opening a text box over the name as well would be answering a question nobody asked - the
-        //click has to mean one thing. Renaming is a tool away.
-        if (drawingView is not null)
-            return;
-
-        editingLayer = item.Id;
-        editingName = gds.AdditionalInformation.Layers[item.Id].Name ?? "";
-        focusLayerNameBox = true;
-    }
-
-    private void onLayerNameInput(ChangeEventArgs e)
-    {
-        editingName = e.Value?.ToString() ?? "";
-    }
-
-    ///<summary>Enter keeps the name, Escape abandons it. Anywhere else, clicking away keeps it too.</summary>
-    private async Task onLayerNameKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape")
-        {
-            editingLayer = null;
-
-            return;
-        }
-
-        if (e.Key == "Enter")
-            await commitLayerName();
-    }
-
     ///<summary>
-    ///Applies the typed name and remembers it. Blank clears the name rather than storing an empty one, so
-    ///the row goes back to bare numbers - which is the only way to undo a single rename without dropping
-    ///the whole mapping.
-    ///</summary>
-    private async Task commitLayerName()
-    {
-        if (editingLayer is null)
-            return;
-
-        var key = editingLayer.Value;
-        string typed = editingName;
-
-        editingLayer = null;
-
-        await applyLayerName(key, typed);
-    }
-
-    ///<summary>
-    ///Names one layer, from wherever the typing happened - the row in the sidebar or the box at the top of
-    ///that layer's settings. Split out when the settings grew a name box, so the two cannot drift: both
-    ///have to clear the name on blank, redraw, and remember it for the next file.
+    ///Names one layer, from the box at the top of that layer's settings.
+    ///
+    ///Split out when the settings grew a name box, back when the sidebar row could be typed into as well and
+    ///the two had to be kept from drifting. The row is a readout now - see the layerName span - so this has
+    ///one caller again, and is left separate because what it does is a named step rather than part of the
+    ///box's own key handling: clear the name on blank, redraw, and remember it for the next file.
     ///</summary>
     private async Task applyLayerName(LayerKey key, string typed)
     {
@@ -5832,6 +6809,11 @@
 
             int applied = LayerNames.Parse(session.LayerNames).ApplyTo(gds.AdditionalInformation.Layers);
 
+            //And the stack worked out over the heights it just brought, which is what puts the layers it says
+            //nothing about clear of the ones it does. ApplyTo writes heights onto layers; only this reads them
+            //back as a stack. See SetStackingOffsets.
+            gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
+
             layerNamesLoaded = applied > 0;
         }
 
@@ -6014,6 +6996,20 @@
         //file holding cells that can be brought across.
         //
         if (await mayOfferImport(chosen))
+            return;
+
+        //
+        //**After that offer, never before it.**
+        //
+        //The offer above already is this question, asked better: it says what the two answers are - bring
+        //the file in as a cell, or open it on its own - and taking the second one is choosing to replace.
+        //A confirm ahead of it would ask about replacing before saying that not replacing was available,
+        //and a second one behind it would ask twice about the same press.
+        //
+        //So this is the case the offer does not cover: nothing to import, or a view where importing makes
+        //no sense. There the upload simply replaces, and that is the press worth a question.
+        //
+        if (!await discardsWhatIsOpen($"Open {chosen.Name}"))
             return;
 
         //Needed by downloadFile, which names its output after whatever is currently loaded.
@@ -6281,6 +7277,20 @@
     ///</summary>
     private async Task openExample(string fileName)
     {
+        //
+        //**Asked here rather than in fetchExample, which is the difference between a press and everything
+        //else.** This is the row click and the app's own first open, and the first open has nothing on
+        //screen to lose - see discardsWhatIsOpen, which lets a null file straight through. The address
+        //watcher and the session restore go to fetchExample directly and are untouched, which is right:
+        //following a link is not somebody pressing a button, and a page that questioned its own URL on load
+        //would be answering a question nobody asked.
+        //
+        if (!await discardsWhatIsOpen($"Open {fileName}"))
+            return;
+
+        //Chosen, so the list has done its job - see closeOnChoice.
+        closeLists();
+
         //Set before fetching, the way the ?file= path and a restore both do it.
         //
         //Fetching loads, draws *and saves*, so a name set afterwards meant that save recorded the example
@@ -6477,6 +7487,103 @@
 
         StateHasChanged();
     }
+
+    ///
+    ///An empty layout: one cell, no layers, nothing drawn.
+    ///
+    ///**Every other way in needs a file.** The picker, the examples, a link, a drop - all of them start from
+    ///something that already exists, so there was no way to begin a layout of your own except by opening
+    ///somebody else's and deleting it. `GDS.NewLibrary` is the library's answer to the same gap; this is the
+    ///button on it.
+    ///
+    ///**No sky130 names, deliberately.** `carryLayerNamesOver` offers the bundled mapping only for a bundled
+    ///example, and this is not one - a blank layout is not a sky130 cell, and naming its layers after one
+    ///would be the same guess this app refuses to make about an upload. Whatever mapping was in hand still
+    ///carries, which is right: that is a choice somebody made.
+    ///
+    ///**It asks first.** This used to replace what was on screen the way opening an example does, on the
+    ///grounds that nothing is lost by it - an edited file is kept in the history list as bytes, which is
+    ///what that list is for. That is true and it is not the point: New sits in the toolbar beside Open and
+    ///Download, one press wipes the view, and a button that throws away the drawing with no warning is one
+    ///people learn to be afraid of. The prompt is a sentence, and it says where the file went rather than
+    ///only asking whether you meant it.
+    ///
+    private async Task newLayout()
+    {
+        if (!await discardsWhatIsOpen("Start a new layout"))
+            return;
+
+        //Not a bundled example any more, so the address stops naming one - and the layer panel stops
+        //offering that example's mapping.
+        clearExampleFromQuery();
+
+        CurrentlySelectedFileName = NewLayoutName;
+        CurrentlySelectedFileType = ".gds";
+
+        //The library's own name follows the file's, so a download and the thing inside it agree.
+        //
+        //The one cell is entered by the 2D view rather than here: a layout with exactly one top cell is
+        //opened into automatically, which is what gives the draw tool somewhere to put a shape. See
+        //Viewer2DSvg.onlyTopCell.
+        await openParsedFile(GDS.NewLibrary(NewLayoutName.ToUpperInvariant(), NewLayoutCell), intoHistory: true);
+
+        StateHasChanged();
+    }
+
+    ///
+    ///Asks whether the open layout may be closed, and says what closing it costs.
+    ///
+    ///**It names the file and where it goes**, rather than asking whether you are sure. "Are you sure?"
+    ///tells somebody nothing they did not already know and is answered by reflex; what is actually worth
+    ///knowing is that the file is still in the history list afterwards, or - for an untouched bundled
+    ///example, which never earns a row there - that it is a click away in the Examples list. Those are the
+    ///only two cases, and <c>fileIsHistoryWorthy</c> is already the app's answer to which one this is.
+    ///
+    ///The count of changes is in it when there are any, because that is the number somebody is weighing.
+    ///
+    ///Nothing open is nothing to discard, so the first press after a blank start goes straight through - and
+    ///so does the example the app opens for itself before anything is on screen.
+    ///
+    ///**Asked on every way in, whether or not anything has been edited.** The alternative was to ask only
+    ///once the file had been changed - which is the line <see cref="mayOfferImport"/> draws for its own
+    ///question, and the line that keeps a list of nine hundred examples click-through. Asked for anyway:
+    ///the point is knowing that the thing on screen is about to go, and a rule that is quiet most of the
+    ///time is a rule nobody can rely on.
+    ///
+    ///<paramref name="doing"/> is the first half of the sentence - what the press is about to do - so the
+    ///question names both files rather than only the one being closed.
+    ///
+    private async Task<bool> discardsWhatIsOpen(string doing)
+    {
+        if (gds is null)
+            return true;
+
+        string question = $"{doing} and close {CurrentlySelectedFileName}{CurrentlySelectedFileType}?";
+
+        if (editHistory.Count > 0)
+        {
+            string s = "s";
+
+            if (editHistory.Count == 1)
+                s = "";
+
+            question += $"\n\n{editHistory.Count} change{s} made here.";
+        }
+        else
+            question += "\n";
+
+        if (fileIsHistoryWorthy)
+            question += " It stays in the history list, so you can open it again from there.";
+        else
+            question += " It is a bundled example, so it stays a click away in the Examples list.";
+
+        return await js.InvokeAsync<bool>("confirm", question);
+    }
+
+    ///<summary>What a new layout and its one cell are called.</summary>
+    private const string NewLayoutName = "Untitled";
+
+    private const string NewLayoutCell = "TOP";
 
     ///<summary>Drops ?file= from the address, for when what is loaded is no longer a bundled example.</summary>
     private void clearExampleFromQuery()
@@ -6754,6 +7861,9 @@
         //A different file, so a Clear made on the last one stops speaking for this one.
         reArmBundledPdkData();
 
+        //A different file, so a row held back for an undo of the last one's edits belongs to nothing.
+        removedLayer = null;
+
         //Names carry across files rather than belonging to one: a layer number means the same thing
         //throughout a technology, so naming 65/20 while looking at one cell names it in the next.
         carryLayerNamesOver();
@@ -6766,9 +7876,10 @@
         //on the last one's. Names do carry over, above; which layers were hidden does not.
         getLayers(keepSettings: false);
 
-        //Here rather than when the popup renders: this is the one place a different file arrives, and it
-        //is a pass over every element that must not be paid for on every keystroke elsewhere.
-        buildExamplePreview();
+        //Nothing here for the preview frame. It used to hold a thumbnail of the open file, which had to be
+        //rebuilt when a different one arrived; it holds whatever row the pointer is on now, and opening a
+        //file does not move the pointer. Clearing it here wiped the picture under the pointer at the moment
+        //a row was clicked, which is the one moment somebody is looking at it.
 
         await RenderGDS();
 
@@ -6818,16 +7929,41 @@
         if (gds is null)
             return;
 
-        //What is in hand first; the bundled mapping only where there is nothing in hand at all.
-        string mapping = layerNames;
+        string bundled = defaultRolesForThisFile();
 
-        if (mapping.Length == 0)
-            mapping = defaultRolesForThisFile();
-
-        if (mapping.Length == 0)
+        if (bundled.Length == 0 && layerNames.Length == 0)
             return;
 
-        int applied = LayerNames.Parse(mapping).ApplyTo(gds.AdditionalInformation.Layers);
+        //
+        //**The bundled mapping first, then whatever was in hand over the top of it.**
+        //
+        //This used to be one or the other, with names in hand winning outright. That is right about where
+        //the two *disagree* and wrong about where the carried set is simply smaller - and it is usually
+        //smaller, because what carries is the names read off whatever file was open last rather than the
+        //mapping they came from. So opening a second example carried the first example's layers: after a
+        //reload on Mosfet.gds, a standard cell opened with nwell unnamed and at no height at all, since
+        //Mosfet has no nwell for a name to have been read off.
+        //
+        //That was survivable while an unmapped layer was still drawn somewhere. It is not now: a layer with
+        //no height is one the 3D view leaves out entirely - see AdditionalGDSInformation.HasProcessStack -
+        //so a mapping that arrives with holes in it is geometry that goes missing.
+        //
+        //In this order so both things still hold. An example gets its own PDK's whole stack, because every
+        //file in the picker is a sky130 cell and naming its layers is a fact rather than a guess. And a
+        //mapping somebody actually loaded still wins every layer it says anything about, because it lands
+        //last.
+        //
+        int applied = 0;
+
+        if (bundled.Length > 0)
+            applied += LayerNames.Parse(bundled).ApplyTo(gds.AdditionalInformation.Layers);
+
+        if (layerNames.Length > 0)
+            applied += LayerNames.Parse(layerNames).ApplyTo(gds.AdditionalInformation.Layers);
+
+        //And the stack worked out over the heights it just brought. ApplyTo writes heights onto layers; only
+        //this reads them back as a stack. See SetStackingOffsets.
+        gds.AdditionalInformation.SetStackingOffsets(layerSpacing());
 
         if (applied > 0)
             layerNamesLoaded = true;
@@ -6962,14 +8098,35 @@
         await viewer.Render(gds, checkboxItems, preparedLayout);
     }
 
-    private async Task layersChanged(ChangeEventArgs e, CheckboxItem item)
+    ///
+    ///The eye: whether this layer is drawn.
+    ///
+    ///Toggled from the row's own state rather than read off an event, because the control is a button now
+    ///and not a checkbox - a checkbox reports what it was set to, a button reports only that it was pressed.
+    ///
+    private async Task layerShownToggled(CheckboxItem item)
     {
-        if (e.Value is not bool isSelected)
-            return;
-
-        item.IsSelected = isSelected;
+        item.IsSelected = !item.IsSelected;
 
         await RenderGDS();
+
+        await saveChangedFile();
+    }
+
+    ///
+    ///The padlock: whether this layer can be worked on.
+    ///
+    ///**No redraw.** What locking changes is which layers answer a click, and that is read per press from
+    ///<see cref="CheckboxItem.EditableLayers"/> - so the picture is the same picture. The fade over it is a
+    ///stylesheet the render puts out, which this render is about to do anyway; rebuilding every path to say
+    ///a layer is out of reach would be paying a redraw for a style change.
+    ///
+    ///Saved, because a lock is a statement about how the file is being worked on and belongs with the rest
+    ///of what a session carries.
+    ///
+    private async Task layerLockToggled(CheckboxItem item)
+    {
+        item.IsLocked = !item.IsLocked;
 
         await saveChangedFile();
     }
@@ -6988,6 +8145,9 @@
         //The library was changed in place, so the copy held here is of the file as it was.
         flattened = null;
         flattenedFor = null;
+
+        //Before the list is rebuilt from the layer table, since this is what that table should say.
+        restoreRemovedLayer();
 
         getLayers();
 
@@ -7064,7 +8224,11 @@
                 Id = layer.Key,
                 Label = layer.Value.DisplayName,
                 IsSelected = was?.IsSelected ?? true,
-                ShowLabels = was?.ShowLabels ?? true
+                ShowLabels = was?.ShowLabels ?? true,
+
+                //Carried across a rename like the rest, and false for a layer this list has not seen: a new
+                //file opens with everything in hand, the same way it opens with everything shown.
+                IsLocked = was?.IsLocked ?? false
             });
         }
 

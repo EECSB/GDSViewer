@@ -159,16 +159,29 @@ test('a mapping with a bad row keeps the good ones and names the line', async ({
 });
 
 ///
-///Clicks a row's label to turn it into a text box, and returns the box.
+///Opens a layer's settings and returns the name box in them.
+///
+///**Through the gear, because the row is a readout.** This used to click the row's own label, which turned
+///it into a text box - and that made the row's click mean two things, since the draw tool wanted the same
+///press to choose which layer a shape went on. Naming moved into the settings, where the box has the width
+///of a popup rather than of a sidebar column, and the row's press now isolates the layer instead.
+///
+///The box keeps the behavior this file is about: Enter applies, Escape puts back what was there, and blank
+///clears the name. It starts out holding the pair rather than empty - see commitSettingsName - so typing
+///the pair back counts as no name too.
 ///
 ///Found by the pair as a substring rather than as the whole label, because a named row reads
 ///"diffusion (65/20)" - so anchoring on the pair alone would only ever find a row that has not been
 ///renamed yet, which is exactly the case these tests need to get past.
 ///
 async function startRenaming(page, pair) {
-    await page.locator('span[title="Click to name this layer"]').filter({ hasText: pair }).first().click();
+    const row = page.locator('.layerRow')
+        .filter({ has: page.locator('.layerName', { hasText: pair }) })
+        .first();
 
-    const box = page.locator('input[type=text]').first();
+    await row.locator('.layerSettingsButton').click();
+
+    const box = page.locator('.layerSettingsName');
 
     await expect(box).toBeVisible();
 
@@ -182,7 +195,7 @@ async function labelFor(page, pair) {
     return labels.find(text => text.includes(pair))?.trim();
 }
 
-test('a layer can be named by typing on the row itself', async ({ page }) => {
+test('a layer can be named from its settings', async ({ page }) => {
     const box = await startRenaming(page, '65/20');
 
     await box.fill('diffusion');

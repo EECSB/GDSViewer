@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, selectView, openFile, SKY130_CELL } = require('./helpers');
+const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, selectView, openFile, SKY130_CELL, uploadFile } = require('./helpers');
 
 const NAND = path.join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', SKY130_CELL + '.gds');
 
@@ -48,7 +48,7 @@ test.describe('resolving the hierarchy', () => {
 
         const before = await flattens(page);
 
-        await page.locator('#fileUpload').setInputFiles({
+        await uploadFile(page, {
             name: `${SKY130_CELL}.gds`,
             mimeType: 'application/octet-stream',
             buffer: fs.readFileSync(NAND)

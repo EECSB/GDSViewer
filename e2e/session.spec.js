@@ -6,7 +6,7 @@
 //here reloads for real rather than calling the storage API, because a session that saves and never
 //restores would pass any test that did not.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, SKY130_CELL, fillsDrawn, captureScene, cameraPosition, leaveCell } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, hideLayer, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, MOSFET_POLYGONS, SKY130_CELL, fillsDrawn, captureScene, cameraPosition, leaveCell } = require('./helpers');
 
 ///
 ///Waits for the session to name the file given, so a reopen is not racing the save that follows a load.
@@ -67,12 +67,12 @@ async function expectOpenFile(page, fileName) {
 test('the file you had open comes back', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     await reopen(page);
 
     await expectOpenFile(page, 'Mosfet.gds');
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 });
 
 ///
@@ -119,18 +119,17 @@ test('an edit survives the browser being closed', async ({ page }) => {
 test('a hidden layer stays hidden', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    const box = layerCheckbox(page);
-    await box.uncheck();
+    await hideLayer(page);
 
     const afterHiding = (await svgCounts(page)).polygons;
-    expect(afterHiding).toBeLessThan(18);
+    expect(afterHiding).toBeLessThan(MOSFET_POLYGONS);
 
     await reopen(page);
 
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(afterHiding);
-    await expect(layerCheckbox(page)).not.toBeChecked();
+    await expect(layerCheckbox(page)).toHaveClass(/layerEyeOff/);
 });
 
 ///
@@ -144,19 +143,19 @@ test('a hidden layer stays hidden', async ({ page }) => {
 test('a hidden layer is still hidden the second time the app is reopened', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    await layerCheckbox(page).uncheck();
+    await hideLayer(page);
 
     const afterHiding = (await svgCounts(page)).polygons;
-    expect(afterHiding).toBeLessThan(18);
+    expect(afterHiding).toBeLessThan(MOSFET_POLYGONS);
 
     await reopen(page);
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(afterHiding);
 
     await reopen(page);
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(afterHiding);
-    await expect(layerCheckbox(page)).not.toBeChecked();
+    await expect(layerCheckbox(page)).toHaveClass(/layerEyeOff/);
 });
 
 ///
@@ -170,7 +169,7 @@ test('a hidden layer is still hidden the second time the app is reopened', async
 test('the example you chose from the picker is the one that comes back', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     await selectExample(page, `${SKY130_CELL}.gds`);
 
@@ -185,7 +184,7 @@ test('the example you chose from the picker is the one that comes back', async (
 test('a layer name loaded from a mapping comes back, with its color', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     await page.locator('#layerNamesImport').setInputFiles({
         name: 'sky130.csv',
@@ -310,7 +309,7 @@ test('the opacity slider comes back where it was left', async ({ page }) => {
 test('a link beats the saved session', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     await gotoExample(page, 'sky130_fd_sc_hd__nand2_1');
 
@@ -332,7 +331,7 @@ test('a link beats the saved session', async ({ page }) => {
 test('an unedited example is stored by name rather than by copying it', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
     const stored = await page.evaluate(async () => {
         const value = await window.gdsStorage.get('gdsviewer.session');
@@ -364,7 +363,7 @@ test('storage being unavailable costs the session, not the app', async ({ page }
     await gotoExample(page, MOSFET);
 
     //The file still opens and draws, which is the whole requirement.
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
     expect(await layerPairs(page)).toContain('65/20');
 });
 
@@ -383,9 +382,9 @@ test('storage being unavailable costs the session, not the app', async ({ page }
 test('the exit handler writes the session where a closed tab would leave it', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    await layerCheckbox(page, 0).uncheck();
+    await hideLayer(page, 0);
 
     //The snapshot is handed over at the end of a save, so there has to have been one.
     await expectSessionHolds(page, MOSFET);

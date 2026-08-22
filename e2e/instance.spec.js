@@ -8,13 +8,13 @@
 //cell below is. Nothing in C# can see which of those happened, because both are the same edit on a different
 //element.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn, leaveCell } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     //With the cell tree open, since one of these reads the library - see gotoApp.
     await gotoApp(page, '', true);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 

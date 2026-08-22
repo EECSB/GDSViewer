@@ -7,7 +7,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { gotoExample, selectView, downloadBytes, MOSFET, openedOnItsOwn } = require('./helpers');
+const { gotoExample, selectView, downloadBytes, MOSFET, openedOnItsOwn, uploadFile } = require('./helpers');
 
 const MOSFET_ON_DISK = path.join('wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
 
@@ -160,7 +160,7 @@ test('a file opened as OASIS defaults to being saved as OASIS', async ({ page })
     fs.writeFileSync(uploaded, oasis);
 
     try {
-        await page.locator('#fileUpload').setInputFiles(uploaded);
+        await uploadFile(page, uploaded);
 
         await openedOnItsOwn(page);
 

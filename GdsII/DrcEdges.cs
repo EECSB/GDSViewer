@@ -364,7 +364,12 @@ namespace GdsII
         private static bool faces(Edge a, Edge b, bool outward)
         {
             if (Corner(a, b) is double interior)
-                return outward ? 360 - interior < AngleLimit : interior < AngleLimit;
+            {
+                if (outward)
+                    return 360 - interior < AngleLimit;
+
+                return interior < AngleLimit;
+            }
 
             return onExpectedSide(a, midpoint(b), outward) && onExpectedSide(b, midpoint(a), outward);
         }
@@ -453,17 +458,33 @@ namespace GdsII
             //Which end of each is the corner they share.
             bool aEnds = same(a.To, b.From) || same(a.To, b.To);
 
-            var corner = aEnds ? a.To : a.From;
+            Element.Point corner = a.From;
+            Element.Point farOnA = a.To;
+
+            if (aEnds)
+            {
+                corner = a.To;
+                farOnA = a.From;
+            }
+
+            //And the same question of b, asked against the corner rather than against a's own ends.
+            Element.Point farOnB = b.From;
+
+            if (same(b.From, corner))
+                farOnB = b.To;
 
             double half = Math.Sin(interior / 2 * Math.PI / 180);
 
-            double reach = half > 0 ? limit / (2 * half) : limit;
+            double reach = limit;
+
+            if (half > 0)
+                reach = limit / (2 * half);
 
             return new DrcEdgePair
             {
                 AFrom = corner,
-                ATo = along(corner, aEnds ? a.From : a.To, reach),
-                BFrom = along(corner, same(b.From, corner) ? b.To : b.From, reach),
+                ATo = along(corner, farOnA, reach),
+                BFrom = along(corner, farOnB, reach),
                 BTo = corner,
 
                 //It closes to a point, so nothing is the honest answer to how far apart they get.
@@ -518,7 +539,10 @@ namespace GdsII
             bool inside = Covers(rings, middle);
 
             //A width wants material between them; a spacing wants ground.
-            return outward ? !inside : inside;
+            if (outward)
+                return !inside;
+
+            return inside;
         }
 
         ///<summary>

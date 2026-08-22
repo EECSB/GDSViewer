@@ -5,7 +5,7 @@
 //is visible to a unit test - the tagging is covered in SvgWriterTests, and the way back from an element
 //to its cell in ProvenanceTests. What is only checkable here is that the two are wired to each other.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, MOSFET, SKY130_CELL, shapeCount, shapesDrawn, shapeBox, openedOnItsOwn } = require('./helpers');
+const { gotoExample, MOSFET, SKY130_CELL, shapeCount, shapesDrawn, shapeBox, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, MOSFET);
@@ -188,7 +188,7 @@ test('a redraw puts the selection down rather than leaving it pointing at nothin
 ///them. e2e/fixtures/placed.gds is a top-level square plus three placements of a leaf.
 ///
 test('a shape inside a placed cell names the cell and says so', async ({ page }) => {
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 

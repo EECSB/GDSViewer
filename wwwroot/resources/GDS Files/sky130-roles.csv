@@ -14,26 +14,63 @@
 #showed, because every bundled example is a standard cell that stops at met1.
 #
 #The columns are layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize - everything
-#past the third is optional, so the blanks below are heights and colors this file has no opinion about, and
-#the two that say how a fill is drawn are left off entirely.
+#past the third is optional, so the blanks below are colors this file has no opinion about, and the two that
+#say how a fill is drawn are left off entirely.
+#
+#**The heights and thicknesses are sky130's own, in nanometers**, which is what a database unit is in every
+#file this maps. They are read out of the PDK's KLayout cross-section script, sky130/klayout/sky130.xs in
+#OtherResources/Sky130/skywater130-main.zip, which builds the wafer as a sequence of deposits and etches:
+#bpsg 0.94 puts li1 at 940, ild2 0.43 puts met1 at 1370, and so on up to met5 at 5365. A via runs from the
+#top of the metal below it to the bottom of the metal above, and those thicknesses come out as exactly the
+#extra term in each ild - 270, 420, 390, 505 - which is the arithmetic checking itself.
+#
+#Without these the 3D view stacks layers evenly in layer/datatype order, which says only what order they are
+#in: a via is a /44 purpose, so it lands beside its metals rather than bridging them. That is what these
+#columns are for, and it is the same thing GDS3D asks for in its process definition file.
+#
+#**A row left out is not a small gap.** A layer with no height here is one the 3D view will not place at all
+#- see DOCUMENTATION.md - so a missing row is a shape that stops being drawn there, not a shape that lands
+#somewhere harmless. The first version of this file mapped the metals and left the wells' own pin and label
+#purposes out, and because nwell.pin and pwell.pin are drawn to the whole cell, the eight layers that fell
+#through became cell-sized plates hanging over the layout with the sky above and below them. Every pair the
+#bundled corpus actually draws on is covered here or listed in ShippedLayermapTests as one that cannot be.
+#
+#Two kinds of row are a judgement rather than a measurement.
+#
+#**A pin or a label takes the height of the layer it annotates**, so it sits on that metal or that well
+#instead of floating a step off it.
+#
+#**And a layer the cross-section script names but never builds a film for takes the height of what it is a
+#mask over.** npc is a cut over poly and gets poly's. hvtp and lvtn are threshold implants into the channel
+#the source/drain implants reach, so they get sd_impl_depth, 0.12. hvntm is a tip implant, which is the LDD
+#rather than the source/drain, so it gets ldd_impl_depth, 0.06. hvi is not in this class - the script does
+#build it, growing the gate oxide from gox_thickness to hvgox_thickness wherever hvi is drawn, so its 8 nm
+#is measured like everything else.
+#
+#83/44 is left with no height at all - it is where a name goes when it belongs to the drawing rather than to
+#any layer, and there is no place on a wafer to put it.
 #layer,datatype,name,color,height,thickness,role,fill
 #
 #The wells and implants. Named so the sidebar reads as a process rather than as numbers, and given no role:
 #none of them carries a signal, and a layer nothing says anything about takes no part in a trace.
-64,20,nwell,,,,,
-64,44,pwell,,,,,
-93,44,nsdm,,,,,
-94,20,psdm,,,,,
-95,20,npc,,,,,
+64,20,nwell,,-800,800,,
+64,44,pwell,,-700,700,,
+93,44,nsdm,,-120,120,,
+94,20,psdm,,-120,120,,
+95,20,npc,,4,180,,
+78,44,hvtp,,-120,120,,
+125,44,lvtn,,-120,120,,
+125,20,hvntm,,-60,60,,
+75,20,hvi,,0,8,,
 #
 #Diffusion and poly, which do carry one: a source/drain is a net node and so is a gate.
-65,20,diff,,,,conductor,
-65,44,tap,,,,,
-66,20,poly,,,,conductor,
+65,20,diff,,-120,120,conductor,
+65,44,tap,,-120,120,,
+66,20,poly,,4,180,conductor,
 #
 #The contact from poly and diffusion up into local interconnect.
-66,44,licon1,,,,via,
-67,20,li1,,,,conductor,
+66,44,licon1,,0,940,via,
+67,20,li1,,940,100,conductor,
 #
 #**No fill patterns here, on purpose.** They were in this file to show the feature off, and then this file
 #started being laid over every bundled example - which made a documented property of the app false: a layout
@@ -42,25 +79,37 @@
 #or carries in a layermap of their own; it is not a fact about sky130 the way a name and a role are.
 #
 #And the metal stack, each level joined to the next by its own via. This is the part a real net climbs.
-67,44,mcon,,,,via,
-68,20,met1,,,,conductor,
-68,44,via,,,,via,
-69,20,met2,,,,conductor,
-69,44,via2,,,,via,
-70,20,met3,,,,conductor,
-70,44,via3,,,,via,
-71,20,met4,,,,conductor,
-71,44,via4,,,,via,
-72,20,met5,,,,conductor,
+67,44,mcon,,1040,330,via,
+68,20,met1,,1370,360,conductor,
+68,44,via,,1730,270,via,
+69,20,met2,,2000,360,conductor,
+69,44,via2,,2360,420,via,
+70,20,met3,,2780,845,conductor,
+70,44,via3,,3625,390,via,
+71,20,met4,,4015,845,conductor,
+71,44,via4,,4860,505,via,
+72,20,met5,,5365,1260,conductor,
 #
-#The pin and label purposes of li1 and met1, which the bundled cells carry. **No role on purpose.** A pin
-#shape sits exactly on the metal it names, so calling it a conductor would put a second copy of every pin
-#into the net it is already part of. A label needs no role at all: the name of a traced net is read from
-#whatever text lands on it, whatever that layer is said to be.
-67,5,li1.label,,,,,
-67,16,li1.pin,,,,,
-68,5,met1.label,,,,,
-68,16,met1.pin,,,,,
+#The pin and label purposes, which the bundled cells carry on the wells as well as on the metals. **No role
+#on purpose.** A pin shape sits exactly on the metal it names, so calling it a conductor would put a second
+#copy of every pin into the net it is already part of. A label needs no role at all: the name of a traced
+#net is read from whatever text lands on it, whatever that layer is said to be.
+#
+#Each takes the height of the layer it annotates, which is the judgement the header describes. Note that
+#pwell's two purposes are not both on layer 64: the label is 64/59 and the pin is 122/16, which is why
+#leaving them out was easy to miss.
+64,5,nwell.label,,-800,800,,
+64,16,nwell.pin,,-800,800,,
+64,59,pwell.label,,-700,700,,
+122,16,pwell.pin,,-700,700,,
+67,5,li1.label,,940,100,,
+67,16,li1.pin,,940,100,,
+68,5,met1.label,,1370,360,,
+68,16,met1.pin,,1370,360,,
+70,5,met3.label,,2780,845,,
+70,16,met3.pin,,2780,845,,
+72,5,met5.label,,5365,1260,,
+72,16,met5.pin,,5365,1260,,
 #
 #Where a name goes when it belongs to the drawing rather than to a layer.
 83,44,text,,,,,

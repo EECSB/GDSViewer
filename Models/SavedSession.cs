@@ -350,8 +350,17 @@ namespace GDSViewer.Models
         [JsonPropertyName("ls")]
         public bool Layers { get; set; } = true;
 
+        ///<summary>
+        ///How far the 3D view's slider has pulled the layers apart, where nought is the process stack itself.
+        ///
+        ///**The same default the view opens on**, because a session with no key for this is read by the same
+        ///code that reads one that has it - so a number written only here decides what a first visit gets. It
+        ///was 50, from when the slider's minimum was 50, and it went on winning after that minimum became
+        ///nought: the control opened at 50 on a cleared browser and the stack came up pre-spread, with
+        ///nothing in the view or the library still saying 50 anywhere.
+        ///</summary>
         [JsonPropertyName("s")]
-        public int LayerSpacing { get; set; } = 50;
+        public int LayerSpacing { get; set; } = AdditionalGDSInformation.DefaultLayerSpread;
 
         [JsonPropertyName("g")]
         public string Background { get; set; } = "none";

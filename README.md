@@ -62,10 +62,10 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
 - ✏️ A **viewer that can also edit**. Reading, inspecting, downloading and exporting all work, and an edit
   made in the text view can be saved back into the file — within the limits in
   [Current limitations](#current-limitations).
-- 🗂️ Open your own `.gds` file, or pick from **897 bundled examples** — the SkyWater
-  [sky130](https://skywater-pdk.readthedocs.io/en/main/) standard-cell libraries plus a hand-made MOSFET.
-  The picker filters as you type and previews each cell as you point at it. Open a sky130 cell and links to
-  the relevant PDK documentation appear in the toolbar.
+- 🗂️ Open your own `.gds` file — through the dialog or by **dragging it onto the view** — or pick from
+  **897 bundled examples**: the SkyWater [sky130](https://skywater-pdk.readthedocs.io/en/main/)
+  standard-cell libraries plus a hand-made MOSFET. The picker filters as you type and previews each cell as
+  you point at it. Open a sky130 cell and links to the relevant PDK documentation appear in the toolbar.
 - 📐 **OASIS too, both ways** — `.oas` files open the same way, and a dropdown beside the download button
   chooses which format comes back out, starting on whichever the file arrived as. So opening a `.gds` and
   saving it as `.oas` is a conversion, and so is the reverse. The format going in is decided by what the
@@ -98,6 +98,19 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
 - ✏️ **Draw new shapes** — rectangles, polygons, ellipses, paths at a real width, and labels typed where they
   land. A layout format has no curves, so an ellipse is a many-sided polygon and the side count is yours to
   set — it says what it costs, too.
+- 📄 **Start from nothing** — **New** in the toolbar makes an empty layout: one cell, no layers, nothing drawn.
+  Every other way in needs a file, so beginning one of your own used to mean opening somebody else's and
+  deleting it. No PDK names are guessed onto it, the way none are guessed onto an upload.
+- 🧱 **Add and remove layers** — **Add layer**, at the foot of the layer list, puts a layer/datatype in it that
+  nothing is drawn on yet: how an empty layout gets somewhere to draw, and how you reach a pair a file does
+  not already use. An **×** on any row takes that layer out, asking first and saying how many shapes go with
+  it. Removal takes them everywhere in the file and undoes as one step, with the layer's name and height
+  intact. (The format records a layer only through the shapes on it, so an empty one is gone when the file is
+  written — draw on it or name it and it stays.)
+- 🩺 **Add and remove rules** — **Add rule**, at the foot of the rules list, takes one line of the deck's own
+  grammar, checked by the same parser that reads a deck file, with its complaint shown where you typed. An
+  **×** on any row takes that rule out, asking first. Both edit the deck itself, so **Export** hands you what
+  the panel is showing.
 - 📐 **A grid to see and to snap to**, in nanometers, microns, millimeters or raw database units. It starts at
   the file's own grid rather than a round number, so the first thing you draw lands where the rest of the
   file already is. Drawing can also snap to a neighboring corner or edge.
@@ -143,10 +156,16 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   are what the file says. Names persist across visits and across files, since a layer number means the same
   thing throughout a technology.
 - 📋 **The bundled examples name their own layers.** Every file in the picker is a sky130 cell, so a
-  twenty-five-row mapping that ships with the app is laid over one when it opens — a fact rather than a
-  guess — along with the sky130 rule deck that sits beside it. Your own uploads get neither, since sky130
-  names over another PDK's layout would be worse than numbers. **Clear** drops either one for the file you
-  are looking at, reload included; opening a different example is a fresh start.
+  thirty-seven-row mapping that ships with the app is laid over one when it opens — a fact rather than a
+  guess — along with the sky130 rule deck that sits beside it. It carries sky130's **process stack** too, read
+  from the PDK's own cross-section script, so the 3D view draws the real thing: met1 at 1370 nm, met5 at 5365,
+  each via bridging the metals it joins, and the wells below the surface. A layer no mapping covers — a
+  marker, an area id, a cell outline — is left out of the 3D view rather than hung at a depth nobody
+  measured; it keeps its row and its 2D drawing, and a height in its settings brings it back.
+  The space you see left between metals is the dielectric, which no layer draws: a via crosses it where a via
+  exists, and nothing does where one does not. Your own uploads get none of it,
+  since sky130 numbers over another PDK's layout would be worse than nothing. **Clear** drops it for the file
+  you are looking at, reload included; opening a different example is a fresh start.
 - 🩺 **Fill patterns** — dots, a grid, diagonals or crosshatch drawn over a layer's color, with a color and
   a screen size of their own. Color runs out before layers do.
 - 🎨 **Color them yourself** — a swatch on every row opens a picker, and the colors you have used recently

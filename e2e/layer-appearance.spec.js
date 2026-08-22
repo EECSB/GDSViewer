@@ -12,6 +12,8 @@ const {
     pickColor,
     layerNameBox,
     layerCheckbox,
+    hideLayer,
+    showLayer,
     layerPairs,
     svgCounts,
     fillsDrawn,
@@ -358,7 +360,7 @@ test('the channels show the color and can be typed into', async ({ page }) => {
 ///
 test('renaming a layer leaves the other layers as they were', async ({ page }) => {
     //Hide the second layer.
-    await layerCheckbox(page, 1).uncheck();
+    await hideLayer(page, 1);
 
     await expect.poll(async () => (await svgCounts(page)).polygons).toBeLessThan(MOSFET_POLYGONS);
 
@@ -375,7 +377,7 @@ test('renaming a layer leaves the other layers as they were', async ({ page }) =
 
     //Still hidden.
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(hiddenCount);
-    await expect(layerCheckbox(page, 1)).not.toBeChecked();
+    await expect(layerCheckbox(page, 1)).toHaveClass(/layerEyeOff/);
 });
 
 

@@ -217,7 +217,7 @@ Options:
       --hide <list>     svg, model: draw everything except these
       --opacity <n>     svg only: 0 to 1, default 0.5
       --no-labels       svg only: leave the TEXT elements out
-      --spacing <n>     model only: gap between stacked layers, default 50
+      --spacing <n>     model only: extra gap opened between stacked layers, default 0
       --scale <n>       model only: multiply every coordinate by this, default 1
       --ascii           model only: write STL as text rather than binary
       --no-mtl          model only: no companion .mtl file beside an .obj
@@ -256,8 +256,9 @@ same file the web viewer's Import button takes, and the same one --write-layerma
 Everything past the third column is optional, but the columns are positional, so a gap is a
 comma: 66,44,licon1,,300 gives licon1 a height and no color. Names reach `layers`; names,
 colors and fills reach `svg`; heights and thicknesses reach `model`, where a placed layer keeps
-its own height and --spacing only spaces out the ones the mapping said nothing about. Bad rows
-are reported by line and the good ones still applied.
+its own height and --spacing only opens a gap on top of wherever a layer already rests. At its
+default of nought a model comes out at the heights the mapping gives, which is the same stack
+the 3D view opens on. Bad rows are reported by line and the good ones still applied.
 
   gds layers cell.gds --write-layermap sky130.csv
   gds svg cell.gds --layermap sky130.csv -o cell.svg
@@ -787,7 +788,7 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
                 return UsageError;
             }
 
-            if (!numberOption(args, "--spacing", 50, error, out double spacing))
+            if (!numberOption(args, "--spacing", 0, error, out double spacing, zeroAllowed: true))
                 return UsageError;
 
             if (!numberOption(args, "--scale", 1, error, out double scale))
@@ -1202,7 +1203,21 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
         ///Reads a numeric option, or leaves <paramref name="value"/> at its default when it was not given.
         ///Invariant, so a machine with a comma for a decimal point does not read --scale 0.5 as 5.
         ///</summary>
-        private static bool numberOption(string[] args, string option, double fallback, TextWriter error, out double value)
+        ///
+        ///**Nought is allowed for some of these and not others**, which is why the floor is asked for rather
+        ///than assumed.
+        ///
+        ///--spacing is the gap opened on top of wherever a layer already rests, so asking for none of it is
+        ///the ordinary case and is the default. --scale and --opacity multiply the whole model, where nought
+        ///collapses it to a point or to nothing visible, so they keep the floor they always had.
+        ///
+        private static bool numberOption(
+            string[] args,
+            string option,
+            double fallback,
+            TextWriter error,
+            out double value,
+            bool zeroAllowed = false)
         {
             value = fallback;
 
@@ -1211,9 +1226,19 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             if (given is null)
                 return true;
 
-            if (!double.TryParse(given, NumberStyles.Float, CultureInfo.InvariantCulture, out value) || value <= 0)
+            bool read = double.TryParse(given, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+
+            bool tooSmall = value < 0;
+
+            if (!zeroAllowed && value <= 0)
+                tooSmall = true;
+
+            if (!read || tooSmall)
             {
-                error.WriteLine($"\"{given}\" is not a positive number for {option}.");
+                if (zeroAllowed)
+                    error.WriteLine($"\"{given}\" is not nought or more for {option}.");
+                else
+                    error.WriteLine($"\"{given}\" is not a positive number for {option}.");
 
                 return false;
             }

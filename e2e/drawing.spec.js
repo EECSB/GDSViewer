@@ -5,12 +5,12 @@
 //on screen lands in the cell being edited, that a handle appears on each corner and only where an edit is
 //allowed, and that both go through the same undo as everything else.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, chooseShape, openGridMenu, openedOnItsOwn, leaveCell } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, chooseShape, openGridMenu, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 
@@ -228,7 +228,7 @@ test.describe('drawing', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

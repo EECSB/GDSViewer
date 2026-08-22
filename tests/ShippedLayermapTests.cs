@@ -225,4 +225,176 @@ public class ShippedLayermapTests
         //And says something about every row: a file of comments would pass everything above.
         Assert.True(read.Count >= 20, $"the map only says anything about {read.Count} layers");
     }
+
+    ///
+    ///sky130's own pair for each pin and label purpose, out of the same file.
+    ///
+    ///Spelled the way that file spells them - `nwelllabel`, `pwellpin` - so a `nwell.label` row here is
+    ///checked against the entry it claims to be rather than against anybody's reading of the numbers.
+    ///
+    private static Dictionary<string, LayerKey> Sky130Purposes()
+    {
+        using var zip = ZipFile.OpenRead(Path.Combine(GdsTestData.RepositoryRoot, Vendored));
+
+        var entry = zip.GetEntry(LayersPy);
+
+        Assert.NotNull(entry);
+
+        using var reader = new StreamReader(entry!.Open());
+
+        string text = reader.ReadToEnd();
+
+        var found = new Dictionary<string, LayerKey>();
+
+        foreach (Match match in Regex.Matches(text, @"^\s+(\w+?(?:pin|label)): Layer = \((\d+), (\d+)\)", RegexOptions.Multiline))
+            found[match.Groups[1].Value] = new LayerKey(short.Parse(match.Groups[2].Value), short.Parse(match.Groups[3].Value));
+
+        Assert.NotEmpty(found);
+
+        return found;
+    }
+
+    ///
+    ///Every pin and label purpose the map names sits on the pair sky130 gives it.
+    ///
+    ///**This is the check that was missing when it mattered.** The map named li1's and met1's pin and label
+    ///purposes and not the wells', so four layers every bundled cell carries had no row at all - and two of
+    ///those are not even on the layer they belong to: pwell is 64/44, its label is 64/59 and its pin is
+    ///122/16. Every_named_drawing_layer_matches_sky130 cannot see any of this, because a dotted name is the
+    ///first thing it skips.
+    ///
+    [Fact]
+    public void Every_pin_and_label_purpose_sits_on_the_pair_sky130_gives_it()
+    {
+        var sky130 = Sky130Purposes();
+
+        int counted = 0;
+
+        foreach (var named in Shipped().Names)
+        {
+            int dot = named.Value.IndexOf('.');
+
+            if (dot < 0)
+                continue;
+
+            string spelled = named.Value.Remove(dot, 1);
+
+            Assert.True(sky130.ContainsKey(spelled), $"sky130 has no layer called {named.Value}");
+            Assert.Equal(sky130[spelled], named.Key);
+
+            counted++;
+        }
+
+        //And it found some, or the loop above passes by never running.
+        Assert.Equal(12, counted);
+    }
+
+    ///
+    ///And each of them takes the height and thickness of the layer it annotates.
+    ///
+    ///A pin is drawn on the metal it names, not a step off it - which is the judgement the map's own header
+    ///records, stated here so a row that drifts from it fails. It is also what keeps a pin out of the set
+    ///the 3D view leaves out: see HasProcessStack.
+    ///
+    [Fact]
+    public void Every_pin_and_label_purpose_takes_the_height_of_what_it_annotates()
+    {
+        var read = Shipped();
+
+        //The pair each name is on, so a purpose can find the drawing layer it belongs to by name.
+        var byName = new Dictionary<string, LayerKey>();
+
+        foreach (var named in read.Names)
+            byName[named.Value] = named.Key;
+
+        int counted = 0;
+
+        foreach (var named in read.Names)
+        {
+            int dot = named.Value.IndexOf('.');
+
+            if (dot < 0)
+                continue;
+
+            string annotates = named.Value[..dot];
+
+            Assert.True(byName.ContainsKey(annotates), $"{named.Value} annotates {annotates}, which the map does not name");
+
+            Assert.True(read.Stack.TryGetValue(named.Key, out var purpose), $"{named.Value} has no height");
+            Assert.True(read.Stack.TryGetValue(byName[annotates], out var drawing), $"{annotates} has no height");
+
+            Assert.Equal(drawing, purpose);
+
+            counted++;
+        }
+
+        Assert.Equal(12, counted);
+    }
+
+    ///
+    ///Layers the bundled corpus carries that the map deliberately says nothing about.
+    ///
+    ///**None of them is on a wafer.** Six are area or extraction markers - `areaid.standardc` and
+    ///`areaid.diode` mark what a region is for, and `poly.short`, `met5.short`, `diff.res` and `diff.cut`
+    ///mark shapes for LVS and extraction rather than describing a film. `text` is where a name goes when it
+    ///belongs to the drawing rather than to a layer. `236/0` is the cell outline the standard cell library
+    ///draws around each cell, and `63/20` and `251/0` appear nowhere in sky130's own tables at all - not in
+    ///layers.py, layers.lyp or layers.yaml - so they are somebody's tooling rather than the process.
+    ///
+    ///There is no height to give any of them, which is why the 3D view leaves them out rather than placing
+    ///them somewhere. Being listed here is the decision having been made, not the question being skipped.
+    ///
+    private static readonly LayerKey[] NotOnTheWafer =
+    {
+        new LayerKey(63, 20),
+        new LayerKey(65, 13),
+        new LayerKey(65, 14),
+        new LayerKey(66, 15),
+        new LayerKey(72, 15),
+        new LayerKey(81, 4),
+        new LayerKey(81, 23),
+        new LayerKey(83, 44),
+        new LayerKey(236, 0),
+        new LayerKey(251, 0)
+    };
+
+    ///
+    ///Every layer the bundled examples actually draw on has a height, or is one of the three above.
+    ///
+    ///**This is the regression guard, and it is stated over the corpus rather than over one cell.** A row
+    ///missing from this map is not a cosmetic gap: a layer with no height is one the 3D view leaves out
+    ///entirely, so a forgotten row is geometry that stops being drawn. Eight layers were in that position
+    ///and five of them should not have been.
+    ///
+    ///A new pair appearing here fails this test, which is the point - somebody then decides whether it is a
+    ///film with a height or a marker with none, rather than it defaulting quietly into either.
+    ///
+    [Fact]
+    public void Every_layer_the_bundled_cells_draw_on_is_mapped_or_listed_as_not_on_the_wafer()
+    {
+        var read = Shipped();
+        var carried = new HashSet<LayerKey>();
+
+        foreach (string path in GdsTestData.AllSampleFiles())
+        {
+            var gds = new GDS(File.ReadAllBytes(path));
+
+            foreach (var layer in gds.AdditionalInformation.Layers)
+                carried.Add(layer.Key);
+        }
+
+        Assert.NotEmpty(carried);
+
+        var missing = new List<LayerKey>();
+
+        foreach (var key in carried)
+        {
+            if (read.Stack.ContainsKey(key) || NotOnTheWafer.Contains(key))
+                continue;
+
+            missing.Add(key);
+        }
+
+        Assert.True(missing.Count == 0, $"no height for {string.Join(", ", missing)}");
+    }
 }

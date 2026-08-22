@@ -40,7 +40,7 @@
     <PackageId>GdsII</PackageId>
     <Title>GdsII</Title>
     <Description>Read, write, validate and convert GDSII, OASIS and DXF layout files. Full record coverage, byte-exact round trip, hierarchy flattening with transforms, boolean operations, design rule checking against a deck you supply, SVG rendering and an ASCII record dump that reads back. No dependencies.</Description>
-    <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;klayout;sky130</PackageTags>
+    <PackageTags>gdsii;gds;calma;oasis;dxf;layout;eda;vlsi;semiconductor;cad;photomask;lithography;ic</PackageTags>
 
     <!--
       Two licenses, because two bodies of code ship in the one assembly.
@@ -56,7 +56,7 @@
       The listing's icon. Packed in rather than linked: PackageIconUrl is deprecated, and an icon fetched
       from a URL is one a broken link takes away from a page that is already published.
 
-      The app's own icon, so the two packages and the viewer are recognisably one thing on a search page.
+      The app's own icon, so the two packages and the viewer are recognizably one thing on a search page.
       It is one file referenced twice rather than a copy per project - see the include below.
     -->
     <PackageIcon>icon.png</PackageIcon>

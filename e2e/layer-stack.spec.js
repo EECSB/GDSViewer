@@ -10,9 +10,12 @@ const {
     gotoExample,
     expectLoaded,
     openLayerSettings,
+    clearLayerNames,
     selectView,
     svgCounts,
-    MOSFET
+    MOSFET,
+    MOSFET_POLYGONS,
+    LAYER_RUNG
 } = require('./helpers');
 
 const HEIGHT = '.layerSettingsHeight';
@@ -64,20 +67,36 @@ async function recordDraws(page) {
 }
 
 ///
-///Where each extruded slab starts and how deep it goes.
+///Where each extruded slab starts and how deep it goes, at the spacing asked for.
 ///
 ///Read off the interop payload rather than measured off the geometry: what is being tested is that the
 ///number typed in is the number handed over, and three's own bevel makes a measured slab a hair off.
 ///
-async function extrusions(page) {
-    return page.evaluate(async () => {
+///**Nudged, then put where it was asked for.** A redraw has to be provoked from outside and moving the
+///slider is the cheapest way to do it - but leaving it moved meant every height read here carried a spread
+///on it, and an assertion written against that is an assertion about the layer's *rank* in the stack rather
+///than about the height somebody typed. That held while a placed layer happened to be first in the file and
+///so gained nothing; it stopped holding the moment the spread began counting up the stack instead of down
+///the layer numbers.
+///
+async function extrusionsAt(page, spacing) {
+    return page.evaluate(async (to) => {
         const slider = document.getElementById('layerSpacing');
+
+        let settle = to;
+
+        if (settle === null)
+            settle = slider.min;
 
         window.__draws = [];
 
-        //The cheapest way to ask for a redraw from outside - and it moves the spacing while it is at it,
-        //which is exactly the thing a placed layer has to survive.
-        slider.value = String(Number(slider.value) + 10);
+        //Away first, so there is a change to redraw for whatever the resting value happens to be.
+        slider.value = String(Number(slider.min) + 10);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        slider.value = String(settle);
         slider.dispatchEvent(new Event('input', { bubbles: true }));
 
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -88,7 +107,12 @@ async function extrusions(page) {
             offset: element.layer.offset,
             depth: element.layer.depth
         }));
-    });
+    }, spacing);
+}
+
+///The resting stack, which is where a height that was typed in should be found unchanged.
+async function extrusions(page) {
+    return extrusionsAt(page, null);
 }
 
 ///
@@ -127,7 +151,17 @@ test.beforeEach(async ({ page }) => {
 
     await gotoExample(page, MOSFET);
 
-    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(18);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+
+    //
+    //On bare numbers, because this file is about the stack machinery rather than about sky130.
+    //
+    //The shipped mapping now carries sky130's real process stack, so an example opens on measured heights
+    //instead of the evenly spaced synthetic ones. Every claim below is about the automatic spacing, a height
+    //typed into the settings, or a mapping the test supplies itself - all of which need a file that arrives
+    //with no process table of its own.
+    //
+    await clearLayerNames(page);
 });
 
 test('a height and a thickness can be typed in, and stay typed in', async ({ page }) => {
@@ -174,13 +208,30 @@ test('a height typed in is the height the 3D view draws at', async ({ page }) =>
 });
 
 ///
-///And the spacing slider does not undo it.
+///And the spacing slider spreads it rather than undoing it.
 ///
-///The stack is recomputed on every move of that slider, so without the custom flag a height typed in
-///would last exactly until the next nudge - which is the failure this feature would most likely have.
+///The stack is recomputed on every move of that slider, so without the custom flag a height typed in would
+///last exactly until the next nudge - which is the failure this feature would most likely have. What the
+///flag protects is the height a layer *rests* at; every layer then spreads from where it rests, placed or
+///not. Skipping the placed ones is what made the slider a lie on a file with a stack in it.
 ///
-test('the spacing slider leaves a layer that was placed by hand', async ({ page }) => {
+///This used to assert the placed layer never moved at all, and passed because 4321 put it first in a file
+///whose other layers were on the automatic 50s - rank zero, so it gained nothing.
+///
+///**Two layers are placed, and both are read.** The spread is measured from whatever rests lowest, and that
+///layer gains nothing by definition - so an assertion about a layer that happens to be the floor could pass
+///without the height having been carried at all. Here the floor is neither of them: the layers this file
+///says nothing about rest on the automatic 50s, well below 1000, so both placed layers have to spread.
+///
+test('the spacing slider spreads a layer that was placed by hand, from where it was placed', async ({ page }) => {
     await openLayerSettings(page, 0);
+
+    await setStack(page, HEIGHT, 1000);
+    await setStack(page, THICKNESS, 100);
+
+    await closeSettings(page);
+
+    await openLayerSettings(page, 1);
 
     await setStack(page, HEIGHT, 4321);
     await setStack(page, THICKNESS, 250);
@@ -190,13 +241,23 @@ test('the spacing slider leaves a layer that was placed by hand', async ({ page 
     await selectView(page, 'View3D');
     await expect(page.locator('#container canvas')).toBeVisible();
 
-    //extrusions moves the slider itself, so this is already a redraw at a different spacing.
-    const slabs = await extrusions(page);
+    //At rest it is exactly what was typed.
+    expect(await extrusions(page)).toContainEqual({ offset: 4321, depth: 250 });
 
-    expect(slabs).toContainEqual({ offset: 4321, depth: 250 });
+    const spread = await extrusionsAt(page, 700);
 
-    //And the layers that were left alone did move with it, so the slider is not simply doing nothing.
-    expect(slabs.some(slab => slab.offset !== 4321)).toBe(true);
+    //Spread, each is measured from its own height rather than reset to the automatic stack.
+    const upper = spread.find(slab => slab.depth === 250);
+    const lower = spread.find(slab => slab.depth === 100);
+
+    expect(upper.offset).toBeGreaterThan(4321);
+    expect(lower.offset).toBeGreaterThan(1000);
+
+    //And they are still in the order they were typed in, at least as far apart as they were placed.
+    expect(upper.offset - lower.offset).toBeGreaterThanOrEqual(4321 - 1000);
+
+    //And the rest moved too, so the slider is not simply doing nothing.
+    expect(spread.some(slab => slab.offset !== upper.offset)).toBe(true);
 });
 
 test('Reset stack puts the layer back on the even spacing', async ({ page }) => {
@@ -295,13 +356,10 @@ test('a mapping can carry the whole stack', async ({ page }) => {
     //instead, so the nudge was invisible and this asserted the raw heights; the layers that had heights
     //stayed put while the rest spread away from them, and on a real file that is a stack coming apart around
     //a clump that never budged.
-    //
-    //So the spread lands on each layer in proportion to its place in the order: 65/20 is the first layer in
-    //this file and the floor the stack is measured from, which gains nothing, and 66/20 is the second and
-    //gains the one step.
-    //
+    //Read at rest, so these are the mapping's own numbers rather than the mapping's numbers plus whatever
+    //spread the reading itself introduced.
     expect(slabs).toContainEqual({ offset: 1000, depth: 120 });
-    expect(slabs).toContainEqual({ offset: 2010, depth: 180 });
+    expect(slabs).toContainEqual({ offset: 2000, depth: 180 });
 });
 
 ///
@@ -383,11 +441,11 @@ test('the spacing slider restacks on every step, not on release', async ({ page 
 
     expect(rebuilt).toBeLessThan(6);
 
-    //The last restack is the height the slider ended on.
+    //The last restack is the height the slider ended on - the even stack's rung plus what it opened.
     const last = await page.evaluate(() => window.__restacks[window.__restacks.length - 1]);
 
     expect(last.length).toBeGreaterThan(1);
-    expect(last[1] - last[0]).toBe(520);
+    expect(last[1] - last[0]).toBe(LAYER_RUNG + 520);
 });
 
 ///
@@ -419,5 +477,5 @@ test('every layer separates by the same step', async ({ page }) => {
     expect(offsets.length).toBe(9);
 
     for (let at = 1; at < offsets.length; at++)
-        expect(offsets[at] - offsets[at - 1]).toBe(300);
+        expect(offsets[at] - offsets[at - 1]).toBe(LAYER_RUNG + 300);
 });

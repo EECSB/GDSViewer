@@ -640,7 +640,19 @@ function onSelectClick(event) {
     //is inside it. So it waits: the release decides, because only the release knows whether the pointer
     //moved.
     //
-    if (!adding && index >= 0 && selection.chosen.length === 1 && selection.chosen[0] === index) {
+    //**Chosen means in the set, not alone in it.** This read `chosen.length === 1` and so only waited for a
+    //selection of one - press on any of several and the press was reported at once, which replaced the
+    //selection with the shape under the pointer before the drag had begun. Everything downstream of that is
+    //built to move a group: liftChosen lifts the whole set for the preview and OnElementDragged writes one
+    //edit per distinct model. They were being handed a set of one, so dragging a band of chosen shapes moved
+    //the one that was grabbed and dropped the rest.
+    //
+    //Waiting costs the click nothing. The release reports the same notifySelection(index, false) the press
+    //used to, so a click that goes nowhere still reduces the group to what was clicked, and descendsOnClick
+    //is what decides whether that goes into the cell - it wants a selection of one, so a click among several
+    //picks rather than descends, exactly as before.
+    //
+    if (!adding && index >= 0 && selection.chosen.includes(index)) {
         selection.pressedOnChosen = index;
         selection.draggingFrom = point;
 

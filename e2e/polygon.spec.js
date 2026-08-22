@@ -4,7 +4,7 @@
 //outline follows the pointer, and there are four different ways to end it. None of that is checkable
 //anywhere but in a browser, because all of it is what the pointer and the keyboard are doing over time.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapePoints, shapeBox, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapePoints, shapeBox, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -247,7 +247,7 @@ test.describe('what comes out', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

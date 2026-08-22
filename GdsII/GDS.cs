@@ -49,6 +49,87 @@ namespace GdsII
             return gds;
         }
 
+        ///
+        ///A new, empty library with one empty cell in it - a layout to start drawing into.
+        ///
+        ///**Every other way in starts from somebody else's file.** Reading bytes, a stream, a text dump or a
+        ///set of records all need something to read, so building a layout from nothing meant hand-writing an
+        ///eight-line text skeleton and parsing it - which is a way of saying the library had no answer for
+        ///the simplest thing anybody would ask it to do.
+        ///
+        ///<paramref name="metersPerDatabaseUnit"/> is how big one database unit is, and the default is a
+        ///nanometer - what nearly every real file uses, and what makes a process table in nanometers read as
+        ///it stands. The other half of `UNITS`, user units per database unit, is derived from it on the
+        ///convention that a user unit is a micron, so the two halves cannot disagree.
+        ///
+        ///<paramref name="stamp"/> is the modification and access time written into the library and its
+        ///cell. Null takes the clock, which is what a new file wants; a test passes one so that two runs
+        ///produce the same bytes.
+        ///
+        ///The result goes through <see cref="FromRecords"/>, so it is structurally checked on the way out
+        ///and arrives with a StreamFormat and an AdditionalInformation like any other library.
+        ///
+        public static GDS NewLibrary(
+            string name = "LIBRARY",
+            string topCell = "TOP",
+            double metersPerDatabaseUnit = 1e-9,
+            DateTime? stamp = null)
+        {
+            if (metersPerDatabaseUnit <= 0)
+                throw new ArgumentOutOfRangeException(nameof(metersPerDatabaseUnit), "A database unit has to be bigger than nothing.");
+
+            //A micron per user unit, which is the convention every tool reads UNITS by.
+            double micronsPerDatabaseUnit = metersPerDatabaseUnit * 1e6;
+
+            short[] stamps = stampsFor(stamp ?? DateTime.Now);
+
+            var records = new List<Record>
+            {
+                Hierarchy.Make(RecordType.HEADER, new Int2Data(NewLibraryVersion)),
+                Hierarchy.Make(RecordType.BGNLIB, new Int2Data(stamps)),
+                Hierarchy.Make(RecordType.LIBNAME, new AsciiData(AddElement.AsAscii(nonEmpty(name, "LIBRARY")))),
+                Hierarchy.Make(RecordType.UNITS, new Real8Data(new double[] { micronsPerDatabaseUnit, metersPerDatabaseUnit })),
+                Hierarchy.Make(RecordType.BGNSTR, new Int2Data(stamps)),
+                Hierarchy.Make(RecordType.STRNAME, new AsciiData(AddElement.AsAscii(nonEmpty(topCell, "TOP")))),
+                Hierarchy.Make(RecordType.ENDSTR, null),
+                Hierarchy.Make(RecordType.ENDLIB, null)
+            };
+
+            return FromRecords(records);
+        }
+
+        ///<summary>Release 6, which is what every writer in this library produces.</summary>
+        private const short NewLibraryVersion = 600;
+
+        ///<summary>
+        ///The twelve shorts a BGNLIB or BGNSTR carries: year, month, day, hour, minute, second, said twice -
+        ///once for when it was last changed and once for when it was last looked at. Both are now for a file
+        ///that has just been made, since neither has happened yet and the alternative is a zero year.
+        ///</summary>
+        private static short[] stampsFor(DateTime when)
+        {
+            var one = new short[]
+            {
+                (short)when.Year,
+                (short)when.Month,
+                (short)when.Day,
+                (short)when.Hour,
+                (short)when.Minute,
+                (short)when.Second
+            };
+
+            return one.Concat(one).ToArray();
+        }
+
+        ///<summary>A name somebody left blank is the default rather than an unnamed library no reader likes.</summary>
+        private static string nonEmpty(string given, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(given))
+                return fallback;
+
+            return given.Trim();
+        }
+
         ///<summary>
         ///An empty library, for <see cref="FromText"/> to fill. Private because a GDS with no records has
         ///no StreamFormat, and every public way in leaves it with one or throws.

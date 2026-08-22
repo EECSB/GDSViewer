@@ -397,7 +397,7 @@ public class CliTests : IDisposable
 
         Assert.Contains("structures  1", Output);
         Assert.Contains("layers      9 layer/datatype pair(s)", Output);
-        Assert.Contains("drawn       21 shape(s)", Output);
+        Assert.Contains("drawn       23 shape(s)", Output);
         Assert.Contains("labels      3", Output);
     }
 
@@ -1122,12 +1122,20 @@ public class CliTests : IDisposable
         string map = LayerMap("65,20,diff,,4000,120\n");
         string path = TemporaryPath(".stl");
 
-        Assert.Equal(Cli.Ok, Run("model", Sample, "--layermap", map, "--spacing", "50", "-o", path));
+        //
+        //**At rest, which is nought and no longer 50.**
+        //
+        //A placed layer is carried by the slider like every other one - that is its own guarantee, in
+        //LayerSpacingTests.A_layer_given_a_height_moves_with_the_slider_too - so "the height it was given"
+        //is only literally its offset where nothing is being spread. That used to be a spacing of 50,
+        //because the number was measured from the even stack's rung height rather than from zero.
+        //
+        Assert.Equal(Cli.Ok, Run("model", Sample, "--layermap", map, "--spacing", "0", "-o", path));
 
         var gds = new GDS(File.ReadAllBytes(Sample));
 
         LayerNames.Parse(File.ReadAllText(map)).ApplyTo(gds.AdditionalInformation.Layers);
-        gds.AdditionalInformation.SetStackingOffsets(50);
+        gds.AdditionalInformation.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
 
         //The placed layer kept the height it was given rather than being spaced over.
         Assert.Equal(4000, gds.AdditionalInformation.Layers[new LayerKey(65, 20)].Offset);
@@ -1387,16 +1395,49 @@ public class CliTests : IDisposable
         Assert.Contains("mcon (67/44)", Output);
         Assert.Contains("met1 (68/20)", Output);
 
-        Assert.Contains("3 shape(s) across 3 layer(s).", Output);
+        //
+        //**Nine across five, where this was three across three.**
+        //
+        //The example gained two licon1 contacts, and licon1 is a via - it joins whatever it overlaps. They
+        //take the walk down into diff (65/20) and back up the other terminal, so a trace that used to stop
+        //at li1/mcon/met1 now spans the whole source-drain path.
+        //
+        Assert.Contains("9 shape(s) across 5 layer(s).", Output);
     }
 
-    ///<summary>And the label on it, which is what somebody checking a net is the net they think it is wants.</summary>
+    ///
+    ///And the label on it, which is what somebody checking a net is the net they think it is wants.
+    ///
+    ///**Asked of the gate**, which is the terminal that still carries one name. It used to ask at -700,850
+    ///and read back "source" - and since the example grew its two licon1 contacts, that point reaches both
+    ///source and drain through the diff they both land on, so what comes back there is the two-name warning
+    ///rather than a name. That case is <see cref="Nets_says_when_a_net_carries_two_names"/> below; this one
+    ///is still about a net that has exactly one.
+    ///
     [Fact]
     public void Nets_reports_the_name_sitting_on_it()
     {
+        Assert.Equal(Cli.Ok, Run("nets", Sample, "--layermap", Sky130Roles, "--at", "25,1000"));
+
+        Assert.Contains("Named gate.", Output);
+    }
+
+    ///
+    ///**Two names on one net is reported as the suspicious thing it is.**
+    ///
+    ///A net reaching two different labels is either the same wire spelled twice or two wires shorted
+    ///together, and the command cannot tell which - so it says both rather than picking one and sounding
+    ///certain. Worth a test of its own now the bundled example produces it: its source and drain contacts
+    ///both land on one diff polygon, and nothing in a connectivity walk knows a channel separates them.
+    ///
+    [Fact]
+    public void Nets_says_when_a_net_carries_two_names()
+    {
         Assert.Equal(Cli.Ok, Run("nets", Sample, "--layermap", Sky130Roles, "--at", "-700,850"));
 
-        Assert.Contains("Named source.", Output);
+        Assert.Contains("Carries 2 distinct names", Output);
+        Assert.Contains("drain", Output);
+        Assert.Contains("source", Output);
     }
 
     ///
@@ -1487,7 +1528,9 @@ public class CliTests : IDisposable
 
         Assert.Contains("index   layer            points", Output);
 
-        //Three rows for the three shapes, ordered by index.
+        //A row per shape, ordered by index - nine of them since the example gained its two licon1 contacts
+        //and the walk started reaching through diff into the other terminal. See Nets_walks_a_net_up_through
+        //_its_vias for what those two changed.
         var listed = Output
             .Split('\n')
             .SkipWhile(row => !row.Contains("index   layer"))
@@ -1495,7 +1538,7 @@ public class CliTests : IDisposable
             .Where(row => row.Trim().Length > 0)
             .ToArray();
 
-        Assert.Equal(3, listed.Length);
+        Assert.Equal(9, listed.Length);
     }
 
     #endregion ***********************************************************************

@@ -8,7 +8,7 @@
 //instance.spec: this file has the cell whose origin is nowhere near its shapes, which is the case that can
 //tell being carried by the middle from being carried by the origin.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -217,7 +217,7 @@ test.describe('afterwards', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

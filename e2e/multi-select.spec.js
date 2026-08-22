@@ -5,12 +5,12 @@
 //takes away, that a rubber band catches what it is dragged over, and that a group moves and deletes as
 //one step rather than as several.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, allPoints, shapePoints, otherShapeClearOfPanel, snapToGrid, chooseShape, openedOnItsOwn } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, allPoints, shapePoints, otherShapeClearOfPanel, snapToGrid, chooseShape, openedOnItsOwn, uploadFile } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoApp(page);
 
-    await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+    await uploadFile(page, 'e2e/fixtures/placed.gds');
 
     await openedOnItsOwn(page);
 
@@ -449,7 +449,7 @@ test.describe('copy and paste', () => {
 
         const path = await (await started).path();
 
-        await page.locator('#fileUpload').setInputFiles(path);
+        await uploadFile(page, path);
 
         await openedOnItsOwn(page);
 

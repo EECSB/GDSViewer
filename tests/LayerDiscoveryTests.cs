@@ -333,8 +333,11 @@ public class LayerDiscoveryTests
 
         var heights = information.OrderedLayers().Select(entry => entry.Value.Offset).ToList();
 
+        //The rung the even stack always had, plus the gap the slider asks to open on top of it.
+        const int step = AdditionalGDSInformation.DefaultLayerSpacing + 120;
+
         for (int at = 1; at < heights.Count; at++)
-            Assert.Equal(120, heights[at] - heights[at - 1]);
+            Assert.Equal(step, heights[at] - heights[at - 1]);
     }
 
     ///<summary>
@@ -351,9 +354,11 @@ public class LayerDiscoveryTests
 
         information.SetStackingOffsets(700);
 
+        const int step = AdditionalGDSInformation.DefaultLayerSpacing + 700;
+
         Assert.Equal(0, information.Layers[new LayerKey(65, 16)].Offset);
-        Assert.Equal(700, information.Layers[new LayerKey(65, 20)].Offset);
-        Assert.Equal(1400, information.Layers[new LayerKey(66, 20)].Offset);
+        Assert.Equal(step, information.Layers[new LayerKey(65, 20)].Offset);
+        Assert.Equal(step * 2, information.Layers[new LayerKey(66, 20)].Offset);
     }
 
     [Fact]
@@ -464,6 +469,76 @@ public class LayerDiscoveryTests
         layer.Name = "   ";
 
         Assert.Equal("65/20", layer.DisplayName);
+    }
+
+    #endregion ***********************************************************************
+
+    #region Adding a layer nothing is drawn on ***************************************
+
+    ///
+    ///A layer put in the table that no shape carries.
+    ///
+    ///**Because the table is built from what the layout draws.** A new library has no layers at all and an
+    ///existing one offers only the numbers it happens to use, so the answer to "draw on 66/44" was that
+    ///there was nowhere to say it. This is what the layer sidebar's + Layer reaches, and what a shape
+    ///drawn onto a pair nothing uses reaches through LayoutEdit.Register.
+    ///
+    [Fact]
+    public void A_layer_can_be_added_with_nothing_drawn_on_it()
+    {
+        var information = new GDS(GdsTestData.MinimalLibrary()).AdditionalInformation;
+        var key = new LayerKey(66, 44);
+
+        Assert.False(information.Layers.ContainsKey(key));
+        Assert.True(information.AddLayer(key));
+        Assert.True(information.Layers.ContainsKey(key));
+    }
+
+    ///<summary>And it arrives in the gray a layer gets when the gradient was not divided for it.</summary>
+    [Fact]
+    public void An_added_layer_arrives_in_the_color_a_late_layer_gets()
+    {
+        var information = new GDS(GdsTestData.MinimalLibrary()).AdditionalInformation;
+        var key = new LayerKey(66, 44);
+
+        information.AddLayer(key);
+
+        Assert.Equal(AdditionalGDSInformation.NewLayerColor, information.Layers[key].Color);
+    }
+
+    ///
+    ///**A pair already there is refused rather than replaced**, and says so by answering false.
+    ///
+    ///The table is keyed by the pair, so a second add could only overwrite the row - which would throw away
+    ///the name, color and height it was carrying. Silently, and on the press of a button whose whole job is
+    ///to add something that was not there.
+    ///
+    [Fact]
+    public void Adding_a_layer_that_is_already_there_changes_nothing()
+    {
+        var information = new GDS(GdsTestData.MinimalLibrary()).AdditionalInformation;
+        var key = information.OrderedLayers()[0].Key;
+
+        information.Layers[key].Name = "named";
+
+        Assert.False(information.AddLayer(key));
+        Assert.Equal("named", information.Layers[key].Name);
+    }
+
+    ///<summary>And it takes a place in the stack like any other, rather than staying at nothing.</summary>
+    [Fact]
+    public void An_added_layer_is_stacked_with_the_rest()
+    {
+        var information = new GDS(GdsTestData.MinimalLibrary()).AdditionalInformation;
+
+        information.AddLayer(new LayerKey(200, 0));
+        information.SetStackingOffsets(AdditionalGDSInformation.DefaultLayerSpread);
+
+        var ordered = information.OrderedLayers();
+
+        //Highest pair in the file, so it is the top of the even stack rather than sharing the floor.
+        Assert.Equal(new LayerKey(200, 0), ordered[^1].Key);
+        Assert.Equal(AdditionalGDSInformation.DefaultLayerSpacing * (ordered.Count - 1), ordered[^1].Value.Offset);
     }
 
     #endregion ***********************************************************************

@@ -1492,6 +1492,45 @@ a, .btn-link {
     this would sit on it again - which the three cell actions becoming squares has made much less likely, but
     not impossible, and there is no CSS way to offset from a sibling's height.
 */
+/*
+    A layout file held over the view.
+
+    **A pseudo-element rather than a div**, because the box it covers is one Blazor renders and re-renders,
+    and a node added to it by a script is a node Blazor's diff never accounted for. Nothing is added here at
+    all: js/fileDrop.js puts a class on the pane and the pane draws its own overlay, which is the same shape
+    sidebars.js has - the script sets one property and the stylesheet does the rest.
+
+    Global rather than in Viewer.razor.css beside .viewPane. A scoped rule would work, since the attribute
+    Blazor stamps on the pane survives a class added afterwards, but the other two things drawn over the
+    view - the hint and the notice - are here, and a third one filed somewhere else on a technicality is a
+    thing to go looking for.
+
+    Nothing takes the pointer. A drag is already over the view the whole time, and an overlay that could be
+    hit would be an element the drag has to enter and leave - which is the dragleave storm the script's own
+    note is about.
+*/
+.fileDropOver::after {
+    content: "Drop to open this layout";
+
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /*Inside the frame rather than on it, so the pane's own border is still the edge of the view.*/
+    border: 2px dashed #0d6efd;
+    background: rgba(13, 110, 253, 0.08);
+    color: #0d6efd;
+    font-size: 1.1em;
+    font-weight: 600;
+    text-shadow: 0 0 0.4em #fff, 0 0 0.8em #fff;
+
+    pointer-events: none;
+}
+
 .drawHint {
     position: absolute;
     top: 3.3rem;
@@ -2185,15 +2224,19 @@ a, .btn-link {
     and the picture of the one you were pointing at was a thumbnail. The room was there and nothing was
     using it.
 
-    The height is measured off the window rather than off the canvas, because the canvas is not this box's
-    parent - the popup hangs from a toolbar column, and a percentage here would be a percentage of that
-    column. 450 is what is above and below it: the header, the bar at the taller of its two heights, the
-    popup's own padding and heading, and the footer some of these have.
+    The height cannot be a percentage: the canvas is not this box's parent - the popup hangs from a toolbar
+    column, and a percentage here would be a percentage of that column.
 
-    Bounded at both ends, and the floor has to be under the ceiling or the popup scrolls - which is what a
-    240px floor did on a 620px window, where the popup's own cap was 360 and the body wanted 408. The
-    ceiling is because a list of names that scrolls is no more useful at 900 pixels than at 640, and a tall
-    window was giving it 900.
+    **--picker-tall is measured, and it replaced the second of two guesses.** It was `100vh - 450`, where
+    450 was the header, the bar at the taller of its two heights, and the popup's own padding and heading;
+    the popup above used `100vh - 260` for the same window. Two constants for one window, which have to stay
+    exactly 190 apart or the popup scrolls inside its own cap - and did, on a 620px window. measurePopupRoom
+    now takes the popup's room and subtracts the chrome it measures, so there is one source and no gap to
+    keep. The old formula stays as the fallback for before the first measurement.
+
+    Bounded at both ends still. The floor has to be under the ceiling or the popup scrolls - which is what a
+    240px floor did on that 620px window. The ceiling is because a list of names that scrolls is no more
+    useful at 900 pixels than at 640, and a tall window was giving it 900.
 */
 .examplePicker {
     display: flex;
@@ -2201,7 +2244,7 @@ a, .btn-link {
     align-items: stretch;
     gap: 1.5em;
 
-    height: min(calc(100vh - 450px), 640px);
+    height: min(var(--picker-tall, calc(100vh - 450px)), 640px);
     min-height: 180px;
 }
 
@@ -2783,7 +2826,15 @@ body:has(.viewerPageFull) #mainAppContainer {
 
     position: absolute;
     top: 100%;
-    left: 0;
+
+    /*
+        Under its button, unless what is inside it will not fit in the room to the right of there.
+
+        measurePopupRoom in sidebars.js sets the shift, and sets it to zero on every window where the popup
+        fits - so this is left: 0 everywhere except the narrow end, where the alternative is a popup that
+        scrolls sideways with the picture squeezed to its floor while the view sits half empty beside it.
+    */
+    left: calc(-1 * var(--popup-shift, 0px));
     transform: none;
 
     border-top: var(--drop) solid transparent;
@@ -2820,8 +2871,13 @@ body:has(.viewerPageFull) #mainAppContainer {
         The cap is the other half. Height was 100vh less a constant and nothing else, so a 1400px window gave
         a popup 1116 tall: nine hundred pixels of file names, in a list that scrolls anyway. Past about 760
         there is nothing left to show.
+
+        **--popup-tall is that first number measured rather than guessed** - see measurePopupRoom, which
+        takes it from the popup's own top down to the foot of the view, exactly as it takes --popup-room
+        across. The constant stays as the fallback for the moment before any measurement has been made, and
+        the cap stays because it is a judgement rather than a measurement.
     */
-    max-height: min(calc(100vh - 260px), 820px);
+    max-height: min(var(--popup-tall, calc(100vh - 260px)), 820px);
 
     /*
         And never off the side of the canvas, which is what it did.
@@ -2840,8 +2896,38 @@ body:has(.viewerPageFull) #mainAppContainer {
         which came to about 207px on the bundled example; a fixed 16em is 256, and the fifty pixels it
         gained came straight off this room. The popup hung 35px over at 1024 and 44 at 1600 before the
         constant was moved to match. If the sidebar width changes again, this moves with it.
+
+        **And again when New was added to the bar.** The room starts at the popup's own left edge, which is
+        under the Examples button - so a control inserted ahead of that button pushes the whole popup right
+        and takes exactly its own width off this. It was 435, and one 21px button with a 6px gutter in front
+        of it moved the measured line to 0.800 x width - 462.2. Re-measured at six widths from 1024 to 2560
+        rather than adjusted by the button's width, since the same reasoning is what put 435 a hair over the
+        room the last time somebody did it by hand.
+
+        **--popup-room is that measurement, taken rather than fitted**, and the formula is only what is used
+        before it arrives. measurePopupRoom in sidebars.js reads the popup's own left edge and the left edge
+        of the layer sidebar and subtracts; see the note there for why the fitted line kept coming loose. The
+        line under-allowed badly in the states it was never fitted against - with the cell tree docked open
+        it left about a fifth of the room unused - which is what a formula that cannot see the popup's left
+        edge is always going to do.
     */
-    max-width: calc(80vw - 435px);
+    max-width: var(--popup-room, calc(80vw - 465px));
+
+    /*
+        And it takes the room rather than only being allowed it.
+
+        The width above is max-content, which is the list's 20em beside the picture's 32em basis and no more
+        - so on a wide window the popup stopped at what its contents happened to ask for and left the rest of
+        the room empty, with a picture a fraction of the size it had space to be. A floor at the measured
+        room makes the pair use what is there; the picture takes all of it, since the list beside it does not
+        grow.
+
+        **Capped at 72em**, because the room on a wide screen is most of the window and a file list a metre
+        across is not better for being wider. Under the cap the floor and the ceiling are the same number and
+        the popup is exactly the room; over it the popup stops and the space to its right stays empty, which
+        at that width is the right answer.
+    */
+    min-width: min(var(--popup-room, 0px), 72em);
 }
 
 /*
@@ -2854,13 +2940,30 @@ body:has(.viewerPageFull) #mainAppContainer {
 
     Measured directly at the narrow end instead - 451px of room at 1024, 468 at 900 - so 430 is under both.
 
+    **Re-measured when New was added to the bar**, which moved the popup's left edge right by a button and
+    took that much off the room: 357px at 1024 and 374 at 900, where the cap was 380. So 350, under both.
+
+    **A constant cannot be right across this whole range, and that is worth writing down rather than
+    leaving to be rediscovered.** The room here is not a line - the bar wraps as the window narrows and the
+    Examples button moves with it - so the same measurement gives 374 at 900, 338 at 1000 and 357 at 1024.
+    350 is under the two sizes the specs pin and over the room at about 1000 and below; at 820 the room is
+    302 and the popup hangs over by the difference. That was true before this constant moved and is not
+    something a fourth hand-fitted number fixes: a popup that must stay inside a box it is not positioned
+    against needs to be positioned against it, which is a change to the markup rather than to a number here.
+
     **After the rule it overrides, not before it.** It was written next to the picture it was added for,
     which is two hundred lines above this, so the cap here won and none of it did anything. Both are
     max-width on the same selector; the later one is the one that counts.
+
+    **And now it is only the fallback.** Everything above is the history of a constant nobody could get
+    right, and the paragraph before this says why: the room is not a function of the window. It is measured
+    now - `--popup-room`, from measurePopupRoom in sidebars.js - which is right at every width including the
+    ones this constant was wrong at. What is left here is the value used before that measurement lands, and
+    for anything serving the stylesheet without the script.
 */
 @media (max-width: 1024px) {
     .popupDiv.popupUnder {
-        max-width: 380px;
+        max-width: var(--popup-room, 350px);
     }
 }
 
@@ -2971,14 +3074,30 @@ popupZIndex_0 {
     display: none;
 }
 
+/*
+    A layer row: its number, its color, its name, then the eye, the lock, the gear and the ×.
+
+    The row is a fixed grid so that the numbers, swatches and switches line up down the list rather than
+    each sizing to its own contents - so a control added to the row needs a track, **and the row needs the
+    room for it or the name column pays for it out of its own minimum.**
+
+    Seven tracks where there were six. The eye replaced a checkbox in the same place and the lock is the new
+    one - the two switches sit together, before the two controls that open or remove, so the pair that says
+    how the layer is being looked at is not split by the pair that acts on it.
+
+    239 rather than 216, which is that warning being heeded rather than read: the lock went in without the
+    width and the names paid, so "nwell.label (64/5)" came out as "nwell.label (6…" down the whole list. The
+    extra is exactly the new track and its gap - 1.4em at this font size, plus the 6 between it and the next.
+    Still inside the sidebar's own 16em, so nothing gains a horizontal scrollbar for it.
+*/
 .layerRow {
     display: grid;
-    grid-template-columns: 1.6em 16px minmax(5.5em, 1fr) 1.4em 1.3em;
+    grid-template-columns: 1.6em 16px minmax(5.5em, 1fr) 1.4em 1.4em 1.3em 1.2em;
     align-items: center;
     gap: 6px;
     padding: 2px 0;
     width: 100%;
-    max-width: 200px;
+    max-width: 239px;
     font-size: 12px;
 }
 
@@ -3261,29 +3380,101 @@ popupZIndex_0 {
     background: rgba(13, 110, 253, 0.12);
 }
 
+/*
+    A row flashing because it was pressed in the 3D view, where a press flashes the slab that row names
+    instead of picking it to draw on.
+
+    **Three beats over the same 1250ms the slab uses** - ROW_PULSE_MS in Viewer.razor, PULSE_MS and
+    PULSE_BEATS in ThreeInterop. The peaks sit at a sixth, a half and five sixths, which is where the
+    slab's sin-squared curve peaks, so the two brighten together rather than drifting against each other
+    and reading as two separate things happening.
+
+    **After the hover and drawing tints on purpose.** An animation owns the property while it runs whatever
+    the rules above it say, and hands the row back unchanged when it ends - so a row that is also the one
+    being drawn on keeps its bar and its tint once the flash is over.
+*/
+.layerRowPulsing {
+    animation: layerRowPulse 1250ms ease-in-out 1;
+}
+
+@keyframes layerRowPulse {
+    0%, 33.3%, 66.7%, 100% {
+        background-color: rgba(13, 110, 253, 0);
+    }
+
+    16.7%, 50%, 83.3% {
+        background-color: rgba(13, 110, 253, 0.35);
+    }
+}
+
 .layerIndex {
     text-align: right;
     color: #555;
 }
 
+/*
+    The layer's name, which is a readout.
+
+    **No caret of its own.** This carried `cursor: text` while clicking it opened a box to rename in, and it
+    inherits the row's cursor now that renaming lives in the settings behind the gear - so what the pointer
+    says over a name is whatever the row says, which is the thing that can actually be pressed.
+*/
 .layerName {
     text-align: left;
-    cursor: text;
+    cursor: inherit;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/*Fills its track so the checkbox after it does not shift when a name is being typed.*/
-.layerNameBox {
-    width: 100%;
-    font-size: 12px;
-    min-width: 0;
+/*
+    The eye and the padlock: the two switches on a layer row.
+
+    Bare buttons, sized and centred in their tracks like the checkbox the eye replaced. Both inherit the
+    row's color so the glyph is a line drawing rather than an asset, and both go blue under the pointer the
+    way the gear beside them does.
+*/
+.layerEyeButton,
+.layerLockButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #5a5a5a;
+    cursor: pointer;
 }
 
-.layerVisible {
-    justify-self: center;
-    margin: 0;
+.layerEyeButton:hover,
+.layerLockButton:hover {
+    color: #1b6ec2;
+}
+
+/*
+    A hidden layer, and a locked one.
+
+    **Dimmed as well as redrawn**, so the state can be read down the column rather than by looking at each
+    glyph in turn. The struck-through eye and the shut shackle are the shapes; this is what makes a list of
+    twenty rows answer "which of these am I looking at" at a glance.
+*/
+.layerEyeOff {
+    color: #b6b6b6;
+}
+
+/*
+    Locked reads as *on* rather than as absent, because it is a thing that has been done to the layer - so
+    it holds the row's color at full strength where the eye fades. Unlocked is the quiet state.
+*/
+.layerLockButton {
+    color: #b6b6b6;
+}
+
+.layerLockOn {
+    color: #444;
 }
 
 /*
@@ -3323,7 +3514,14 @@ popupZIndex_0 {
     side of the list would be a column of buttons competing with the layer names, which are the thing
     being read.
 */
-.layerSettingsButton {
+/*
+    The gear at the end of a layer row, and the one at the end of a rule row.
+
+    **One rule for both**, because they are the same control answering the same question about two different
+    kinds of row - and a second copy of these ten lines is how the two start drifting a pixel apart.
+*/
+.layerSettingsButton,
+.rulesSettingsButton {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -3336,8 +3534,30 @@ popupZIndex_0 {
     cursor: pointer;
 }
 
-.layerSettingsButton:hover {
+.layerSettingsButton:hover,
+.rulesSettingsButton:hover {
     color: #1b6ec2;
+}
+
+/*
+    A rules row is flex where a layer row is a grid, so the gear needs telling to go right. It takes the free
+    space and the × that follows it sits against it - the × asks for the same margin and there is none left
+    to take by then, which is what keeps the pair together rather than at opposite ends.
+
+    Faded until the row is under the pointer, the way the × beside it is: neither is worth drawing attention
+    to on every row of a long deck.
+*/
+.rulesSettingsButton {
+    margin-left: auto;
+    opacity: 0.3;
+}
+
+.rulesRow:hover .rulesSettingsButton {
+    opacity: 0.85;
+}
+
+.rulesSettingsButton:hover {
+    opacity: 1;
 }
 
 /*
@@ -3517,6 +3737,57 @@ popupZIndex_0 {
     width: 260px;
     font-size: 13px;
     overflow-y: auto;
+}
+
+/*
+    A rule's settings, laid out and placed exactly like a layer's - wider, because what is typed in it is a
+    line of a deck rather than a name, and a rule with an except clause runs a long way.
+*/
+.ruleSettingsPopup {
+    position: fixed;
+    transform: none;
+    width: 340px;
+    font-size: 13px;
+    overflow-y: auto;
+}
+
+/*
+    What the parser made of the line, beside the label that says which part of it this is. Read-only, so it
+    is text rather than a box - a disabled input reads as a control that has been switched off, and none of
+    these was ever a control.
+*/
+.ruleSettingsValue {
+    text-align: right;
+    color: #444;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/*The label sits on its own line, because the box under it takes the full width.*/
+.ruleSettingsLineRow {
+    margin-bottom: 0.25em;
+}
+
+.ruleSettingsLine {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.ruleSettingsProblem {
+    margin-top: 0.4em;
+}
+
+.ruleSettingsActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4em;
+    margin-top: 0.6em;
 }
 
 /*
@@ -3985,6 +4256,177 @@ popupZIndex_0 {
 }
 
 /*
+    The two boxes for a new layer's pair, under the controls that opened them.
+
+    Laid out as one line rather than a form: it is a layer, a slash and a datatype, which is how the pair is
+    written everywhere else in the app - so reading the boxes should be reading `66/44`.
+*/
+.addLayerRow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35em;
+    padding: 0 0.2em 0.45em;
+    font-size: 12px;
+}
+
+/*
+    Wide enough for a real datatype and no wider. The spinner arrows are left on: this is a number, and the
+    keyboard is not the only way people reach for one.
+*/
+.addLayerBox {
+    width: 4.2em;
+    padding: 0.1em 0.3em;
+    border: 1px solid #adb5bd;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.addLayerSlash {
+    opacity: 0.7;
+}
+
+/*
+    What was wrong with what was typed, where it was typed.
+
+    Under the boxes rather than in an alert, because the answer is to change one of two numbers that are
+    still on screen - a dialog would cover them and make the correction a second step.
+*/
+.addLayerProblem {
+    padding: 0 0.6em 0.45em;
+    color: #b30000;
+    font-size: 11px;
+    text-align: center;
+}
+
+/*
+    One line of a deck, typed where the deck is listed.
+
+    Wrapped rather than laid out in a single line: the box wants the width and the two buttons do not, so on
+    a narrow sidebar they drop under it instead of squeezing the thing being typed into.
+*/
+.addRuleRow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35em;
+    padding: 0 0.4em 0.45em;
+    font-size: 12px;
+}
+
+.addRuleBox {
+    flex: 1 1 14em;
+    min-width: 0;
+    padding: 0.15em 0.35em;
+    border: 1px solid #adb5bd;
+    border-radius: 3px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 11px;
+}
+
+/*
+    The × that takes a row out, at the end of a rule and of a layer.
+
+    Held at low contrast until the row is under the pointer: these are lists to read, and a column of delete
+    marks down the side of one competes with the names for attention.
+
+    **Big enough to hit.** It was 13px, which is smaller than the text beside it and well under the 24px a
+    pointer target is usually held to - a mark you have to aim at, next to a checkbox you do not.
+*/
+.rulesRemove,
+.layerRemove {
+    padding: 0 0.15em;
+    border: none;
+    background: none;
+    color: inherit;
+    opacity: 0.3;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+
+/*
+    Pushed to the end of a rule's row by its own margin; a layer's row is a grid with a track for it, so
+    there it lands in the track and an auto margin would fight the grid.
+*/
+.rulesRemove {
+    margin-left: auto;
+}
+
+.rulesRow:hover .rulesRemove,
+.layerRow:hover .layerRemove {
+    opacity: 0.8;
+}
+
+.rulesRemove:hover,
+.layerRemove:hover {
+    opacity: 1;
+    color: #b30000;
+}
+
+/*
+    The add at the foot of a list, inside the card the rows are in.
+
+    A row of its own rather than another list row: it is not one of the things being listed, and giving it
+    the row grid would line "+ Layer" up under the layer names as though it were one of them.
+*/
+/*
+    The row the add button sits in, at the foot of a list.
+
+    **Given the full width rather than left to find its own.** The list is a column flex box that centers
+    its children, and centering on the cross axis sizes each one to its own contents - so without this the
+    wrapper was as wide as the words in the button and the button could not grow to the row width it is
+    supposed to match.
+*/
+.listAddRow {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: 0.5em 0.2em 0.3em;
+}
+
+/*
+    Add layer, and add rule.
+
+    **A button the width of the rows it adds to**, rather than a word among the actions above the list. It
+    is the one control in either panel that makes a new row, so it reads as the end of the list rather than
+    as another thing that acts on the whole of it - and at the row's own width the list has a bottom edge
+    instead of trailing off into space.
+
+    A quiet fill and no border rather than the app's blue: it sits under a list somebody is reading, and the
+    loudest thing in a panel should not be the way to make it longer.
+
+    The border is turned off rather than never set: a button carries one of its own, and left alone it draws
+    a line that the layer rows underneath do not have.
+*/
+.listAddButton {
+    flex: 1;
+    max-width: 216px;
+    padding: 0.4em 0.6em;
+    border: none;
+    border-radius: 4px;
+    background: #f1f3f5;
+    color: inherit;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.listAddButton:hover {
+    background: #e9ecef;
+}
+
+/*
+    A rule's rows run the width of the list rather than being capped the way a layer's are, so the button
+    under them does too - "the width of a row" is the point, and the two lists disagree about what that is.
+*/
+.rulesList .listAddButton {
+    max-width: none;
+}
+
+/*
     Design rules, in the side panel where the layers are listed.
 
     The panel shows one list or the other rather than both: they are the same shape - a list down the side
@@ -4077,10 +4519,19 @@ popupZIndex_0 {
     One rule, one row. Laid out with the columns a deck line has: what it is called, what it measures and
     the limit it measures against.
 */
+/*
+    A rule's row, across the width of the list.
+
+    **Given the width rather than sized to its own text.** The list is a column flex box that centers its
+    children, so each row was as wide as the rule with the longest id in it - which put the hover highlight
+    and the dividing line under some of the text rather than across the list, and left the add button at the
+    foot wider than the rows it adds to.
+*/
 .rulesRow {
     display: flex;
     align-items: baseline;
     gap: 0.3em;
+    width: 100%;
 
     padding: 0.25em 0.5em;
     border-bottom: 1px solid #f1f3f5;
