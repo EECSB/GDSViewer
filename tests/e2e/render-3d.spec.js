@@ -765,3 +765,74 @@ test('opening a layout in 3D frames the whole stack', async ({ page }) => {
     //And it is actually filling the frame rather than a speck in the middle of it, which would also "fit".
     expect(framing.top - framing.bottom, `the stack is a speck: ${said}`).toBeGreaterThan(0.2);
 });
+
+///
+///The corner axis indicator, which is a second render into a corner of the same canvas.
+///
+///**The two ways that can go wrong are both invisible to every other test here.** If the viewport is not
+///put back afterwards, the *next* frame's whole scene is drawn into the corner square - the layout does
+///not disappear, it shrinks into a badge, and no assertion about the scene graph notices. If depth is not
+///cleared first, the indicator is drawn inside whatever the layout has in front of it and simply does not
+///appear, while every mesh and every count stays exactly as it was.
+///
+///**Watched at gl.viewport rather than at three's setViewport.** Three assigns setViewport onto each
+///renderer as an own property rather than onto the prototype, so there is nothing to patch without a
+///handle on the instance - and the instance is private to the interop. The WebGL call underneath it is on
+///a prototype, is what actually moves the viewport, and is the same call whichever way three is built.
+///
+///Pixels would be the other way to ask, and reading a WebGL canvas back needs preserveDrawingBuffer -
+///turning that on to measure this would change the thing being measured.
+///
+test('the axis indicator is drawn into the bottom-left corner, and gives the viewport back', async ({ page }) => {
+    const seen = await page.evaluate(async () => {
+        const calls = [];
+        const undos = [];
+
+        for (const context of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
+            if (context == null)
+                continue;
+
+            const original = context.prototype.viewport;
+
+            context.prototype.viewport = function (x, y, width, height) {
+                calls.push({ x, y, width, height });
+
+                return original.apply(this, arguments);
+            };
+
+            undos.push(() => { context.prototype.viewport = original; });
+        }
+
+        //Long enough for several frames of the animation loop to pass through it.
+        await new Promise(resolve => setTimeout(resolve, 400));
+
+        for (const undo of undos)
+            undo();
+
+        //Device pixels, which is what gl.viewport speaks - three multiplies by the pixel ratio on the way
+        //down. The canvas is read in the same units so the comparisons below are like for like.
+        const canvas = document.querySelector('#container canvas');
+
+        return { calls, width: canvas.width, height: canvas.height };
+    });
+
+    //Set twice a frame: once onto the corner, once back onto the whole canvas.
+    const corner = seen.calls.filter(one => one.x > 0 && one.y > 0);
+
+    expect(corner.length, 'nothing was ever drawn into a corner viewport').toBeGreaterThan(0);
+
+    //Square, and a badge rather than a second view of the layout.
+    expect(corner[0].width).toBe(corner[0].height);
+    expect(corner[0].width).toBeLessThan(seen.width / 3);
+
+    //Bottom left specifically. A WebGL viewport measures its origin from the bottom-left of the canvas, so
+    //both being small is that corner - and it is the corner the buttons along the foot leave free.
+    expect(corner[0].x).toBeLessThan(seen.width / 2);
+    expect(corner[0].y).toBeLessThan(seen.height / 2);
+
+    //And every one of them is followed by the whole canvas going back, which is what stops the corner
+    //keeping the next frame.
+    for (let at = 0; at < seen.calls.length - 1; at++)
+        if (seen.calls[at].x > 0 && seen.calls[at].y > 0)
+            expect(seen.calls[at + 1], 'the corner viewport was not given back').toMatchObject({ x: 0, y: 0 });
+});

@@ -16,7 +16,7 @@ only files this project produced or was given.
 
 They are checked in because the alternative is a test that only runs where KLayout happens to be
 installed. Regenerating them needs KLayout and the script recorded in
-[DOCUMENTATION.md](../../docs/DOCUMENTATION.md#interoperability).
+[DOCUMENTATION.md](../../../docs/DOCUMENTATION.md#interoperability).
 
 Neither file has padding after `ENDLIB`, which is itself one of the findings: KLayout does not write any.
 

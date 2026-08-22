@@ -20,7 +20,7 @@ const { gotoApp, gotoExample, MOSFET, MOSFET_POLYGONS, shapeCount, openFile, acc
 ///builds the DataTransfer itself and dispatches the same events the browser would - which is what the code
 ///under test reads, and all of it.
 ///
-const NAND = path.join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'sky130_fd_sc_hd__nand2_1.gds');
+const NAND = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'sky130_fd_sc_hd__nand2_1.gds');
 
 ///
 ///A drag carrying one real layout file, as a handle the dispatches below can share.

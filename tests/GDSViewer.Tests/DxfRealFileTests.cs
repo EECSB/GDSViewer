@@ -22,12 +22,12 @@ namespace GDSViewer.Tests;
 ///    layout.read("wwwroot/resources/GDS Files/Sky130 GDS/Mosfet.gds")
 ///    options = pya.SaveLayoutOptions()
 ///    options.format = "DXF"
-///    layout.write("tests/fixtures/klayout-written.dxf", options)
+///    layout.write("tests/GDSViewer.Tests/fixtures/klayout-written.dxf", options)
 ///
 public class DxfRealFileTests
 {
     private const string Original = "wwwroot/resources/GDS Files/Sky130 GDS/Mosfet.gds";
-    private const string Written = "tests/fixtures/klayout-written.dxf";
+    private const string Written = "tests/GDSViewer.Tests/fixtures/klayout-written.dxf";
 
     private static string PathTo(string relative)
     {

@@ -70,14 +70,14 @@
     </button>
 
     @*Fixed to the window rather than to this corner of it, so it does not matter where in here it sits.*@
-    <GDSViewer.Pages.QR @ref="qrCodeComponent" />
+    <QR @ref="qrCodeComponent" />
 </div>
 
 @code {
     #region Components ***************************************
 
     //Filled in by @ref, so null until this component has rendered once.
-    private Pages.QR? qrCodeComponent;
+    private QR? qrCodeComponent;
 
     #endregion ***********************************************
 

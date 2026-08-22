@@ -288,21 +288,29 @@ Do **not** touch `//` that is part of a URL (e.g. `https://`, `://` inside a str
 
 Third-party JS lives under [`wwwroot/lib/`](wwwroot/lib) as plain files checked into the repo, and the app's own interop lives in [`wwwroot/js/`](wwwroot/js) as one file per library. **Nothing the app ships comes from a package manager, and there is no bundler** — `dotnet build` is the whole build, and it must stay that way. When adding a library, vendor the minimum set of files it needs and record the version in [`wwwroot/lib/README.md`](wwwroot/lib/README.md); do not add a build step or reach for a CDN (the app is a PWA and must work offline).
 
-The rule is about what ships. The **test** tooling does use npm (Playwright, in [`package.json`](package.json)), which is fine because nothing it installs reaches `wwwroot` or the build — but do not let a dependency cross that line.
+The rule is about what ships. The **test** tooling does use npm (Playwright, in [`tests/package.json`](tests/package.json)), which is fine because nothing it installs reaches `wwwroot` or the build — but do not let a dependency cross that line.
 
 The vendored files are marked `-text -diff` in `.gitattributes` so they stay byte-identical to upstream and never produce multi-megabyte diffs. They are replaced wholesale on a version bump, never edited in place.
 
 ## Tests
 
-Three layers. Run all of them for a change that crosses into the browser:
+Three layers, all under [`tests/`](tests) — the xUnit project in `tests/GDSViewer.Tests/`, and the browser
+tooling (both Playwright configs, `package.json`, the specs) beside it. Run all of them for a change that
+crosses into the browser:
 
 ```bash
-dotnet test          # C# units and the 897-file corpus
+dotnet test          # C# units and the 897-file corpus, from the repository root
+
+cd tests             # the npm scripts live with the specs they run
 npm test             # browser-JS units (Node's own runner, nothing to install)
 npm run test:e2e     # Playwright end-to-end (npm install first; it starts the app itself)
 ```
 
-The parser and the layer/color logic are pure C# and are covered directly. Pure JS belongs in [`wwwroot/js/viewGeometry.js`](wwwroot/js/viewGeometry.js), which has no DOM or three.js dependency so Node can require it. Anything needing a real browser — WebGL, Monaco, pointer events, component lifecycle — belongs in [`e2e/`](e2e). See [DOCUMENTATION.md](docs/DOCUMENTATION.md#testing) for what is and is not covered.
+The parser and the layer/color logic are pure C# and are covered directly. Pure JS belongs in
+[`wwwroot/js/viewGeometry.js`](wwwroot/js/viewGeometry.js), which has no DOM or three.js dependency so
+Node can require it. Anything needing a real browser — WebGL, Monaco, pointer events, component lifecycle
+— belongs in [`tests/e2e/`](tests/e2e). See [DOCUMENTATION.md](docs/DOCUMENTATION.md#testing) for what is
+and is not covered.
 
 When writing e2e specs: **poll rather than read once** (a view is drawn after it is mounted, so a single read races it), and do not wait on the layer sidebar — the text view has none.
 

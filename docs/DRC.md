@@ -164,8 +164,8 @@ own boundary. A test on two solid blocks side by side caught it.
 can hand to an AI along with a PDK document. What follows is why it has this shape.
 
 Line-based, `#` comments, read as far as it parses — the same shape and the same failure behavior as
-[`LayerNames`](../GdsII/LayerNames.cs), which is deliberate: a user who has already written a layermap for
-this app should recognize the file.
+[`LayerNames`](../GdsII/Model/LayerNames.cs), which is deliberate: a user who has already written a
+layermap for this app should recognize the file.
 
 ```
 layer  <name> <number>/<datatype>
@@ -206,7 +206,7 @@ this way first.
 would come from `Grid.Of` rather than from the deck, which reads well and cannot work: `Grid.Of` returns the
 *greatest common divisor* of every coordinate in the library, so a single coordinate at 3 among a file of
 multiples of 5 drags the answer to 1 — and nothing is ever off a grid of 1. The stray coordinate defines
-away the grid that was supposed to catch it, and the check could never fire. `tests/GridTests.cs` already
+away the grid that was supposed to catch it, and the check could never fire. `tests/GDSViewer.Tests/GridTests.cs` already
 pinned that behavior before any of this was written. The manufacturing grid is PDK data like every other
 number in a deck, so the deck states it: 5, on sky130.
 
@@ -311,10 +311,11 @@ behavioral requirement in the plan, and it is why the deck vocabulary is fixed.
 **Built.** They bound the ratio of a whole net's metal to the gate area it reaches, and they need
 connectivity — which is why they are normally out of reach for anything that is not a full extraction flow.
 
-They were reachable here because [`Nets.cs`](../GdsII/Nets.cs) already walks a net with `LayerRole` telling
-it which layers are conductors and which are vias, roles arriving through the layermap's seventh column.
-What it lacked was a way to ask about *every* net at once — `Reaching` answers about one shape somebody
-clicked and rebuilds its adjacency to do it, which is right for one question and quadratic for all of them.
+They were reachable here because [`Nets.cs`](../GdsII/Viewing/Nets.cs) already walks a net with
+`LayerRole` telling it which layers are conductors and which are vias, roles arriving through the
+layermap's seventh column. What it lacked was a way to ask about *every* net at once — `Reaching` answers
+about one shape somebody clicked and rebuilds its adjacency to do it, which is right for one question and
+quadratic for all of them.
 `Nets.All` builds it once.
 
 **The rule is refused when no layer has a role, and that is the line the whole check hangs on.** A GDSII

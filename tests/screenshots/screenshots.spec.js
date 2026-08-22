@@ -15,7 +15,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 
-const IMAGES = path.join(__dirname, '..', 'docs', 'images');
+const IMAGES = path.join(__dirname, '..', '..', 'docs', 'images');
 
 //Mosfet.gds is the hand-made one: nine layers, a few dozen shapes, and small enough that the whole thing is
 //legible at 1400 pixels. A sky130 standard cell is the real thing and is used where density is the point.
@@ -89,28 +89,31 @@ test('the 3D view', async ({ page }) => {
     await page.waitForTimeout(4000);
 
     //
-    //**Pulled open, because the collapsed stack is the one thing this picture must not show.**
+    //**Closed right up, because the process stack is the thing worth showing.**
     //
-    //The slider starts near its low end, where the layers sit almost on top of each other and a screenshot
-    //of "layers extruded and stacked in space" shows a flat lump. The restack is live, so this settles in a
-    //frame rather than needing a redraw.
+    //This used to pull the slider open to 60, on the reasoning that a screenshot of "layers extruded and
+    //stacked in space" should not show a flat lump. What that produced was a diagram of a stack rather than
+    //a stack: even spacing between films whose real separations are the whole point, and a contact drawn
+    //floating in a gap it exists to bridge.
     //
-    //**The number no longer has to be tuned to the frame**, which is what it used to be for. A spread wider
-    //than what was already in view ran off the top, so this read 110, then 60, each time picked by looking
-    //at the result - and each time wrong again the moment the geometry moved, which it did when slabs
-    //stopped hanging below the plane they were drawn on.
+    //At nought, and with the bundled layermap's real heights under it, this is the wafer - li1 at 940 nm,
+    //met1 at 1370, mcon spanning exactly the 330 between them, touching at both ends. That is what the app
+    //claims to draw and what the surrounding prose in the readme describes, so it is what the picture
+    //should be.
     //
-    //Center the view is pressed instead, which is a real control doing the thing the picture needs, and it
-    //fits whatever the stack has become. See Viewer3D's frameAfterDrawing: opening a file frames it now, and
-    //a spacing change deliberately does not, so this is exactly the case the button is there for.
+    //Set rather than left alone: nought is the default today, and a picture that depends on a default is
+    //one that changes when the default does.
     //
     await page.locator('#layerSpacing').evaluate(slider => {
-        slider.value = '60';
+        slider.value = '0';
         slider.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
     await page.waitForTimeout(1000);
 
+    //Framed by a real control rather than by a number tuned to the frame, which is what the spacing used to
+    //be. See Viewer3D's frameAfterDrawing: opening a file frames it, and a spacing change deliberately does
+    //not - so whatever the stack has just become, this is the button that fits it.
     await page.locator('#centerView').click();
 
     await page.waitForTimeout(1500);

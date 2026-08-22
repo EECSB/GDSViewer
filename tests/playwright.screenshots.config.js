@@ -11,7 +11,7 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
-    testDir: './tools',
+    testDir: './screenshots',
     timeout: 180000,
     expect: { timeout: 20000 },
 
@@ -38,6 +38,10 @@ module.exports = defineConfig({
     ],
     webServer: {
         command: 'dotnet run --no-launch-profile --project GDSViewer.csproj --urls http://localhost:5105',
+
+        //From the repository root, the same as playwright.config.js and for the same reason.
+        cwd: require('path').join(__dirname, '..'),
+
         url: 'http://localhost:5105',
         timeout: 300000,
         reuseExistingServer: false

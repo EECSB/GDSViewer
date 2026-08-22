@@ -2,7 +2,7 @@
 #
 # All three layers the project keeps - the C# tests, the browser-JS units, and the Playwright end-to-end
 # run - because a change that crosses into the browser is not covered by any one of them. The e2e job
-# starts the app itself; playwright.config.js has the dotnet run in it.
+# starts the app itself; tests/playwright.config.js has the dotnet run in it.
 #
 # The C# tests are filtered. Thirty-three of them use KLayout as a second implementation to check this one
 # against, and it is not on a runner and not worth installing there: it is a desktop EDA tool, and what
@@ -87,12 +87,17 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: tests/package-lock.json
 
+      # All the browser tooling lives under tests/ - the package.json, both Playwright configs, and the
+      # specs - so every npm step runs from there.
       - run: npm ci
+        working-directory: tests
 
       # The unit half needs nothing installed - it is Node's own test runner over the pure helpers.
       - name: JS unit tests
         run: npm test
+        working-directory: tests
 
       # There is no step here building GdsII.Cli, and there used to be: large-layout.spec.js generated its
       # fixture by shelling out to it mid-suite. That spec skips itself on a runner now - six tests opening
@@ -100,17 +105,20 @@ jobs:
       # build it needed went with it. The spec says what putting it back would take.
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+        working-directory: tests
 
-      # Starts the app itself, per the webServer block in playwright.config.js. The first run compiles it,
-      # which is why that timeout is generous.
+      # Starts the app itself, per the webServer block in tests/playwright.config.js - which sets its
+      # working directory back to the repository root, where GDSViewer.csproj is. The first run compiles
+      # the app, which is why that timeout is generous.
       - name: End-to-end tests
         run: npm run test:e2e
+        working-directory: tests
 
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
           path: |
-            playwright-report/
-            test-results/
+            tests/playwright-report/
+            tests/test-results/
           retention-days: 7

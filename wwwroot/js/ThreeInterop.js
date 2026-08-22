@@ -82,6 +82,39 @@ const LABEL_FONT = `bold ${LABEL_PIXEL_HEIGHT}px sans-serif`;
 //the surface, not so much that it drifts towards the layer above when the stack is closed right up.
 const LABEL_CLEARANCE = 0.2;
 
+//The corner axis indicator: the square of canvas it is drawn into, how far that square sits off the two
+//edges it hugs, and the arm and letter sizes inside a camera that frames AXES_EXTENT either side of the
+//origin. All in the indicator's own units - it has no scale in common with the layout.
+const AXES_VIEWPORT = 88;
+const AXES_MARGIN = 12;
+const AXES_ARM = 1;
+const AXES_HEAD_LENGTH = 0.26;
+const AXES_HEAD_RADIUS = 0.09;
+const AXES_LETTER_AT = 1.42;
+const AXES_LETTER_SIZE = 0.62;
+const AXES_EXTENT = 1.8;
+const AXES_CAMERA_BACK = 10;
+const AXES_LETTER_PIXELS = 64;
+
+///
+///Which way each of the *layout's* axes points in this scene, and the color that names it.
+///
+///**The scene is not in the layout's axes, so an AxesHelper would letter this wrong.** Every extrusion is
+///built flat in the layout's own XY and then tipped by LAYOUT_ROTATION_X, which lands the layout's Y along
+///the scene's +Z and leaves the process stack - the layout's Z, the direction layer offsets grow along -
+///running up the scene's +Y. Three's own names for those directions are Y and Z respectively, and neither
+///is the name anybody reading a layout uses for them.
+///
+///So each arm is *placed* by the scene direction and *lettered* by the layout axis that direction carries,
+///and the colors follow the letter rather than the direction: the usual X red, Y green, Z blue. What the
+///indicator reports is therefore the same X, Y and Z the 2D view's ruler and the coordinate readout do.
+///
+const AXES = [
+    { letter: 'X', direction: new THREE.Vector3(1, 0, 0), color: '#d64545' },
+    { letter: 'Y', direction: new THREE.Vector3(0, 0, 1), color: '#3f9d4f' },
+    { letter: 'Z', direction: new THREE.Vector3(0, 1, 0), color: '#3f6fd6' }
+];
+
 ///
 ///Turns every triangle in an unindexed geometry the other way round.
 ///
@@ -426,6 +459,16 @@ class Viewer3D {
         this.camera.position.z = 2000;
         this.scene.add(this.camera);
 
+        //The corner axis indicator, in a scene of its own so it is never lit, exported, fitted or picked
+        //along with the layout. Orthographic, so an arm pointing at the camera is not foreshortened into
+        //a dot the way a perspective one is.
+        this.axesScene = this.buildAxesIndicator();
+        this.axesCamera = new THREE.OrthographicCamera(-AXES_EXTENT, AXES_EXTENT, AXES_EXTENT, -AXES_EXTENT, 0.1, 100);
+
+        //Held rather than made each time: the indicator reads the canvas size once a frame, and a vector
+        //allocated in the animation loop is one the collector has to take back sixty times a second.
+        this.axesCanvasSize = new THREE.Vector2();
+
         //Create objects group and add it to the scene.
         this.chipObjectsGroup = new THREE.Group();
         this.scene.add(this.chipObjectsGroup);
@@ -600,6 +643,131 @@ class Viewer3D {
 
         //Call renderer to render the scene.
         this.renderer.render(this.scene, this.camera);
+
+        //After the scene, because it is drawn over the top of it.
+        this.drawAxesIndicator();
+    }
+
+    //The corner axis indicator//////////////////////////////
+
+    ///
+    ///Builds the indicator's scene: three arms out of one origin, each with a head and a letter.
+    ///
+    ///Basic materials throughout, and its own scene, so it is unlit - a shaded gizmo goes dark exactly when
+    ///the camera is somewhere the lights are not, which is the moment somebody is most likely to be looking
+    ///at it to work out where they are.
+    ///
+    buildAxesIndicator() {
+        const scene = new THREE.Scene();
+        const origin = new THREE.Vector3(0, 0, 0);
+
+        for (const axis of AXES) {
+            const end = axis.direction.clone().multiplyScalar(AXES_ARM);
+
+            const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([origin, end]),
+                new THREE.LineBasicMaterial({ color: axis.color }));
+
+            scene.add(line);
+
+            //A cone stands up its own +Y, so it is turned from there onto the arm it caps.
+            const head = new THREE.Mesh(
+                new THREE.ConeGeometry(AXES_HEAD_RADIUS, AXES_HEAD_LENGTH, 12),
+                new THREE.MeshBasicMaterial({ color: axis.color }));
+
+            head.position.copy(end);
+            head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.direction);
+
+            scene.add(head);
+
+            const letter = this.buildAxisLetter(axis.letter, axis.color);
+
+            letter.position.copy(axis.direction.clone().multiplyScalar(AXES_LETTER_AT));
+
+            scene.add(letter);
+        }
+
+        return scene;
+    }
+
+    ///<summary>One axis letter as a camera-facing sprite, haloed the way the layer labels are.</summary>
+    buildAxisLetter(letter, color) {
+        const canvas = document.createElement('canvas');
+
+        canvas.width = AXES_LETTER_PIXELS;
+        canvas.height = AXES_LETTER_PIXELS;
+
+        const context = canvas.getContext('2d');
+
+        context.font = `bold ${Math.round(AXES_LETTER_PIXELS * 0.72)}px sans-serif`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        //The same white halo the layer labels carry, and for the same reason: the indicator sits over the
+        //layout rather than over a background of its own, so a letter has to stay readable against a slab
+        //of any color that happens to be behind it.
+        context.lineWidth = LABEL_HALO_WIDTH;
+        context.strokeStyle = '#ffffff';
+        context.strokeText(letter, canvas.width / 2, canvas.height / 2);
+
+        context.fillStyle = color;
+        context.fillText(letter, canvas.width / 2, canvas.height / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+
+        //depthWrite off, depth test left on: the letters are transparent quads, and letting them write
+        //depth lets whichever drew first cut a rectangular hole in whatever comes after it.
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthWrite: false
+        }));
+
+        sprite.scale.set(AXES_LETTER_SIZE, AXES_LETTER_SIZE, 1);
+
+        return sprite;
+    }
+
+    ///
+    ///Draws the indicator into the bottom-left corner of the canvas the scene was just drawn into.
+    ///
+    ///**It turns with the camera and never moves with it.** The little camera takes the main one's
+    ///orientation exactly - quaternion rather than a lookAt, so a rolled camera rolls the indicator too -
+    ///and sits back along its own local Z at a fixed distance. The arms are therefore seen from the angle
+    ///the layout is seen from, which is the whole of what the indicator has to say.
+    ///
+    ///**Depth is cleared and color is not.** The indicator has to sit in front of the layout without
+    ///punching a hole in it, and a viewport that cleared color would do exactly that - the scene is
+    ///already drawn by the time this runs.
+    ///
+    drawAxesIndicator() {
+        //An XR session renders one viewport per eye and owns setViewport while it does. A flat overlay
+        //pinned to a corner of the canvas means nothing in a headset anyway.
+        if (this.renderer.xr.isPresenting)
+            return;
+
+        //Released by dispose, which stops the loop first - so this only ever guards a frame already in
+        //flight when the view went away.
+        if (this.axesScene == null)
+            return;
+
+        this.axesCamera.quaternion.copy(this.camera.quaternion);
+        this.axesCamera.position.set(0, 0, AXES_CAMERA_BACK).applyQuaternion(this.camera.quaternion);
+
+        //Read back rather than remembered: this is what the renderer is currently sized to, whatever the
+        //last resize made of it.
+        const size = this.renderer.getSize(this.axesCanvasSize);
+
+        this.renderer.autoClear = false;
+        this.renderer.clearDepth();
+        this.renderer.setViewport(AXES_MARGIN, AXES_MARGIN, AXES_VIEWPORT, AXES_VIEWPORT);
+
+        this.renderer.render(this.axesScene, this.axesCamera);
+
+        //Put the viewport back, or the next frame's scene is drawn into the corner as well.
+        this.renderer.setViewport(0, 0, size.x, size.y);
+        this.renderer.autoClear = true;
     }
 
     //Pointing a layer out///////////////////////////////////////
@@ -890,6 +1058,32 @@ class Viewer3D {
             this.fitForXr();
     }
 
+    ///
+    ///Lets go of the indicator's geometries and of the canvas texture behind each letter.
+    ///
+    ///Its objects are never handed to clearChipObjects - they are not the layout - so nothing else in here
+    ///would ever release them, and a view rebuilt on every file open would leak a set each time.
+    ///
+    disposeAxesIndicator() {
+        if (this.axesScene == null)
+            return;
+
+        this.axesScene.traverse(drawn => {
+            if (drawn.geometry != null)
+                drawn.geometry.dispose();
+
+            if (drawn.material == null)
+                return;
+
+            if (drawn.material.map != null)
+                drawn.material.map.dispose();
+
+            drawn.material.dispose();
+        });
+
+        this.axesScene = null;
+    }
+
     //Releases everything this viewer holds, so a replacement can be built without the old one lingering.
     //Order matters at the top: stopping the animation loop before anything is disposed means no frame is
     //ever rendered against a half-released renderer.
@@ -901,6 +1095,8 @@ class Viewer3D {
         this.renderer.xr.removeEventListener('sessionend', this.onXrSessionEndHandler);
 
         this.clearChipObjects();
+
+        this.disposeAxesIndicator();
 
         this.controls.dispose();
 

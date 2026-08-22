@@ -252,7 +252,7 @@ namespace GdsII.Cli
         ///
         ///The same three numbers it puts on screen and worked out the same way - dx, dy, and the straight
         ///line between them - because a measurement that disagreed with the one in the app would be worse
-        ///than no measurement at all. `jstests/viewGeometry.test.js` pins the ruler's own arithmetic on the
+        ///than no measurement at all. `tests/jstests/viewGeometry.test.js` pins the ruler's own arithmetic on the
         ///same 300-by-400 case this is tested on, so the two are held to one contract rather than to whatever
         ///each happens to compute.
         ///

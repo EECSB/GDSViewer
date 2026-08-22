@@ -40,8 +40,9 @@ down the right.
 
 ![The 2D editor](docs/images/2d-view.png)
 
-The 3D view: every layer extruded to its thickness and stacked, with the Distance slider spreading them out
-as you drag.
+The 3D view: every layer extruded to its thickness and stacked at the height the layermap gives it — the
+contacts reaching the films they join, because that is where the process puts them. The Distance slider
+opens a gap on top of that when you want to see between layers that in reality touch.
 
 ![The 3D view](docs/images/3d-view.png)
 
@@ -144,6 +145,8 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   camera orbit. With a layermap carrying heights it opens on the **process stack itself** — a contact sitting
   between the two films it joins, because the table says where it is — and the **Distance** slider opens a
   gap on top of that when you want to see between layers that in reality touch.
+  A lettered **X/Y/Z indicator** in the bottom-left corner turns with the camera, and it is lettered in the
+  layout's axes rather than the scene's: Z is the process stack, the way the layermap means it.
 - 🥽 **WebXR** — enter the layout in VR or AR from a supported headset or phone. The chip is scaled from
   its own nanometer units down to something you can stand next to, and AR keeps the camera feed visible
   behind it.
@@ -388,6 +391,7 @@ the web app is one consumer of it, and the command line is another.
 |---|---|
 | **[FEATURES-DEMO.md](docs/FEATURES-DEMO.md)** | Every feature, in pictures |
 | **[DOCUMENTATION.md](docs/DOCUMENTATION.md)** | How to build, run and test it, and a walkthrough of every subsystem |
+| **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | The map: which components and classes exist, and which one uses which |
 | **[CLI.md](docs/CLI.md)** | The `gds` command line |
 | **[DRC.md](docs/DRC.md)** | Design rule checking: the deck format, the checks, and what they were measured against |
 | **[WRITING-A-DECK.md](wwwroot/resources/WRITING-A-DECK.md)** | How to write a rule deck for your own PDK — a grammar you can hand to an AI |

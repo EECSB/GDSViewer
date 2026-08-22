@@ -99,7 +99,7 @@ async function upload(page, name, bytes) {
 ///leaves a test that looks like the history failing to record an upload that never happened.
 ///
 function exampleBytes(fileName) {
-    return require('fs').readFileSync(require('path').join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', fileName));
+    return require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', fileName));
 }
 
 ///

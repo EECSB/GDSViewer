@@ -1550,7 +1550,7 @@ public class CliTests : IDisposable
     ///
     ///**The same numbers the 2D view's ruler puts on screen.**
     ///
-    ///300 by 400 is 500, which is the case `jstests/viewGeometry.test.js` pins for the ruler itself - chosen
+    ///300 by 400 is 500, which is the case `tests/jstests/viewGeometry.test.js` pins for the ruler itself - chosen
     ///the same way in both places so the two are held to one contract rather than to whatever each happens
     ///to compute. A measurement here that disagreed with the one in the app would be worse than none.
     ///

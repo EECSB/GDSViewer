@@ -68,7 +68,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Components\Viewer2DSvg\" />
     <Folder Include="wwwroot\css\fonts\" />
   </ItemGroup>
 

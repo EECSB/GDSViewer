@@ -385,12 +385,12 @@ The push is the last step, because a version on nuget.org can be unlisted but ne
 end-to-end run, and a pack — so a broken license expression or a missing package readme fails on the commit
 rather than on the tag.
 
-**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 1,919 of the 1,952 run there.
+**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 1,989 of the 2,022 run there.
 Thirty-three use KLayout as a second implementation to check this one against, and it is a desktop EDA tool that
 is not on a runner. Locally, with it installed, `dotnet test` runs every one.
 
 The short readmes that ship *inside* each package are [`GdsII/README.md`](../GdsII/README.md) and
-[`GdsII.Cli/README.md`](../GdsII.Cli/README.md) — nuget.org renders those on the listing pages, so they stay
-where `PackageReadmeFile` points and are held there by a test. Their code samples are run as tests too, in
-[`tests/PackageReadmeTests.cs`](../tests/PackageReadmeTests.cs), because an example on a package page that does
-not compile is a worse first impression than no example at all.
+[`GdsII.Cli/README.md`](../GdsII.Cli/README.md) — nuget.org renders those on the listing pages, so they
+stay where `PackageReadmeFile` points and are held there by a test. Their code samples are run as tests
+too, in [`tests/GDSViewer.Tests/PackageReadmeTests.cs`](../tests/GDSViewer.Tests/PackageReadmeTests.cs), because an
+example on a package page that does not compile is a worse first impression than no example at all.

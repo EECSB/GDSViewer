@@ -44,9 +44,9 @@ These separate a useful audit from a list of opinions, and each was earned here.
 ## Pass 0 - baseline
 
 `git status` first - know what is uncommitted before editing anything, or the audit's changes and someone
-else's blur together. Then `dotnet test` and `npm test` for a green baseline; the 24 `Needs=KLayout` tests
-run for real on this machine. Skip the e2e suite here - it comes in only if a later pass needs a browser
-fact, and then under the hazards below.
+else's blur together. Then `dotnet test` from the root and `npm test` from `tests/` for a green baseline;
+the 33 `Needs=KLayout` tests run for real on this machine. Skip the e2e suite here - it comes in only if
+a later pass needs a browser fact, and then under the hazards below.
 
 ## Pass 1 - documentation against code
 
@@ -59,7 +59,7 @@ The prose that carries claims:
 - **Prose comments in the two packable `.csproj` files** - they carry claims about formats, licenses and
   packaging, and they have drifted before.
 - Header comments in tests and specs that state facts. Above all the tolerance table in
-  `docs/DOCUMENTATION.md`, whose every row is pinned by a named test in `tests/ToleranceTests.cs` - the
+  `docs/DOCUMENTATION.md`, whose every row is pinned by a named test in `tests/GDSViewer.Tests/ToleranceTests.cs` - the
   table and the tests must agree.
 
 Every checkable claim gets checked: counts, byte totals, tables, file paths, anchors, feature lists, "the
@@ -116,9 +116,9 @@ sees: **a size-only or speed-only fault stays green everywhere** except in the i
 
 Never from reading. The instruments:
 
-- `gds bench` (`GdsII.Cli/Cli.Bench.cs`) - staged timings over the corpus, `oasis` among them.
+- `gds bench` (`GdsII.Cli/Commands/Cli.Bench.cs`) - staged timings over the corpus, `oasis` among them.
 - The size harness in `tests/` - it asserts thresholds, so running it *is* the comparison.
-- `e2e/large-layout.spec.js` and the in-page frame timer - open, markup, pan and edit on a generated large
+- `tests/e2e/large-layout.spec.js` and the in-page frame timer - open, markup, pan and edit on a generated large
   layout.
 
 Compare against the numbers the repo has recorded - in `docs/DOCUMENTATION.md` and in recent commit
@@ -137,7 +137,7 @@ The separations this project has drawn, each one checkable:
   reaches `wwwroot` or the build.
 - **Tests in the right layer.** Pure C# under `tests/`; JS that Node can require stays in
   `wwwroot/js/viewGeometry.js`, which has no DOM or three.js dependency; anything needing a real browser is
-  in `e2e/`.
+  in `tests/e2e/`.
 - **Duplication across the app, CLI and test seams** - the usual fix moves the shared logic into the
   library. `GDS.FromText` exists because the CLI needed it.
 
@@ -151,10 +151,10 @@ project's recorded idiom disagree, the idiom wins, and the finding - if there is
 - **Never `dotnet build` or `dotnet test` while an e2e run is live**, and never rebuild while any
   `dotnet run` server is up - the served files stop matching their integrity manifest, and whoever has the
   app open gets a server that will not boot on reload.
-- If a browser fact is needed while the user may have a server on port 5105: copy the config with
-  `sed 's/5105/5199/g' playwright.config.js > playwright.probe.config.js`, run with
+- If a browser fact is needed while the user may have a server on port 5105: from `tests/`, copy the
+  config with `sed 's/5105/5199/g' playwright.config.js > playwright.probe.config.js`, run with
   `--config=playwright.probe.config.js`, and **delete the copy afterwards**. Know that
-  `e2e/embedding.spec.js` hardcodes `localhost:5105` in four places and false-reds on any other port.
+  `tests/e2e/embedding.spec.js` hardcodes `localhost:5105` in four places and false-reds on any other port.
 - In any spec written during the audit: reach the app through `gotoApp`, poll rather than read once, and
   never wait on the layer sidebar - the text view has none.
 

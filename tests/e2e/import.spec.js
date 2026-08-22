@@ -15,7 +15,7 @@ const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, openFile, selectView
 ///Uploads go through gotoApp first, always. A file set on #fileUpload after a bare goto arrives before
 ///Blazor's InputFile has attached its listener, and is silently dropped - see helpers.js.
 ///
-const NAND = path.join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'sky130_fd_sc_hd__nand2_1.gds');
+const NAND = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'sky130_fd_sc_hd__nand2_1.gds');
 
 ///Uploads a real sky130 cell, which is a two-cell library and so has something to import.
 async function upload(page, name = 'nand2.gds') {

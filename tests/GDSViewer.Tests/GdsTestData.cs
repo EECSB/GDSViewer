@@ -252,7 +252,7 @@ public static class GdsTestData
     ///</summary>
     public static byte[] ReadFixture(string fileName)
     {
-        return File.ReadAllBytes(Path.Combine(RepositoryRoot, "tests", "fixtures", fileName));
+        return File.ReadAllBytes(Path.Combine(RepositoryRoot, "tests", "GDSViewer.Tests", "fixtures", fileName));
     }
 
     public static byte[] ReadSample(string relativePath)

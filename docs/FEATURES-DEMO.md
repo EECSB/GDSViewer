@@ -3,10 +3,11 @@
 Every feature the [readme](../README.md) lists, shown rather than described where a picture says it better.
 
 Each screenshot is the app actually running — taken by
-[`tools/screenshots.spec.js`](../tools/screenshots.spec.js) against a real browser, so they are regenerated
-rather than collected:
+[`tests/screenshots/screenshots.spec.js`](../tests/screenshots/screenshots.spec.js) against a real
+browser, so they are regenerated rather than collected:
 
 ```bash
+cd tests
 npm run screenshots
 ```
 
@@ -274,11 +275,16 @@ The net comes back as an ordinary **selection**, so everything that already work
 
 ## The 3D view
 
-Every layer extruded to its thickness and stacked in space — orbit it, drag it, and pull the **Distance**
-slider to spread the stack out or close it up. The slider moves the layers as you drag rather than when you
-let go.
+Every layer extruded to its thickness and stacked in space — orbit it and drag it. The **Distance** slider
+opens the stack out, moving the layers as you drag rather than when you let go. Below it is closed, which is
+where a mapped file opens and what the rest of this section is about.
 
 ![The 3D view](images/3d-view.png)
+
+A lettered indicator in the bottom-left corner turns with the camera, so which way round the layout is
+sitting is never a guess. It is lettered in the **layout's** axes rather than the scene's: **Z** is the
+process stack running up through the films, the same Z the layermap gives heights in, and X and Y are the
+die coordinates the 2D view measures in.
 
 With a layermap carrying real heights and thicknesses, that stack is the wafer's rather than an even spacing:
 a contact sits between the two layers it joins because the process table says where it is. The bundled sky130

@@ -18,12 +18,12 @@ in. The CLI is the project that takes packages, because nothing it references re
 Checked in unmodified, and marked `-text -diff` in
 [`.gitattributes`](../../.gitattributes) so a clone cannot hand them to a line-ending filter and a version
 bump does not produce a ten-thousand-line diff. **Replace them wholesale rather than editing them**; if
-something needs changing, it belongs in [`Booleans.cs`](../Booleans.cs) on our side of the line.
+something needs changing, it belongs in [`Booleans.cs`](../Geometry/Booleans.cs) on our side of the line.
 
 ## Which files, and why all of them
 
 All nine of `CSharp/Clipper2Lib/`. The engine, the offsetter and the convenience API are what
-[`Booleans.cs`](../Booleans.cs) actually calls; the rest are referenced from those and will not compile
+[`Booleans.cs`](../Geometry/Booleans.cs) actually calls; the rest are referenced from those and will not compile
 without them. The two that are not obviously needed are worth naming:
 
 | File | Why it is here |

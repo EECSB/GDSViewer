@@ -365,7 +365,7 @@ dx 300, dy 400
 
 The same three numbers the ruler puts on screen, worked out the same way — a measurement here that disagreed
 with the one in the app would be worse than none. The 300-by-400 case above is the one
-`jstests/viewGeometry.test.js` pins for the ruler itself and the one the CLI test uses, so the two are held to
+`tests/jstests/viewGeometry.test.js` pins for the ruler itself and the one the CLI test uses, so the two are held to
 one contract rather than to whatever each happens to compute.
 
 **In microns as well, when the file says what a unit is.** The second half of a `UNITS` record is meters per

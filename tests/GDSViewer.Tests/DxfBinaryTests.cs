@@ -268,7 +268,7 @@ public class DxfBinaryTests
     [Fact]
     public void The_two_flavors_of_one_drawing_are_the_same_library()
     {
-        string path = Path.Combine(GdsTestData.RepositoryRoot, "tests", "fixtures", "klayout-written.dxf");
+        string path = Path.Combine(GdsTestData.RepositoryRoot, "tests", "GDSViewer.Tests", "fixtures", "klayout-written.dxf");
 
         string text = File.ReadAllText(path);
 

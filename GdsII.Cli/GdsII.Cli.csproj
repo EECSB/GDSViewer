@@ -55,7 +55,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
-    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" />
+    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" Link="Resources\icon.png" />
     <None Include="..\UNLICENSE" Pack="true" PackagePath="\" />
     <None Include="..\docs\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
   </ItemGroup>

@@ -9,6 +9,7 @@
 //cannot make.
 const { test, expect } = require('@playwright/test');
 const { gotoExample, shapeCount, shapeBox, dismissSelection, snapToGrid } = require('./helpers');
+const path = require('path');
 
 //
 //sky130's own numbering, for the layers this cell actually uses.
@@ -451,7 +452,7 @@ test.describe('the layermap that ships', () => {
 
         await expect(page.locator('.layerList')).not.toContainText('met1');
 
-        await page.locator('#layerNamesImport').setInputFiles('wwwroot/resources/GDS Files/sky130-roles.csv');
+        await page.locator('#layerNamesImport').setInputFiles(path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'sky130-roles.csv'));
 
         await expect(page.locator('.layerList')).toContainText('met1', { timeout: 60000 });
 

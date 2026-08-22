@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { gotoExample, selectView, downloadBytes, MOSFET, openedOnItsOwn, uploadFile } = require('./helpers');
 
-const MOSFET_ON_DISK = path.join('wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
+const MOSFET_ON_DISK = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
 
 test('the GDS download is byte for byte the file that was opened', async ({ page }) => {
     await gotoExample(page, MOSFET);

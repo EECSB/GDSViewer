@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const geometry = require('../wwwroot/js/viewGeometry.js');
+const geometry = require('../../wwwroot/js/viewGeometry.js');
 
 //The pure arithmetic behind the 2D view's pan and zoom, and the point a 3D label hangs from. These run
 //under Node with the built-in test runner, so they need nothing installed - the browser layer is covered

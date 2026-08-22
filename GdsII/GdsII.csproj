@@ -79,7 +79,7 @@
       already lives rather than copied here: one image, one place to change it, and the package and the
       installed app cannot come to show different pictures.
     -->
-    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" />
+    <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" Link="Resources\icon.png" />
 
     <!--Both license texts in the package, since the expression above names two.-->
     <None Include="..\UNLICENSE" Pack="true" PackagePath="\" />

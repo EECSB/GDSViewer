@@ -4,6 +4,7 @@
 //nothing to mistake for what the button did.
 const { test, expect } = require('@playwright/test');
 const { gotoApp, gotoExample, openFile, expectLoaded, openLayerSettings, layerPairs, SKY130_CELL, uploadFile, openExamples, filterExamples, exampleRow } = require('./helpers');
+const path = require('path');
 
 ///
 ///The layer rows as bare `layer/datatype` text, named or not - which is what a new file's rows are.
@@ -131,7 +132,7 @@ test.describe('closing what is open', () => {
         });
 
         //Driven straight at the input rather than through uploadFile, which answers the question for you.
-        await page.locator('#fileUpload').setInputFiles('e2e/fixtures/placed.gds');
+        await page.locator('#fileUpload').setInputFiles(path.join(__dirname, 'fixtures', 'placed.gds'));
 
         //Polled: the question is asked from C# by way of the interop, so it is not up the instant
         //setInputFiles returns - unlike a click, which does not come back until the dialog is answered.

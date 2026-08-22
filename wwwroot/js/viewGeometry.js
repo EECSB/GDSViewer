@@ -1,6 +1,6 @@
 //Pure helpers for the views: the pan and zoom arithmetic the 2D view applies to its viewBox, and the
 //point a 3D label hangs from. No DOM and no three.js, so they can be unit-tested under Node (see
-//jstests/). Exposed as window.viewGeometry in the browser and as module.exports under Node.
+//tests/jstests/). Exposed as window.viewGeometry in the browser and as module.exports under Node.
 (function (factory) {
     const api = factory();
 

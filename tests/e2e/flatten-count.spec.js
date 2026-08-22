@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { gotoApp, gotoExample, MOSFET, shapeCount, shapeBox, selectView, openFile, SKY130_CELL, uploadFile } = require('./helpers');
 
-const NAND = path.join(__dirname, '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', SKY130_CELL + '.gds');
+const NAND = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', SKY130_CELL + '.gds');
 
 ///
 ///How often the hierarchy is resolved.

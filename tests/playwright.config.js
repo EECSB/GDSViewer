@@ -65,6 +65,11 @@ module.exports = defineConfig({
     ],
     webServer: {
         command: 'dotnet run --no-launch-profile --project GDSViewer.csproj --urls http://localhost:5105',
+
+        //From the repository root, where GDSViewer.csproj lives. The default is this config's own
+        //directory, which stopped being the root when the test tooling moved under tests/.
+        cwd: require('path').join(__dirname, '..'),
+
         url: 'http://localhost:5105',
         timeout: 300000,
 

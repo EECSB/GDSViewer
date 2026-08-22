@@ -164,7 +164,7 @@ function onDrop(event) {
     //
     //A change event dispatched before InputFile has attached carries no files: C# is handed FileCount 0 and
     //takes the silent return a canceled dialog takes, so the drop leaves no mark of any kind - see the note
-    //on this same flag in e2e/helpers.js. The window is milliseconds wide and only reachable by dropping a
+    //on this same flag in tests/e2e/helpers.js. The window is milliseconds wide and only reachable by dropping a
     //file onto a page that is still starting, but a drop that quietly does nothing is the worst of the
     //answers available, so it is not offered.
     //

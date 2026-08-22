@@ -44,7 +44,7 @@ function generate(shapes) {
     execFileSync(
         'dotnet',
         ['run', '-c', 'Release', '--project', 'GdsII.Cli', '--', 'generate', '--shapes', String(shapes), '-o', file],
-        { cwd: path.join(__dirname, '..'), stdio: 'pipe', timeout: 300000 });
+        { cwd: path.join(__dirname, '..', '..'), stdio: 'pipe', timeout: 300000 });
 
     return file;
 }

@@ -162,6 +162,12 @@ function answersClosingItself(page) {
 async function uploadFile(page, files) {
     acceptsClosingWhatIsOpen(page);
 
+    //A relative path is resolved against tests/, not the runner's cwd - the specs were written when the
+    //tooling lived at the repository root and 'e2e/fixtures/...' only still resolves when the runner
+    //happens to start from tests/. An absolute path or a {name, buffer} object passes through untouched.
+    if (typeof files === 'string')
+        files = require('path').resolve(__dirname, '..', files);
+
     await page.locator('#fileUpload').setInputFiles(files);
 }
 

@@ -98,13 +98,14 @@ save needs, but there was no route in from nothing. `GDS.FromText` is that route
 something outside the app asked for it.
 
 The CLI is also where the two package references live. `gds model` extrudes a layout into a solid, which
-the app gets from three.js and a console tool cannot - so [LibTessDotNet](https://github.com/speps/LibTessDotNet)
-triangulates the caps and [SharpGLTF](https://github.com/vpenades/SharpGLTF) writes the glTF. **Both are
-referenced by `GdsII.Cli` alone**: the library stays dependency-free, which is the property that makes it
-worth depending on, and the no-package-manager rule is about [what the app ships](#vendored-javascript)
-rather than about every project in the solution. STL and OBJ are written by hand in
-[`ModelWriters.cs`](../GdsII.Cli/ModelWriters.cs) - both are a triangle list with a header, and a dependency
-for that would be more to keep current than to write.
+the app gets from three.js and a console tool cannot - so
+[LibTessDotNet](https://github.com/speps/LibTessDotNet) triangulates the caps and
+[SharpGLTF](https://github.com/vpenades/SharpGLTF) writes the glTF. **Both are referenced by `GdsII.Cli`
+alone**: the library stays dependency-free, which is the property that makes it worth depending on, and
+the no-package-manager rule is about [what the app ships](#vendored-javascript) rather than about every
+project in the solution. STL and OBJ are written by hand in
+[`ModelWriters.cs`](../GdsII.Cli/Modeling/ModelWriters.cs) - both are a triangle list with a header, and a
+dependency for that would be more to keep current than to write.
 
 Which leaves the solution one library with nothing under it, and two consumers that each pay for their own
 surroundings:
@@ -155,10 +156,10 @@ flowchart TD
 **Every one of those six is asked for by name, and the name is checked.** A script tag whose spelling differs
 from the file only by case works on Windows and macOS and 404s on any host worth deploying to, which is a
 defect that cannot be seen on the machine it is written on —
-[`ShippedAssetTests`](../tests/ShippedAssetTests.cs) reads `index.html` and holds every local `src` and `href` to
-the directory listing rather than to `File.Exists`, since `File.Exists` is precisely the check that cannot tell
-the difference. It also asserts the other direction: a file under `wwwroot/js` that nothing loads is either
-dead or a script tag somebody forgot.
+[`ShippedAssetTests`](../tests/GDSViewer.Tests/ShippedAssetTests.cs) reads `index.html` and holds every
+local `src` and `href` to the directory listing rather than to `File.Exists`, since `File.Exists` is
+precisely the check that cannot tell the difference. It also asserts the other direction: a file under
+`wwwroot/js` that nothing loads is either dead or a script tag somebody forgot.
 
 Design points:
 
@@ -184,41 +185,63 @@ GDSViewer/
   Shared/MainLayout.razor       # Header, About popup, hosts the viewer
   Pages/
     Viewer.razor(.cs)           # The app shell and the ViewType enum
-    QR.razor                    # QR code popup
   Components/
     Viewer2DSvg.razor(.cs)      # 2D SVG view
     Viewer3D.razor(.cs)         # 3D three.js view
     TextEditor.razor(.cs)       # Monaco record view
+    QR.razor                    # QR code popup, shown by the 3D toolbar
   GdsII/                        # The format library. No browser, no UI - see below
-    GDS.cs                      # Records, payload decoding, structural model, validation
-    RecordData.cs               # The payload types, one per GDSII data type
-    BitFields.cs                # STRANS, PRESENTATION and ELFLAGS unpacked
-    TextFormat.cs               # Parses the text dump back into records (the save path)
-    GdsFlattener.cs             # Resolves SREF/AREF into flat geometry
-    Hierarchy.cs                # The cell tree, and what places what
-    PathOutline.cs, Paths.cs    # A PATH's centerline expanded to the shape it occupies
-    Transform.cs, Turning.cs    # Placement composition; rotating and mirroring geometry
-    Scaling.cs, Bounds.cs       # Units and extents
-    Element.cs                  # Layer/datatype keys, layers, palette, stacking offsets
-    LayerNames.cs               # A layermap: names, colors, the stack, roles and patterns
-    SvgWriter.cs                # A flattened layout as SVG markup, and every icon
-    Picking.cs                  # Which shape a click landed on
-    LayoutEdit.cs, EditRecord.cs # Every edit, and an edit written down so it survives a reload
-    CellContext.cs              # Which cell is being edited, through which placement
-    Aligning.cs, Grid.cs        # Lining up and spacing out; the grid and snapping
-    Booleans.cs, Clipper2/      # AND/OR/XOR/NOT and offsetting, over vendored Clipper2
-    Nets.cs, Measure.cs         # Tracing a net; area and extent
-    OasisReader.cs, OasisWriter.cs   # OASIS in and out
-    DxfReader.cs, DxfWriter.cs, DxfBinary.cs, DxfCurves.cs  # DXF in and out
-    LayoutWriter.cs             # Flat geometry back into a library
-    Synthetic.cs, Preview.cs    # The benchmark's generator; the example thumbnails
+    Model/                      # What a layout *is*
+      GDS.cs                    # Records, payload decoding, structural model, validation
+      RecordData.cs             # The payload types, one per GDSII data type
+      BitFields.cs              # STRANS, PRESENTATION and ELFLAGS unpacked
+      Element.cs                # Layer/datatype keys, layers, palette, stacking offsets
+      LayerNames.cs             # A layermap: names, colors, the stack, roles and patterns
+      Paths.cs                  # What a path is written with: centerline, width, end style
+      LayoutWriter.cs           # Flat geometry back into a library
+    Formats/                    # Everything that reads or writes a file
+      OasisReader.cs, OasisWriter.cs   # OASIS in and out
+      DxfReader.cs, DxfWriter.cs, DxfBinary.cs, DxfCurves.cs  # DXF in and out
+      SvgWriter.cs              # A flattened layout as SVG markup, and every icon
+      TextFormat.cs             # Parses the text dump back into records (the save path)
+    Geometry/                   # Arithmetic over shapes
+      GdsFlattener.cs           # Resolves SREF/AREF into flat geometry
+      Booleans.cs               # AND/OR/XOR/NOT and offsetting, over vendored Clipper2
+      PathOutline.cs            # A PATH's centerline expanded to the shape it occupies
+      Transform.cs              # Placement composition
+      Scaling.cs, Bounds.cs     # Units and extents
+      Fracture.cs               # Cutting a shape too large for one record into several
+    Editing/                    # Changing what is already there
+      LayoutEdit.cs, EditRecord.cs # Every edit, and an edit written down so it survives a reload
+      Hierarchy.cs              # The cell tree, and what places what
+      CellContext.cs            # Which cell is being edited, through which placement
+      Importing.cs              # One library's cells brought into another
+      Aligning.cs, Turning.cs   # Lining up; rotating and mirroring geometry
+    Authoring/                  # Making geometry from nothing
+      Shapes.cs                 # Rectangles, circles, ellipses, rings, regular polygons
+      PathBuilder.cs, Bezier.cs # Routes that bend by a radius, and curves
+      Synthetic.cs              # The benchmark's generator
+    Viewing/                    # What a viewer needs and a writer does not
+      Picking.cs                # Which shape a click landed on
+      Nets.cs, Measure.cs       # Tracing a net; area and extent
+      Grid.cs                   # The grid and snapping
+      Preview.cs                # The example thumbnails
+    Drc/                        # Design rule checking - see DRC.md
+      Drc.cs, DrcChecks.cs      # The engine, and each rule's measurement
+      DrcDeck.cs, DrcLayers.cs  # The deck as written down, and what it names
+      DrcEdges.cs, DrcReport.cs # Edge extraction; violations as text
+    Clipper2/                   # Vendored, byte-identical to upstream. Never edited
   GdsII.Cli/                    # The gds command-line tool, over that library
-    Cli.cs                      # Every command, taking writers and returning an exit code
-    Cli.Convert.cs              # Format conversion, either way
-    Cli.Geometry.cs             # boolean and size
-    Cli.Bench.cs                # Timing a generated layout
-    LayerFilter.cs              # --layers and --hide
-    LayoutMesh.cs, ModelWriters.cs   # Extrusion, and STL/OBJ/GLTF
+    Commands/
+      Cli.cs                    # Argument parsing, and info, dump, build, validate, layers, svg, model
+      Cli.Structure.cs          # cells, nets and measure
+      Cli.Convert.cs            # convert - format conversion, any direction
+      Cli.Geometry.cs           # boolean and size
+      Cli.Drc.cs                # drc - running a deck from the command line
+      Cli.Bench.cs              # bench - timing a generated layout
+      LayerFilter.cs            # --layers and --hide
+    Modeling/
+      LayoutMesh.cs, ModelWriters.cs   # Extrusion, and STL/OBJ/GLTF
     Program.cs                  # Main, and nothing else
   Models/                       # App-only: the parts that need a browser or a UI
     AppStorage.cs               # IndexedDB and localStorage, over JS interop
@@ -228,6 +251,7 @@ GDSViewer/
     HsvColor.cs                 # The color picker's arithmetic
     Settling.cs                 # Coalescing a drag across a slider
     OtherModels.cs              # IRenderable, CheckboxItem, ToolBarItem
+    Counters.cs                 # What the app has done, for e2e tests to ask from outside
   wwwroot/
     index.html                  # Host page: base href, import map, interop scripts
     js/                         # ThreeInterop, MonacoInterop, JavaScriptInterOp,
@@ -235,15 +259,17 @@ GDSViewer/
     lib/                        # Vendored Monaco + three.js (see lib/README.md)
     css/, resources/            # Styles, icons, backgrounds, sample GDS files
                                 #   resources/GDS Files/examples.json is generated by the build
-  tests/                        # xUnit tests (net10.0)
-  jstests/                      # Browser-JS unit tests (node --test, no packages)
-  e2e/                          # Playwright end-to-end specs
-  tools/                        # Takes the screenshots the docs are built from,
+  tests/                        # Every test layer and the tooling that runs them
+    GDSViewer.Tests/            # xUnit tests (net10.0), with fixtures/ beside them
+    jstests/                    # Browser-JS unit tests (node --test, no packages)
+    e2e/                        # Playwright end-to-end specs
+    screenshots/                # Takes the screenshots the docs are built from,
                                 #   under playwright.screenshots.config.js
-  playwright.config.js          # Starts the app itself and runs e2e/ against it
-  package.json                  # Test tooling only - never part of the app build
+    playwright.config.js        # Starts the app itself and runs e2e/ against it
+    package.json                # Test tooling only - never part of the app build
   docs/                         # Everything written down, except the readme
     DOCUMENTATION.md            # This file
+    ARCHITECTURE.md             # The map: which component and class is used where
     FEATURES-DEMO.md            # Every feature, in pictures
     CLI.md, NUGET.md            # The command-line tool, and the package
     DRC.md                      # Design rule checking: the engine and what it cannot do
@@ -258,13 +284,13 @@ GDSViewer/
 
 | File | Responsibility |
 |---|---|
-| `GdsII/GDS.cs` | The whole GDSII implementation: record framing, payload decoding (including REAL8), and the structural model. |
-| `GdsII/Element.cs` | Layer discovery, the stacking offsets, the 255-color palette, and the flattened render primitives. |
+| `GdsII/Model/GDS.cs` | The whole GDSII implementation: record framing, payload decoding (including REAL8), and the structural model. |
+| `GdsII/Model/Element.cs` | Layer discovery, the stacking offsets, the 255-color palette, and the flattened render primitives. |
 | `Pages/Viewer.razor` | The app shell: file loading, view switching, layer sidebar, toolbar host. |
-| `GdsII/SvgWriter.cs` | Builds the 2D view's SVG markup: layer visibility, label justification, opacity. |
-| `GdsII/TextFormat.cs` | Reads the text dump back into records — the text view's save path. |
-| `GdsII/LayoutEdit.cs` | Every edit as one class each, undoable, and writable to a session. |
-| `GdsII/Picking.cs` | Which shape a click landed on, now that the picture is one path per layer. |
+| `GdsII/Formats/SvgWriter.cs` | Builds the 2D view's SVG markup: layer visibility, label justification, opacity. |
+| `GdsII/Formats/TextFormat.cs` | Reads the text dump back into records — the text view's save path. |
+| `GdsII/Editing/LayoutEdit.cs` | Every edit as one class each, undoable, and writable to a session. |
+| `GdsII/Viewing/Picking.cs` | Which shape a click landed on, now that the picture is one path per layer. |
 | `Components/Viewer2DSvg.razor` | The 2D editor: hosts that markup, and every gesture over it — select, band, move, draw, turn, align, array, combine, measure, and the cell context. |
 | `Components/Viewer3D.razor` | Flattens geometry for three.js; background, cinematic, export and QR toolbar. |
 | `Components/TextEditor.razor` | Hosts Monaco over `GDS.AsText()`. |
@@ -330,7 +356,7 @@ that cell's 3D view.
 
 ## The GDSII parser
 
-[`GdsII/GDS.cs`](../GdsII/GDS.cs) is the whole format implementation. `new GDS(byte[])` runs
+[`GdsII/Model/GDS.cs`](../GdsII/Model/GDS.cs) is the whole format implementation. `new GDS(byte[])` runs
 `Deserialize`, which calls `parseRecords` then `constructGDS`, then builds `AdditionalInformation`.
 
 Of the other implementations worth comparing this against, `python-gdsii` is the closest structural
@@ -416,7 +442,7 @@ declared one, so the class of bug cannot come back.
 
 ### Payload decoding
 
-A payload is a [`RecordData`](../GdsII/RecordData.cs) — an abstract base with one sealed subclass per
+A payload is a [`RecordData`](../GdsII/Model/RecordData.cs) — an abstract base with one sealed subclass per
 GDSII data type:
 
 | Class | Holds | For |
@@ -474,7 +500,7 @@ real files, so a future reader can see exactly which values the guess changes.
 ### Bit fields
 
 `STRANS`, `PRESENTATION` and `ELFLAGS` are two-byte flag words, so they decode to `BitArrayData` like
-any other bit array. [`GdsII/BitFields.cs`](../GdsII/BitFields.cs) reads meaning out of them —
+any other bit array. [`GdsII/Model/BitFields.cs`](../GdsII/Model/BitFields.cs) reads meaning out of them —
 `Strans`, `TextPresentation` and `ElementFlags`, each with a `From(RecordData?)` that falls back to the
 format's default when the record is absent or malformed.
 
@@ -536,8 +562,8 @@ in, the stream reallocating as it doubled, and one more full copy to get the arr
 
 That makes `EncodedLength` and `Encode()` a pair that has to agree exactly — too small a buffer throws,
 too large leaves trailing zeros on the end of a file — so
-[`SerializeTests.cs`](../tests/SerializeTests.cs) pins them per payload type. The trap is adding a payload
-type and implementing only one of the two.
+[`SerializeTests.cs`](../tests/GDSViewer.Tests/SerializeTests.cs) pins them per payload type. The trap is
+adding a payload type and implementing only one of the two.
 
 `Real8Data` divides the mantissa by `2^56`, which is what the format means by reading it as a fraction and
 what KLayout does in both directions. It used `2^56 - 1` until the two were compared; nothing observable
@@ -558,7 +584,7 @@ ASCII payloads are null-padded to an even length, since every GDSII record lengt
 type declares it, so there is no value to read out of one — but a record carrying it would still be lost if
 the payload were dropped, and a file is not something to shrink on the way out. `RawData` holds the bytes
 for it, for a `NODATA` record that carries a payload anyway, and for a data-type code from a malformed type
-word; all three round-trip in [`SerializeTests.cs`](../tests/SerializeTests.cs).
+word; all three round-trip in [`SerializeTests.cs`](../tests/GDSViewer.Tests/SerializeTests.cs).
 
 Fidelity is pinned by a round-trip test over the whole bundled corpus — all 897 files parse, serialize,
 and come back **byte for byte identical**. That includes the REAL8 records.
@@ -590,8 +616,8 @@ end_cell
   bounding box.
 
 KLayout's, read by us — the direction that can be automated, and is, in
-[`InteropTests.cs`](../tests/InteropTests.cs) against two files kept in
-[`tests/fixtures/`](../tests/fixtures):
+[`InteropTests.cs`](../tests/GDSViewer.Tests/InteropTests.cs) against two files kept in
+[`tests/GDSViewer.Tests/fixtures/`](../tests/GDSViewer.Tests/fixtures):
 
 - Both parse with **no unknown record types** and **round-trip byte for byte through `Serialize()`**, which
   says the two implementations agree about record framing, payload encoding and padding at once.
@@ -599,7 +625,8 @@ KLayout's, read by us — the direction that can be automated, and is, in
   KLayout chose to emit as a `BOX` rather than a `BOUNDARY`.
 - KLayout's own `UNITS` read back to `0.001` and `1e-9`.
 
-And a **DXF** it wrote, in [`DxfRealFileTests.cs`](../tests/DxfRealFileTests.cs) — `Mosfet.gds` saved out as
+And a **DXF** it wrote, in [`DxfRealFileTests.cs`](../tests/GDSViewer.Tests/DxfRealFileTests.cs) —
+`Mosfet.gds` saved out as
 `klayout-written.dxf`, so the DXF reader has a file from an exporter rather than one hand-written to
 exercise a branch, and the original beside it to compare against. Every shape lands on the same
 coordinates, every label keeps its text and position, and the layer numbers come back through the names
@@ -612,7 +639,7 @@ layout.read("wwwroot/resources/GDS Files/Sky130 GDS/Mosfet.gds")
 options = pya.SaveLayoutOptions()
 options.format = "DXF"
 
-layout.write("tests/fixtures/klayout-written.dxf", options)
+layout.write("tests/GDSViewer.Tests/fixtures/klayout-written.dxf", options)
 ```
 
 Two things it settled that a hand-written fixture could not have raised: KLayout names its DXF layers
@@ -621,18 +648,19 @@ rings the opposite way to the GDSII it read them from, which is the same polygon
 normalizes rather than matching point sequences as written.
 
 The **writer** goes the other way through the same tool, in `Klayout_reads_a_dxf_this_wrote`. That test is
-the only one of the writer that is not circular: everything in [`DxfWriterTests.cs`](../tests/DxfWriterTests.cs)
-goes out through this project's writer and back through this project's reader, which says the two halves
-agree with each other and nothing about whether either is right — a wrong idea shared between them
-round-trips perfectly. KLayout has never seen the code, reads the drawing, and comes back with the same
-geometry on the same layers, the numbers taken out of the `L65D20` names.
+the only one of the writer that is not circular: everything in
+[`DxfWriterTests.cs`](../tests/GDSViewer.Tests/DxfWriterTests.cs) goes out through this project's writer
+and back through this project's reader, which says the two halves agree with each other and nothing about
+whether either is right — a wrong idea shared between them round-trips perfectly. KLayout has never seen
+the code, reads the drawing, and comes back with the same geometry on the same layers, the numbers taken
+out of the `L65D20` names.
 
 That file is also what the **binary** DXF reader is checked against, in
-[`DxfBinaryTests.cs`](../tests/DxfBinaryTests.cs). Nothing on hand writes binary DXF, so the test converts the
-text one and reads it both ways: the two produce a byte-identical library, over every group code a real
-exporter emits and in the order it emits them. That covers breadth and nothing else — a code both paths
-had in the wrong range would be encoded wrongly and read back wrongly and would still match — so the type
-of each range is pinned separately by hand-built bytes in the same file.
+[`DxfBinaryTests.cs`](../tests/GDSViewer.Tests/DxfBinaryTests.cs). Nothing on hand writes binary DXF, so
+the test converts the text one and reads it both ways: the two produce a byte-identical library, over
+every group code a real exporter emits and in the order it emits them. That covers breadth and nothing
+else — a code both paths had in the wrong range would be encoded wrongly and read back wrongly and would
+still match — so the type of each range is pinned separately by hand-built bytes in the same file.
 
 The reciprocal half — what KLayout makes of our output — began as a check done by hand, with `strmcmp`,
 `strm2txt` and a Ruby script reporting `dbu`, cells, layers, shape counts and bounding box at full
@@ -675,14 +703,14 @@ until this the rule came from the format's prose alone.
 
 **The bit-field masks are right.** `STRANS` reflection is `0x8000` and the absolute-magnification and
 absolute-angle flags are `0x0004` and `0x0002`; `PRESENTATION` carries horizontal justification in the low
-two bits and vertical in the next two. All four match [`BitFields.cs`](../GdsII/BitFields.cs), which is worth
-having pinned because the format numbers bits **from the left** and that is exactly the sort of thing that
-is wrong for years without anyone noticing.
+two bits and vertical in the next two. All four match [`BitFields.cs`](../GdsII/Model/BitFields.cs), which
+is worth having pinned because the format numbers bits **from the left** and that is exactly the sort of
+thing that is wrong for years without anyone noticing.
 
 **The year field had a third convention.** `get_time` reads a year under 50 as a two-digit 2000s year and
 only then falls back to years-since-1900. This code had only the second rule, so a file stamped `24` came
 out as 1924. Fixed, and the cut is now KLayout's rather than a guess of ours — see the year heuristic in
-[`GDS.cs`](../GdsII/GDS.cs).
+[`GDS.cs`](../GdsII/Model/GDS.cs).
 
 **The REAL8 divisor is `2^56`.** Both directions of KLayout agree on it, so the deviation this had is gone;
 see [Writing](#writing).
@@ -692,8 +720,9 @@ What it also showed is how much more forgiving a mature reader is, which is its 
 
 ## Reading OASIS
 
-[`GdsII/OasisReader.cs`](../GdsII/OasisReader.cs) reads OASIS (SEMI P39), the format that was meant to replace
-GDSII. [`GdsII/OasisWriter.cs`](../GdsII/OasisWriter.cs) writes it; that half is [below](#writing-oasis).
+[`GdsII/Formats/OasisReader.cs`](../GdsII/Formats/OasisReader.cs) reads OASIS (SEMI P39), the format that
+was meant to replace GDSII. [`GdsII/Formats/OasisWriter.cs`](../GdsII/Formats/OasisWriter.cs) writes it;
+that half is [below](#writing-oasis).
 
 **An OASIS file becomes a GDSII library rather than a model of its own.** Everything downstream — the
 structural model, the flattener, both views, the layer sidebar, the text editor, the exporters — speaks
@@ -745,15 +774,15 @@ file twice should produce the same bytes twice.
 
 ## Writing OASIS
 
-[`GdsII/OasisWriter.cs`](../GdsII/OasisWriter.cs) is the other direction. Reachable three ways: `gds convert
-cell.gds -o cell.oas`, the format picker beside the app's download button, and `OasisWriter.Write` in the
-library.
+[`GdsII/Formats/OasisWriter.cs`](../GdsII/Formats/OasisWriter.cs) is the other direction. Reachable three
+ways: `gds convert cell.gds -o cell.oas`, the format picker beside the app's download button, and
+`OasisWriter.Write` in the library.
 
 **The hierarchy is kept.** A cell goes over as a cell and a placement as a placement, so a library of two
 hundred standard cells placed a thousand times stays two hundred cells and a thousand placements rather
 than becoming a million polygons. That is the whole reason to write the format, and it is why the writer
 walks the structural model rather than the flattener's output the way
-[`LayoutWriter`](../GdsII/LayoutWriter.cs) does for `boolean` and `size`.
+[`LayoutWriter`](../GdsII/Model/LayoutWriter.cs) does for `boolean` and `size`.
 
 OASIS gets its size from three things: modal variables, where a record omits a field that has not changed
 since the last one; repetitions, where one record stands for a grid of copies; and compression. Before any
@@ -966,12 +995,13 @@ instead of a semicircle.
 
 ### What the corpus does not cover
 
-Worth writing down, because it was a surprise. Of the 897 bundled files, exactly **one** has a placement in
-it, **none** has an array, a box or a node, and **none** has more than a single cell. Run against the
+Worth writing down, because it was a surprise. Of the 897 bundled files, exactly **one** has a placement
+in it, **none** has an array, a box or a node, and **none** has more than a single cell. Run against the
 corpus alone a writer could get every placement record wrong and pass 897 times. So the hierarchy, the
 arrays, the four right angles, the mirror, the magnification and the four kinds of path end are exercised
-by a library built in [`OasisWriterTests.cs`](../tests/OasisWriterTests.cs) that has one of each — and KLayout
-reads that file, which is the only check that is not this project agreeing with itself.
+by a library built in [`OasisWriterTests.cs`](../tests/GDSViewer.Tests/OasisWriterTests.cs) that has one
+of each — and KLayout reads that file, which is the only check that is not this project agreeing with
+itself.
 
 Writing the explicit-extension path also surfaced a **pre-existing bug in the reader**: it emitted `WIDTH`
 *after* `BGNEXTN`/`ENDEXTN`, which is out of the order GDSII fixes and this project's own parser enforces.
@@ -980,10 +1010,11 @@ so that branch was only ever taken by a file written here, and until there was a
 
 ## Boolean operations
 
-[`GdsII/Booleans.cs`](../GdsII/Booleans.cs) does the four set operations on layout geometry — AND, OR, NOT,
-XOR — and grows or shrinks a shape. Between them they are what a PDK is written in: a transistor gate is
-not a drawn layer but `poly AND diff`, and a design rule is a size followed by a boolean, so *"closer than
-200 nm"* is answered by growing one shape by 200 and asking whether it now touches the other.
+[`GdsII/Geometry/Booleans.cs`](../GdsII/Geometry/Booleans.cs) does the four set operations on layout
+geometry — AND, OR, NOT, XOR — and grows or shrinks a shape. Between them they are what a PDK is written
+in: a transistor gate is not a drawn layer but `poly AND diff`, and a design rule is a size followed by a
+boolean, so *"closer than 200 nm"* is answered by growing one shape by 200 and asking whether it now
+touches the other.
 
 **The arithmetic is [Clipper2](../GdsII/Clipper2/README.md)'s**, vendored as source. Robust polygon clipping
 is not something to write — coincident edges, self-intersections and rounding all have to be right at
@@ -1053,7 +1084,7 @@ than deriving one from the other. The two views deliberately draw the same layou
 
 ### Reaching them
 
-[`LayoutWriter`](../GdsII/LayoutWriter.cs) is the other half and was missing: flattening a hierarchy was
+[`LayoutWriter`](../GdsII/Model/LayoutWriter.cs) is the other half and was missing: flattening a hierarchy was
 one-way, so anything computed from flat geometry had nowhere to go. It writes a flattened layout back as a
 one-structure library, keeping the source's header and units — the units are *copied* rather than
 recomputed, because a GDSII real is lossy and rebuilding one from a value read out of another moves it in
@@ -1171,11 +1202,11 @@ coordinates live inside the text body rather than beside the layer.
 properties: since a constructor assigns whichever declaration is nearest in scope, the record landed on
 the derived property and `ElementType.ELFLAGS` stayed null on every element ever parsed. Everything that
 holds an element polymorphically — `ElementModel.Element` is typed `ElementType`, and so is what the
-flattener and the views see — therefore read nothing, which is why `ElementFlags` had no working call
-site when it was written. The corpus contains no `ELFLAGS` record at all, so nothing failed and no test
+flattener and the views see — therefore read nothing, which is why `ElementFlags` had no working call site
+when it was written. The corpus contains no `ELFLAGS` record at all, so nothing failed and no test
 noticed; it was wrong by construction rather than by observation. `ArefModel` was the one that had it
 right. The guard is
-[`Every_element_type_carries_its_elflags_and_plex_on_the_base_class`](../tests/StructureModelTests.cs),
+[`Every_element_type_carries_its_elflags_and_plex_on_the_base_class`](../tests/GDSViewer.Tests/StructureModelTests.cs),
 which reads through an `ElementType` reference — the older test read through the derived cast and passed
 either way.
 
@@ -1307,11 +1338,11 @@ accident is a check that silently stops being made.
 
 ### Shapes, curves and routes
 
-[`Shapes`](../GdsII/Shapes.cs), [`BezierBuilder`](../GdsII/Bezier.cs) and
-[`PathBuilder`](../GdsII/PathBuilder.cs) build geometry for code that is *writing* a layout. They live in the
-library rather than in the app, and the app does not use them — the drawing tools were there first and go
-through the edit classes directly. What these add is a way to say what a shape *is* rather than where its
-corners are.
+[`Shapes`](../GdsII/Authoring/Shapes.cs), [`BezierBuilder`](../GdsII/Authoring/Bezier.cs) and
+[`PathBuilder`](../GdsII/Authoring/PathBuilder.cs) build geometry for code that is *writing* a layout.
+They live in the library rather than in the app, and the app does not use them — the drawing tools were
+there first and go through the edit classes directly. What these add is a way to say what a shape *is*
+rather than where its corners are.
 
 **A layout format has no curves**, so the side count is a decision somebody has to make and these take it as
 an argument. Everything hands back corners rather than elements: the corners are what varies, and putting one
@@ -1350,7 +1381,7 @@ that narrows has to be written as a boundary. That is what `BuildPolygon()` prod
 
 ## Layers, colors and stacking
 
-[`GdsII/Element.cs`](../GdsII/Element.cs) holds the presentation-side model.
+[`GdsII/Model/Element.cs`](../GdsII/Model/Element.cs) holds the presentation-side model.
 
 ### A layer is a pair
 
@@ -1398,8 +1429,9 @@ outside the file — KLayout from a `.lyp` or a reader layer map, Magic from its
 layermap — rather than compiling one PDK's table in. See [Known gaps](#known-gaps) for why bundling
 sky130's would be the wrong trade.
 
-[`GdsII/LayerNames.cs`](../GdsII/LayerNames.cs) reads `layer,datatype,name` per line, with optional further
-fields for a color, then the layer's **height** and **thickness**, then what it is **for**, then its
+[`GdsII/Model/LayerNames.cs`](../GdsII/Model/LayerNames.cs) reads `layer,datatype,name` per line, with
+optional further fields for a color, then the layer's **height** and **thickness**, then what it is
+**for**, then its
 **fill pattern**, and last two more saying how that pattern is drawn — the color of its marks and how many
 screen pixels one repeat covers. That is a Cadence-style layermap with
 commas, chosen because a PDK's own table converts to it mechanically — sky130's 432-row `layers.py` took
@@ -1690,11 +1722,11 @@ recomputing one entry, so the spacing stays right.
 ### Fill patterns, because color runs out before layers do
 
 A palette is the hue wheel divided by however many layers a file has, and past about a dozen the steps are
-smaller than the difference an overlapping stack of half-transparent shapes makes to any of them: 66/20 and
-67/20 are two greens and nothing on screen says which is which. [`LayerFill`](../GdsII/Element.cs) is a second
-axis — the same green, dotted or hatched rather than solid — which survives a low opacity and a screenshot
-somebody prints in gray. Seven patterns and solid, which is what KLayout's stipples and Cadence's fill
-styles are for.
+smaller than the difference an overlapping stack of half-transparent shapes makes to any of them: 66/20
+and 67/20 are two greens and nothing on screen says which is which.
+[`LayerFill`](../GdsII/Model/Element.cs) is a second axis — the same green, dotted or hatched rather than
+solid — which survives a low opacity and a screenshot somebody prints in gray. Seven patterns and solid,
+which is what KLayout's stipples and Cadence's fill styles are for.
 
 **The color goes *into* the pattern rather than under it.** The obvious build is a solid fill with a
 pattern painted over the top, and it needs two paths per layer — where the picture is one path per layer
@@ -1752,14 +1784,15 @@ column came to carry the role's condition inside its own.
 
 ## Resolving the hierarchy
 
-A GDSII library is a tree, not a drawing. A structure places other structures with `SREF` (one
-instance) and `AREF` (a grid of them), each carrying an optional transform, so the same cell can appear
-many times in different places and orientations. [`GdsII/GdsFlattener.cs`](../GdsII/GdsFlattener.cs)
-turns that tree into a flat `List<Element>` whose coordinates are all in top-level space, and both
-renderers consume it. Doing it once here rather than in each view means the 2D and 3D pictures agree
-and neither has to know how a transform composes.
+A GDSII library is a tree, not a drawing. A structure places other structures with `SREF` (one instance)
+and `AREF` (a grid of them), each carrying an optional transform, so the same cell can appear many times
+in different places and orientations.
+[`GdsII/Geometry/GdsFlattener.cs`](../GdsII/Geometry/GdsFlattener.cs) turns that tree into a flat
+`List<Element>` whose coordinates are all in top-level space, and both renderers consume it. Doing it once
+here rather than in each view means the 2D and 3D pictures agree and neither has to know how a transform
+composes.
 
-`GdsFlattener.Flatten(gds)` returns a [`FlattenedLayout`](../GdsII/GdsFlattener.cs) — the elements, the
+`GdsFlattener.Flatten(gds)` returns a [`FlattenedLayout`](../GdsII/Geometry/GdsFlattener.cs) — the elements, the
 structure names that could not be resolved, and whether nesting hit its depth limit.
 
 **Top-level structures.** Only structures nothing else references are walked. Without that a
@@ -1767,15 +1800,15 @@ referenced cell would be drawn twice: once where it is placed, and again at the 
 right. If every structure is referenced — a circular library — everything is treated as top level so
 that something is still drawn.
 
-**Transforms.** [`GdsII/Transform.cs`](../GdsII/Transform.cs) is a 2×3 affine matrix. GDSII specifies a
+**Transforms.** [`GdsII/Geometry/Transform.cs`](../GdsII/Geometry/Transform.cs) is a 2×3 affine matrix. GDSII specifies a
 placement as *reflect about the X axis, then magnify, then rotate counterclockwise, then translate*;
 `Transform.ForPlacement` bakes that order in once. Nesting is then matrix composition, which is what
 makes a parent's rotation correctly turn a child's offset — keeping reflection, magnification and angle
 as separate fields would mean re-deriving their interaction at every level.
 
-The placement's flags come from [`Strans.From`](../GdsII/BitFields.cs); `MAG` and `ANGLE` default to 1 and
-0 when absent. A magnification or angle marked **absolute** is measured against the world rather than
-the containing structure, so `placementOf` divides the parent's own scale or rotation out before
+The placement's flags come from [`Strans.From`](../GdsII/Model/BitFields.cs); `MAG` and `ANGLE` default to
+1 and 0 when absent. A magnification or angle marked **absolute** is measured against the world rather
+than the containing structure, so `placementOf` divides the parent's own scale or rotation out before
 composing — the composition then puts the intended value back. `Transform.Scale` and
 `Transform.AngleInDegrees` read those off the matrix, which works because a GDSII placement is always a
 similarity: uniform scale, rotation, optional reflection.
@@ -1786,8 +1819,8 @@ is placed at every lattice position.
 
 **Paths.** A `PATH` is a centerline plus a `WIDTH`, not a shape — drawing its `XY` list as a polygon
 encloses no area, which is why wires used to show as hairlines.
-[`GdsII/PathOutline.cs`](../GdsII/PathOutline.cs) offsets the centerline by half the width to either side
-and joins the two sides into one closed polygon.
+[`GdsII/Geometry/PathOutline.cs`](../GdsII/Geometry/PathOutline.cs) offsets the centerline by half the
+width to either side and joins the two sides into one closed polygon.
 
 One polygon rather than a rectangle per segment, deliberately: the 2D view fills at partial opacity, so
 overlapping quads at every corner would show through each other as darker patches. Interior corners are
@@ -1971,7 +2004,7 @@ centered camera there is new information, so it is written down and shared like 
 ## The 2D SVG view
 
 Pure Blazor with no drawing library, split in two:
-[`GdsII/SvgWriter.cs`](../GdsII/SvgWriter.cs) builds the markup, and
+[`GdsII/Formats/SvgWriter.cs`](../GdsII/Formats/SvgWriter.cs) builds the markup, and
 [`Components/Viewer2DSvg.razor`](../Components/Viewer2DSvg.razor) is the glue around it — parameters, the
 cached layout, `StateHasChanged`, the pan/zoom and download interop, and the toolbar.
 
@@ -1979,7 +2012,7 @@ cached layout, `StateHasChanged`, the pan/zoom and download interop, and the too
 drawn, how a label is justified and encoded, how a number is written — are plain string building over a
 flattened layout, needing no browser, renderer or DOM. Inside the `.razor` file the only way to check any
 of it was to load the app and look, which is how three culture bugs in it survived a suite of 340 tests.
-Outside, [`SvgWriterTests.cs`](../tests/SvgWriterTests.cs) exercises it directly.
+Outside, [`SvgWriterTests.cs`](../tests/GDSViewer.Tests/SvgWriterTests.cs) exercises it directly.
 
 `SvgWriter.VisibleLayers` turns the `CheckboxItem` list into a set of layer numbers once per redraw,
 which the 3D view uses too so that "visible" means one thing in both. It replaced a scan of that list per
@@ -2086,11 +2119,11 @@ Two things make the panel behave:
   up even if the pointer wanders off it.
 
 The specs went through the toolbar to reach these, so `openShapeSettings` and `setShapeSetting` in
-[`e2e/helpers.js`](../e2e/helpers.js) are where the menu's manners now live — a test about paths should not have
-to know them. `setShapeSetting` also *closes* the picker and waits for it to go, because the tools column hangs
-over the top of the view: a spec that went straight from typing a width to a drag would press while the menu
-was still on screen and the press would land on the menu. Moving the pointer only starts the closing, which is
-a Blazor render away.
+[`tests/e2e/helpers.js`](../tests/e2e/helpers.js) are where the menu's manners now live — a test about
+paths should not have to know them. `setShapeSetting` also *closes* the picker and waits for it to go,
+because the tools column hangs over the top of the view: a spec that went straight from typing a width to
+a drag would press while the menu was still on screen and the press would land on the menu. Moving the
+pointer only starts the closing, which is a Blazor render away.
 
 Two visibility specs had their premise retired rather than deleted — they asked whether the toolbar carried
 these controls, and the honest question afterwards is which *row* carries them. Both now check it in both
@@ -2239,10 +2272,11 @@ is half a nanometer.
 
 **Each corner goes out into the layout, turns there, and comes back.** Turning a shape where it sits comes
 out as a different quarter on screen for a cell placed sideways, and as the *opposite* direction for one
-placed mirrored — so a button marked "turn right" would turn some cells left. [`Turning`](../GdsII/Turning.cs)
-does the round trip through the placement, which is exact for a cell placed square: every value in it is a
-whole number. Removing that conjugation fails ten tests, and the ones that catch it hardest are the
-mirrored placements at no rotation at all, where turning in place looks entirely plausible.
+placed mirrored — so a button marked "turn right" would turn some cells left.
+[`Turning`](../GdsII/Editing/Turning.cs) does the round trip through the placement, which is exact for a
+cell placed square: every value in it is a whole number. Removing that conjugation fails ten tests, and
+the ones that catch it hardest are the mirrored placements at no rotation at all, where turning in place
+looks entirely plausible.
 
 The library names the four by **what they do to the coordinates**, not by a direction, because
 [the view draws Y downwards](#the-2d-svg-view) where the format counts it upwards — so the quarter turn the
@@ -2261,9 +2295,10 @@ Six buttons to bring a set of shapes onto one edge, two to even out the spacing 
 offered only once more than one *element* is chosen — see below for why that is not the same as more than
 one shape.
 
-[`Aligning`](../GdsII/Aligning.cs) is arithmetic over rectangles: boxes in, offsets out, nothing in it that
-knows what a shape is or which cell it belongs to. Lining up goes against the whole set rather than one
-chosen member of it, because "leftmost" is what somebody who selected a handful of shapes and pressed
+[`Aligning`](../GdsII/Editing/Aligning.cs) is arithmetic over rectangles: boxes in, offsets out, nothing
+in it that knows what a shape is or which cell it belongs to. Lining up goes against the whole set rather
+than one chosen member of it, because "leftmost" is what somebody who selected a handful of shapes and
+pressed
 **Left** means, and naming a key object would need a way to say which.
 
 **Spacing evens out the middles, not the gaps between the edges.** For shapes of one size the two are the
@@ -2357,7 +2392,7 @@ Every performance claim about this app used to be about a file that did not exis
 all under 60 KB, the largest count any end-to-end test asserted was 74 shapes, and the wall is somewhere
 around twenty thousand — so nothing had ever been measured where it mattered.
 
-`Synthetic.Layout` makes a layout to order and `gds bench` times the stages over it; `e2e/large-layout.spec.js`
+`Synthetic.Layout` makes a layout to order and `gds bench` times the stages over it; `tests/e2e/large-layout.spec.js`
 does the other half, in a browser. Generated rather than committed, because a half-million-element file does
 not belong in a repository and the interesting question is where the curve bends, which needs a family of
 sizes rather than one specimen. Shapes overlap along a row on purpose: a layer whose shapes never touch is a
@@ -2506,11 +2541,11 @@ to be looking at, and only the thing that resolved the hierarchy knows.
 
 **It is pinned now, and pinning it found something.** A flatten that quietly came back would cost time and
 change no picture, so every correctness test stays green through it and the timings `large-layout.spec.js`
-prints are reported rather than bounded. [`GdsFlattener.Flattens`](../GdsII/GdsFlattener.cs) counts
-whole-library flattens wherever they are called from, `Counters.FlattenCount` hands the number to
-JavaScript, and [`flatten-count.spec.js`](../e2e/flatten-count.spec.js) asks for it either side of an open,
-a view switch and an edit. Counted at the flattener rather than at the call sites, so a flatten added
-somewhere new is counted without anybody remembering to.
+prints are reported rather than bounded. [`GdsFlattener.Flattens`](../GdsII/Geometry/GdsFlattener.cs)
+counts whole-library flattens wherever they are called from, `Counters.FlattenCount` hands the number to
+JavaScript, and [`flatten-count.spec.js`](../tests/e2e/flatten-count.spec.js) asks for it either side of
+an open, a view switch and an edit. Counted at the flattener rather than at the call sites, so a flatten
+added somewhere new is counted without anybody remembering to.
 
 An open cost one and an edit cost one, as intended. **A view switch cost nothing on the way out and one on
 the way back**, which is not what this section claimed before anybody counted.
@@ -2645,7 +2680,7 @@ list, and that is nearly half the document.
 
 Per-shape nodes were carrying three jobs, and each needed somewhere else to go.
 
-**The hit test.** A pointer event named the node it landed on. [Picking.cs](../GdsII/Picking.cs) answers it
+**The hit test.** A pointer event named the node it landed on. [Picking.cs](../GdsII/Viewing/Picking.cs) answers it
 from the layout instead - the cached `Element.Box` first, which rejects nearly everything for almost
 nothing, then Clipper's `PointInPolygon` for the few that could be it. Asked **synchronously** through
 `invokeMethod`, because the answer decides at pointer-down whether the drag that follows is a shape being
@@ -2721,8 +2756,9 @@ every time the layout is read.
 
 ##### The test surface, which was the bulk of it
 
-About 290 assertions read `#gdsSVG polygon` directly, and nothing addressable by a selector corresponds to a
-shape any more. They go through helpers in [e2e/helpers.js](../e2e/helpers.js) that read either form, and
+About 290 assertions read `#gdsSVG polygon` directly, and nothing addressable by a selector corresponds to
+a shape any more. They go through helpers in [tests/e2e/helpers.js](../tests/e2e/helpers.js) that read
+either form, and
 **that migration was committed on its own, against markup that had not moved**, so the suite could say it
 changed nothing. It found three bugs that way, which is the whole reason for the order.
 
@@ -2792,7 +2828,7 @@ but Chrome refuses it here even with the page cross-origin isolated.
 
 `npm run test:e2e` has always run against the dev server, so no **published** build had ever been exercised
 by anything — and a Release publish trims. Serving the published output on the port the suite expects, which
-[playwright.config.js](../playwright.config.js) reuses rather than fights over, puts every spec against the real
+[playwright.config.js](../tests/playwright.config.js) reuses rather than fights over, puts every spec against the real
 artifact instead. **All of them pass** — 459 specs at the time, and the suite has grown since. That is now the
 check the next two sections both rest on.
 
@@ -3415,7 +3451,7 @@ left completely alone — not canceled — so drags inside the page go on behavi
 
 **What a spec can and cannot prove here.** A synthetic `DragEvent` has no default action, so a test that
 drops a file on the toolbar and then asserts the address has not changed passes whether or not the app
-prevented anything. That was the first version of [`file-drop.spec.js`](../e2e/file-drop.spec.js), and
+prevented anything. That was the first version of [`file-drop.spec.js`](../tests/e2e/file-drop.spec.js), and
 deleting both `preventDefault` calls left every one of its tests green — the guard against the app
 navigating away was not tested at all. The tests read `defaultPrevented` inside the page instead, which is
 the mechanism rather than a consequence of it, and three of them now fail on that mutation. The
@@ -3450,8 +3486,9 @@ speck in the middle cannot pass. That holds wherever the geometry moves to next,
 tuned to today's stack would pass while meaning nothing. Verified by disabling the fit and watching it fail
 with `the stack runs off the top: x -1.50..1.61, y -1.25..1.86`.
 
-The documentation screenshot no longer needs a tuned spread either — `tools/screenshots.spec.js` presses
-Center after opening the stack out, instead of the magic 60 that had already been 110 once.
+The documentation screenshot no longer needs a tuned spread either —
+`tests/screenshots/screenshots.spec.js` presses Center after opening the stack out, instead of the magic
+60 that had already been 110 once.
 
 ### How tall a toolbar popup gets
 
@@ -3507,8 +3544,8 @@ whole reason the format has cells. The alternatives lose that. Flattening the sh
 hierarchy away, and holding the file as a second open document would break the one-library assumption
 everything downstream makes.
 
-[`Importing`](../GdsII/Importing.cs) does the work, and it reconciles the two things that are silent when
-they go wrong:
+[`Importing`](../GdsII/Editing/Importing.cs) does the work, and it reconciles the two things that are
+silent when they go wrong:
 
 - **Names.** Two libraries invented their names independently, so both having a cell called `top` says
   nothing about the cells being related. Left alone, a placement inside the incoming hierarchy would
@@ -3573,10 +3610,10 @@ from the tree that lists them — which is what the first run of the e2e spec ca
 ### The grid a file was drawn on, and why it is not the pitch
 
 **Nothing in a GDSII file records its grid.** The format stores a database unit and then whole numbers of
-them; whatever manufacturing or routing grid the tool that made the file was snapping to is not written down
-anywhere. It is recoverable, though — every coordinate divides by it, so the greatest common divisor of the
-lot is at worst a multiple of it and in practice is it. [`Grid.Of`](../GdsII/Grid.cs) is that walk, and Mosfet
-comes back as **five database units**, which on its `UNITS` is five nanometers.
+them; whatever manufacturing or routing grid the tool that made the file was snapping to is not written
+down anywhere. It is recoverable, though — every coordinate divides by it, so the greatest common divisor
+of the lot is at worst a multiple of it and in practice is it. [`Grid.Of`](../GdsII/Viewing/Grid.cs) is
+that walk, and Mosfet comes back as **five database units**, which on its `UNITS` is five nanometers.
 
 That number goes in the pitch box's readout, because it is worth knowing while laying out on a file: it is
 the finest placement the file is built to, and nothing else on screen says it.
@@ -3587,10 +3624,10 @@ the level of detail, and its heavy ones seven — **178 lines across the view wh
 is a wash rather than a grid, and it takes the tenth-line reading, the level-of-detail behavior and
 corner-beats-grid precedence out of sight, which are three of the things the grid exists for.
 
-So [`Grid.Opening`](../GdsII/Grid.cs) keeps the file's own grid and multiplies it by ten until one step is at
-least a five-hundredth of the layout's longer side. Mosfet is 2,800 units across and drawn on five, so it
-opens on **fifty — 0.05 µm**, which puts about five heavy lines across the view. Two properties survive that
-a round number never had:
+So [`Grid.Opening`](../GdsII/Viewing/Grid.cs) keeps the file's own grid and multiplies it by ten until one
+step is at least a five-hundredth of the layout's longer side. Mosfet is 2,800 units across and drawn on
+five, so it opens on **fifty — 0.05 µm**, which puts about five heavy lines across the view. Two
+properties survive that a round number never had:
 
 - **The pitch is always a whole multiple of what the file was built on**, so nothing is ever placed off the
   grid the file already sits on. That is the whole reason for reading it.
@@ -3603,8 +3640,8 @@ Ten rather than one-two-five, so the readout stays a round number in whatever un
 **This is what made snapping worth having on by default.** At a fixed micron and the opening fit, one grid
 step is about 145 screen pixels — so any gesture smaller than that put both ends on the same crossing and
 the shape collapsed. It is 13 pixels on this file now. The arithmetic is unit-tested in
-[`GridTests`](../tests/GridTests.cs) rather than only exercised through the browser, including the die case and
-a layout with no extent to go on.
+[`GridTests`](../tests/GDSViewer.Tests/GridTests.cs) rather than only exercised through the browser,
+including the die case and a layout with no extent to go on.
 
 **The pitch follows the file until somebody types one**, and then it is theirs and no file changes it back.
 That fact is saved beside the number, under `gq` — the number alone cannot say whether it came from a person
@@ -3936,9 +3973,44 @@ downloaded file. Four of its five tests existed to cover a hand-off no test coul
 a `THREE.Shape` from the points, `ExtrudeGeometry` with `depth = layer.depth`, a `MeshPhongMaterial` in
 `layer.color`, rotated flat by `LAYOUT_ROTATION_X` and positioned at `y = layer.offset`.
 
-That rotation is `1.5` radians, a little short of the `1.5708` that would lay the stack exactly flat, so
-it leans very slightly toward the camera. It is the value the view has always used and is left alone;
-it is named rather than repeated because labels have to be placed by the same amount.
+That rotation is `Math.PI / 2` — a right angle exactly, and it has to be one. It read `1.5` for a long
+time, which is 4.06 degrees short, so every layout in this view leaned that far towards the camera and the
+comment here recorded the lean as a property of the view rather than as the typo it was. It did not stay a
+display quirk either: three's exporters write world transforms, so the lean went into every STL, OBJ and
+GLTF the app produced, and a model tilted off level has no flat face anywhere in it. It is named rather
+than repeated because labels have to be placed by the same amount.
+
+### The corner axis indicator
+
+Three lettered arms in the bottom-left of the canvas, turning with the camera so there is always something
+saying which way round the layout is.
+
+**It is lettered in the layout's axes, not in three's.** The scene is not in the layout's coordinate
+system: every extrusion is built flat in the layout's own XY and then tipped by `LAYOUT_ROTATION_X`, which
+lands the layout's Y along the scene's **+Z** and leaves the process stack — the layout's Z — running up
+the scene's **+Y**. A `THREE.AxesHelper` would therefore letter the stack "Y", which is three's name for
+that direction and not the one anybody reading a layout uses. So each arm is *placed* by the scene
+direction and *lettered* by the layout axis that direction carries, and the colors follow the letter:
+X red, Y green, Z blue. What the indicator reports is the same X, Y and Z the 2D view's ruler reads in.
+
+**It is a second render into a corner of the same canvas**, from a scene and an orthographic camera of its
+own — orthographic so an arm pointing at the camera is not foreshortened into a dot, and separate so the
+indicator is never lit, fitted, exported or picked along with the layout. `buildForExport` walks the chip
+group alone, so nothing here can reach a model file.
+
+The little camera takes the main one's orientation exactly, by quaternion rather than by `lookAt`, so a
+rolled camera rolls the indicator with it. Depth is cleared before it draws and color is not: the scene is
+already on the canvas by then, and clearing color would punch a hole in it. The viewport is put back
+afterwards, without which the *next* frame's whole scene is drawn into the corner square.
+
+None of that is visible to a test that reads the scene graph, so
+[`render-3d.spec.js`](../tests/e2e/render-3d.spec.js) watches `gl.viewport` instead — three assigns
+`setViewport` onto each renderer as an own property rather than onto the prototype, so there is nothing to
+patch without a handle on the instance, and the WebGL call underneath it is on a prototype and is what
+actually moves the viewport.
+
+An XR session renders one viewport per eye and owns `setViewport` while it does, so the indicator is
+skipped there — a flat badge pinned to a corner of the canvas means nothing in a headset anyway.
 
 **The outline is one `moveTo` and then a `lineTo` per point after it.** It used to call `moveTo` for
 *every* point and then `lineTo` the same point again, which produced a run of zero-length segments and
@@ -3946,8 +4018,9 @@ silently dropped the first point — the outline began at `points[1]`.
 
 A closed ring survives that, because its repeated last point closes the same cycle, which is why the
 bundled `Mosfet.gds` looked right and hid it. What breaks is an outline that is **not** explicitly closed,
-which is what [`PathOutline`](../GdsII/PathOutline.cs) returns: a four-corner rectangle lost a corner and
-came out as a triangle. On `sky130_fd_sc_hd__a211oi_1` two of the seventy-four shapes were wedges.
+which is what [`PathOutline`](../GdsII/Geometry/PathOutline.cs) returns: a four-corner rectangle lost a
+corner and came out as a triangle. On `sky130_fd_sc_hd__a211oi_1` two of the seventy-four shapes were
+wedges.
 
 The 2D view was unaffected throughout — it walks the same points itself — so the two views disagreed while
 only one of them was wrong. That is what the regression test uses: it compares the corner set of every
@@ -4098,8 +4171,8 @@ allows. That is where it stops by decision, not by backlog — see [Known gaps](
 section as the intent of the code rather than as observed behavior, and if someone does put it in a headset,
 expect the scale factor and the AR placement to be where it is wrong first.
 
-[`Pages/QR.razor`](../Pages/QR.razor) is a small popup component the 3D toolbar uses to show a QR code of
-the current URL, rendered as SVG rectangles from `Net.Codecrete.QrCodeGenerator`.
+[`Components/QR.razor`](../Components/QR.razor) is a small popup component the 3D toolbar uses to show a
+QR code of the current URL, rendered as SVG rectangles from `Net.Codecrete.QrCodeGenerator`.
 
 **Open On Phone is not offered on a phone.** The button hands *this page* to another device, so on the
 phone it is a code pointing at the page you are already reading — the one device it can do nothing for, and
@@ -4144,7 +4217,7 @@ before a new one is created.
 ### Saving an edit
 
 The save button reads the buffer and hands it to `GDS.Deserialize(string)`, which parses it through
-[`GdsII/TextFormat.cs`](../GdsII/TextFormat.cs) — the inverse of `AsText`.
+[`GdsII/Formats/TextFormat.cs`](../GdsII/Formats/TextFormat.cs) — the inverse of `AsText`.
 
 `TextFormat.ParseRecords` takes one record per line, `TYPE: values `. Three things about it are worth
 knowing before changing it:
@@ -4312,7 +4385,8 @@ flowchart TD
 
 **Written down as changes, not as copies.** Storing the file as it stood before each step would be trivially
 correct and would cost a copy of it per keystroke. So a session carries each edit and how to reverse it —
-[`EditRecord`](../GdsII/EditRecord.cs) — which for a move is three numbers whatever the shape it moves.
+[`EditRecord`](../GdsII/Editing/EditRecord.cs) — which for a move is three numbers whatever the shape it
+moves.
 
 **Addressed by where a shape sits, not by which object it is.** A `LayoutEdit` in memory points at the very
 model objects it changes, and those do not come back: reopening a file parses new ones. The only name a
@@ -4529,13 +4603,13 @@ own origin, so it works as a value without a second host:
 
 ### Where it is tested
 
-The parsing is [`tests/EmbeddingTests.cs`](../tests/EmbeddingTests.cs) — every accepted spelling, every
-refused address, and the precedence overlay. What only exists once rendered is
-[`e2e/embedding.spec.js`](../e2e/embedding.spec.js): whether the bar is in the page at all, whether a
-control is genuinely unusable rather than merely faded, whether a named setting beat the session, and
-whether an injected row fetches the address it was given. The injected specs point at this app's own
-origin, which is a real absolute URL and takes the same path through the code as somebody else's without
-needing a second host.
+The parsing is [`tests/GDSViewer.Tests/EmbeddingTests.cs`](../tests/GDSViewer.Tests/EmbeddingTests.cs) — every accepted
+spelling, every refused address, and the precedence overlay. What only exists once rendered is
+[`tests/e2e/embedding.spec.js`](../tests/e2e/embedding.spec.js): whether the bar is in the page at all,
+whether a control is genuinely unusable rather than merely faded, whether a named setting beat the
+session, and whether an injected row fetches the address it was given. The injected specs point at this
+app's own origin, which is a real absolute URL and takes the same path through the code as somebody else's
+without needing a second host.
 
 ## Testing
 
@@ -4543,9 +4617,9 @@ Three layers, because they catch different things:
 
 | Layer | Where | Run with | Count | Needs |
 |---|---|---|---|---|
-| C# unit and corpus | [`tests/`](../tests) | `dotnet test` | 2,022 | nothing |
-| Browser-JS unit | [`jstests/`](../jstests) | `npm test` | 41 | Node only, no packages |
-| End-to-end | [`e2e/`](../e2e) | `npm run test:e2e` | 853 in 61 files | `npm install` and a browser |
+| C# unit and corpus | [`tests/GDSViewer.Tests/`](../tests/GDSViewer.Tests) | `dotnet test` | 2,022 | nothing |
+| Browser-JS unit | [`tests/jstests/`](../tests/jstests) | `npm test` | 41 | Node only, no packages |
+| End-to-end | [`tests/e2e/`](../tests/e2e) | `npm run test:e2e` | 857 in 61 files | `npm install` in `tests/`, and a browser |
 
 On CI the C# run is 1,989: the thirty-three tests marked `Needs=KLayout` use it as a second implementation to
 check this one against, and it is a desktop EDA tool that is not on a runner.
@@ -4553,9 +4627,10 @@ check this one against, and it is a desktop EDA tool that is not on a runner.
 **None of this is part of the app build.** `dotnet build` is still the whole build, and nothing under
 `node_modules` reaches `wwwroot` — the vendored-JS rule is about what ships, not about what tests it.
 
-Unit tests live in [`tests/`](../tests) as a separate **xUnit** project (`GDSViewer.Tests`) that targets
-`net10.0` and takes a `ProjectReference` on the app. The app project excludes `tests/**` from its own
-globs so the two never collide.
+Unit tests live in [`tests/GDSViewer.Tests/`](../tests/GDSViewer.Tests) as a separate **xUnit** project
+that targets `net10.0` and takes a `ProjectReference` on the app. The app project excludes `tests/**` from
+its own globs so the two never collide — which, now that every test layer lives under `tests/`, covers the
+browser specs and their tooling in the same stroke.
 
 ```bash
 dotnet test
@@ -4563,19 +4638,19 @@ dotnet test
 
 Covered:
 
-- **Record decoding** ([`RecordDecodingTests.cs`](../tests/RecordDecodingTests.cs)) — big-endian framing,
+- **Record decoding** ([`RecordDecodingTests.cs`](../tests/GDSViewer.Tests/RecordDecodingTests.cs)) — big-endian framing,
   INT2 scalar-versus-array, INT4 and `XY` coordinate arrays including negatives and values past 16
   bits, REAL8 against hand-written canonical encodings (`1.0`, `-1.0`, `0.5`, `2.0`, `16.0`, zero) plus
   round trips, ASCII with and without the odd-length null pad, `NODATA`, `BITARRAY`, and the
   `BGNLIB` timestamp tuple — including both edges of the year heuristic (`999` shifts to 2899, `1000`
   stays), a negative year left unshifted, both conventions read from real files, and that the
   interpretation does not reach the payload, so the bytes still round-trip.
-- **The structural model** ([`StructureModelTests.cs`](../tests/StructureModelTests.cs)) — the library
+- **The structural model** ([`StructureModelTests.cs`](../tests/GDSViewer.Tests/StructureModelTests.cs)) — the library
   preamble and each optional record, the `FORMAT`/`MASK` block, multiple structures, all seven element
   types with their optional sub-records, `TextModel.XY` delegating to the text body, `STRANS` blocks,
   element properties, `IsElementRecord`, and the `IHasLayer` split between drawable elements and
   references.
-- **Malformed input** ([`InputValidationTests.cs`](../tests/InputValidationTests.cs)) — empty files, stray
+- **Malformed input** ([`InputValidationTests.cs`](../tests/GDSViewer.Tests/InputValidationTests.cs)) — empty files, stray
   bytes too short for a header, lengths below the header size, records claiming more bytes than remain,
   truncated libraries and unclosed structures, plain text, a PNG, all zeros, and a stream not starting
   with `HEADER`. Also asserts the other direction: a record larger than a signed short still parses.
@@ -4591,7 +4666,7 @@ Covered:
   each leave `Timestamps` null while the layout parses, the raw values survive, and the bytes round-trip.
   All 897 bundled files already carry usable stamps, so this is robustness for files outside the corpus
   rather than something it exercises.
-- **Where we are stricter than KLayout** ([`ToleranceTests.cs`](../tests/ToleranceTests.cs)) — the four
+- **Where we are stricter than KLayout** ([`ToleranceTests.cs`](../tests/GDSViewer.Tests/ToleranceTests.cs)) — the four
   inputs this refuses that KLayout opens with a warning: an unclosed boundary, a three-point one, a
   single-point path, and null padding after `ENDLIB`. Each refuses on both the open and the save path,
   which is the intended behavior rather than an artifact of sharing the constructors — see
@@ -4603,16 +4678,16 @@ Covered:
   refusal: an element whose points are split across several `XY` records is joined into one shape. It
   became possible when `Fracture` made such a shape writable, which is the condition the whole list is
   held to — a file that opens is a file that saves.
-- **Path outlines** ([`PathOutlineTests.cs`](../tests/PathOutlineTests.cs)) — a segment becoming a rectangle
+- **Path outlines** ([`PathOutlineTests.cs`](../tests/GDSViewer.Tests/PathOutlineTests.cs)) — a segment becoming a rectangle
   of its width, mitered right angles, collinear points collapsing, repeated points, the miter limit
   catching a near-reversal, all four `PATHTYPE` end treatments, zero-width and single-point degenerates,
   and that a magnified placement scales the width. A corpus test then requires every one of the 898
   paths in the sample files to come out as a closed outline enclosing real area.
-- **Bit fields** ([`BitFieldTests.cs`](../tests/BitFieldTests.cs)) — each flag at its documented bit number,
+- **Bit fields** ([`BitFieldTests.cs`](../tests/GDSViewer.Tests/BitFieldTests.cs)) — each flag at its documented bit number,
   including that reflection is the *top* bit and not the bottom one; the justification and font pairs;
   undefined selectors falling back; short and wrong-typed payloads; and a corpus test asserting every one
   of the 12681 labels decodes to one of the three justifications the files actually use.
-- **Transforms** ([`TransformTests.cs`](../tests/TransformTests.cs)) — the two orders that are easy to get
+- **Transforms** ([`TransformTests.cs`](../tests/GDSViewer.Tests/TransformTests.cs)) — the two orders that are easy to get
   backwards and hard to diagnose downstream: the order a GDSII placement applies its parts in (reflect,
   magnify, rotate, translate) and the order `Then` composes in, each pinned by a case where the wrong
   order gives a different answer. Plus `Scale` and `AngleInDegrees` reading back what a placement was
@@ -4620,13 +4695,13 @@ Covered:
   what the absolute-flag handling divides out. And that `Apply` rounds to even on a half, since that
   decides a coordinate and is not the rounding most people assume. This is `Transform`'s first direct
   coverage; it was previously exercised only through the flattener.
-- **Hierarchy** ([`FlattenerTests.cs`](../tests/FlattenerTests.cs)) — `SREF` placement, reflection,
+- **Hierarchy** ([`FlattenerTests.cs`](../tests/GDSViewer.Tests/FlattenerTests.cs)) — `SREF` placement, reflection,
   magnification, rotation and the order they apply in, nested composition (including that a parent's
   rotation turns a child's offset), `AREF` lattices, text anchors moving with their cell, missing
   references, and self- and mutual recursion. **These carry unusual weight**: only one bundled file uses
   `SREF` and none uses `AREF`, and that file references cells it does not contain, so the corpus cannot
   exercise placement at all — everything but the label assertions is hand-built.
-- **Layer discovery** ([`LayerDiscoveryTests.cs`](../tests/LayerDiscoveryTests.cs)) — deduplication,
+- **Layer discovery** ([`LayerDiscoveryTests.cs`](../tests/GDSViewer.Tests/LayerDiscoveryTests.cs)) — deduplication,
   collection across structures, references contributing nothing, stacking offsets following layer
   number rather than file order, default depth, and distinct palette colors at several layer counts.
   Then the pair: two data types of one layer being two layers, each of the five element types
@@ -4635,7 +4710,7 @@ Covered:
   the one below it by the same amount, with the respacing the slider triggers keeping that same rule.
   This asserted the opposite until the sky130 mapping made the cost visible; see
   [Every layer its own step](#every-layer-its-own-step-and-what-that-costs).
-- **The command-line tool** ([`CliTests.cs`](../tests/CliTests.cs)) - every command run in-process, since
+- **The command-line tool** ([`CliTests.cs`](../tests/GDSViewer.Tests/CliTests.cs)) - every command run in-process, since
   Cli.Run takes writers and returns an exit code rather than touching Console. The exit codes are
   asserted as deliberately as the output, being what something scripting it branches on: a missing file
   is a file error where a missing argument is a usage error. Two are worth more than the rest - a file
@@ -4666,7 +4741,7 @@ Covered:
   both look like "this wire connects to nothing".
 
   For measure: the ruler's own arithmetic, pinned on the **same 300-by-400 case**
-  [`jstests/viewGeometry.test.js`](../jstests/viewGeometry.test.js) pins for the browser side — deliberately, so
+  [`tests/jstests/viewGeometry.test.js`](../tests/jstests/viewGeometry.test.js) pins for the browser side — deliberately, so
   the two are held to one contract rather than each to whatever it happens to compute. Then the reverse
   direction, a point against itself, dy following the file rather than the flipped picture, a file whose
   `UNITS` cannot be used getting units alone and a line saying why, and a span wider than an `int`. That last
@@ -4679,18 +4754,18 @@ Covered:
   labels on a hidden layer going with it, and the bounds following what is left. One test exists only to
   pin the argument parser: without the option's value being skipped, a layer list reads as a second file
   and the command refuses two — which is a confusing way to be told about a missing option.
-- **Storage encoding and sessions** ([`StorageTests.cs`](../tests/StorageTests.cs)) — the marker-and-deflate
+- **Storage encoding and sessions** ([`StorageTests.cs`](../tests/GDSViewer.Tests/StorageTests.cs)) — the marker-and-deflate
   encoding round-tripping, a short value staying uncompressed, a whole GDS file surviving byte for byte,
   and a truncated value — which is what a full quota produces — decoding to nothing rather than throwing
   on the path that starts the app. Then sessions: an edited file coming back edited, and anything that is
   not a session, including one from another version, reading as none rather than being guessed at.
-- **Layer names** ([`LayerNamesTests.cs`](../tests/LayerNamesTests.cs)) — the layermap format and its
+- **Layer names** ([`LayerNamesTests.cs`](../tests/GDSViewer.Tests/LayerNamesTests.cs)) — the layermap format and its
   tolerances (line endings, comments, whitespace, an optional header, a repeated pair taking the last
   name), the rows that cannot be read being reported by line while the good ones are kept, and applying:
   a row for another data type not naming this one, a mapping for another technology applying nothing,
   a fourth field recoloring, clearing restoring the palette, and the export round-tripping through the
   parser. Culture-independent in both directions, for the same reason the record dump is.
-  [`LayerStackTests.cs`](../tests/LayerStackTests.cs) covers the stack columns on top of that: a placed layer
+  [`LayerStackTests.cs`](../tests/GDSViewer.Tests/LayerStackTests.cs) covers the stack columns on top of that: a placed layer
   surviving the spacing slider, half a stack being refused, and the two writers filling different numbers
   of columns on purpose. Then **what a session is willing to write down**, which is where two live defects
   were: a role writing the automatic heights behind it and pinning every layer it touched, and a layer with
@@ -4698,7 +4773,7 @@ Covered:
   parsed, applied to a fresh file, and the spacing slider still moving every layer by the same step. All eight
   fail against the code as it was; see
   [Two ways the session writer wrote down more than anybody chose](#three-ways-the-session-writer-wrote-down-more-than-anybody-chose).
-- **Which shape a click lands on** ([`PickingTests.cs`](../tests/PickingTests.cs)) — the rules that used to be
+- **Which shape a click lands on** ([`PickingTests.cs`](../tests/GDSViewer.Tests/PickingTests.cs)) — the rules that used to be
   the browser's and became ours when the picture stopped being one node per shape. A point inside a shape and
   outside it; an L-shape whose box holds a point its outline does not, which is why the box test is not the
   answer on its own; every edge and corner of a rectangle counting as a hit, since a boundary that refused
@@ -4715,16 +4790,16 @@ Covered:
   nothing else, so a one-point ring is outside itself as far as Clipper is concerned and deleting the guard
   left the first test passing. What isolates it is a shape no flattener builds — text with a real extent —
   which is also what would arrive the day a label gains a box of its own.
-- **Another implementation's files** ([`InteropTests.cs`](../tests/InteropTests.cs)) — two files written by
+- **Another implementation's files** ([`InteropTests.cs`](../tests/GDSViewer.Tests/InteropTests.cs)) — two files written by
   KLayout 0.30.9, parsed with no unknown record types, round-tripped byte for byte, their `UNITS` read
   back exactly, and geometry this writer would never emit (a three-point triangle, a `BOX`) read
   correctly. Everything else in the suite reads either the bundled corpus or files this project produced,
   so without these "correct" meant only "self-consistent". See [Interoperability](#interoperability).
-- **The sample corpus** ([`SampleFileTests.cs`](../tests/SampleFileTests.cs)) — every one of the 897
+- **The sample corpus** ([`SampleFileTests.cs`](../tests/GDSViewer.Tests/SampleFileTests.cs)) — every one of the 897
   bundled files parses, yields structures and layers, and contains only known record types. The
   `Mosfet.gds` units assertion (`0.001` and `1e-9`) is an independent check on the REAL8 decoder,
   since those bytes were produced by a layout tool rather than by the test suite.
-- **OASIS against the same corpus** ([`OasisTests.cs`](../tests/OasisTests.cs)) — every one of the 897 files
+- **OASIS against the same corpus** ([`OasisTests.cs`](../tests/GDSViewer.Tests/OasisTests.cs)) — every one of the 897 files
   is converted to OASIS by KLayout and read back, and the geometry has to match what the GDSII reader
   produces from the original. That is the test that makes the format reader trustworthy: a binary format
   implemented from a specification comes out *plausible* and wrong, and a misread info byte or delta
@@ -4739,7 +4814,7 @@ Covered:
   It found a real one immediately — a repetition of the y-only kind expanded with a spacing of zero, so
   every copy of a repeated rectangle landed on the first. Five files in, and invisible in any count: the
   shape totals per layer matched exactly, because the missing copies were replaced by duplicates.
-- **The three records the corpus never produces** ([`OasisShapeTests.cs`](../tests/OasisShapeTests.cs)) —
+- **The three records the corpus never produces** ([`OasisShapeTests.cs`](../tests/GDSViewer.Tests/OasisShapeTests.cs)) —
   KLayout's writer emits no `TRAPEZOID`, `CTRAPEZOID` or `CIRCLE` for the bundled files, which was
   established rather than assumed: making the reader throw on those records left all 897 still passing. So
   that code had no coverage at all, and it is the part that was wrong twice while being written.
@@ -4754,7 +4829,7 @@ Covered:
   The circle is the exception and is checked directly: GDSII has no circle, both sides polygonize it, and
   there is no reason two tools would pick the same number of segments. What is asserted is what does not
   depend on that — every corner on the circle, and the ring going all the way round.
-- **The booleans, against a second engine** ([`BooleanTests.cs`](../tests/BooleanTests.cs)) — the areas are
+- **The booleans, against a second engine** ([`BooleanTests.cs`](../tests/GDSViewer.Tests/BooleanTests.cs)) — the areas are
   asserted directly for the simple cases, and all four operations are then run again by **KLayout's own
   boolean engine**, which shares no code with Clipper. `poly AND diff` on `Mosfet.gds` is not an example
   chosen to be convenient: it is how a PDK defines where a transistor is, and it is the operation the whole
@@ -4763,15 +4838,15 @@ Covered:
   Areas rather than corner lists throughout. Two engines are free to walk a ring from a different corner or
   to split a result differently, and neither is a difference in what is covered — a test that demanded the
   corners match would be pinning an implementation detail.
-- **The 2D markup** ([`SvgWriterTests.cs`](../tests/SvgWriterTests.cs)) — exact polygon markup, layer
+- **The 2D markup** ([`SvgWriterTests.cs`](../tests/GDSViewer.Tests/SvgWriterTests.cs)) — exact polygon markup, layer
   visibility (deselected *and* unlisted), the label element, the justification mappings including the
   deliberately inverted baseline, HTML encoding of a label containing `<` and `&`, the whole markup for a
   real file being culture-independent, and the opacity format/parse round trip. This is the coverage the
   extraction from `Viewer2DSvg.razor` bought; before it, none of this could be reached without a browser.
-- **The text dump** ([`TextRepresentationTests.cs`](../tests/TextRepresentationTests.cs)) — one line per
+- **The text dump** ([`TextRepresentationTests.cs`](../tests/GDSViewer.Tests/TextRepresentationTests.cs)) — one line per
   record, the type prefix, scalar / array / ASCII / empty formatting, and the byte-level
   `Deserialize` round trip, plus culture independence.
-- **What the page asks the browser for** ([`ShippedAssetTests.cs`](../tests/ShippedAssetTests.cs)) — every local
+- **What the page asks the browser for** ([`ShippedAssetTests.cs`](../tests/GDSViewer.Tests/ShippedAssetTests.cs)) — every local
   `src` and `href` in `index.html` existing, and **spelled the way the page asks**, which is the half no other
   layer can see: a case-only difference works on this disk and 404s once published, so the check is against
   the directory listing rather than `File.Exists`. Plus the reverse, that nothing sits under `wwwroot/js`
@@ -4794,11 +4869,11 @@ Two notes on the culture tests, which span both files above and share
 Verified to catch the bug rather than merely pass alongside it: reverting the invariant formatting fails
 three text-dump tests and four markup tests, while every other test still passes — the defect was
 invisible to the whole suite before this.
-- **Writing** ([`SerializeTests.cs`](../tests/SerializeTests.cs)) — record framing, every payload encoder
+- **Writing** ([`SerializeTests.cs`](../tests/GDSViewer.Tests/SerializeTests.cs)) — record framing, every payload encoder
   (REAL8 asserted against the same canonical encodings used on the read side, so the writer is correct
   against the format and not merely consistent with our reader), even-length ASCII padding, length
   recomputation after an edit, and the corpus round trip described above.
-- **Reading text back** ([`TextFormatTests.cs`](../tests/TextFormatTests.cs)) — every payload type, the
+- **Reading text back** ([`TextFormatTests.cs`](../tests/GDSViewer.Tests/TextFormatTests.cs)) — every payload type, the
   timestamp pair being rebuilt, an ASCII value keeping its own surrounding spaces, CRLF from Monaco,
   optional separator spaces, and rejection with the line named for each malformed case. Then the load-
   bearing one: **every bundled file dumped to text, read back, and re-serialized comes out byte for byte
@@ -4824,10 +4899,11 @@ dump is the only description of what the parser has to accept.
 
 ### Browser-JS unit tests
 
-[`jstests/`](../jstests) runs under Node's built-in test runner — `node --test`, no packages — against the
-pure helpers in [`wwwroot/js/viewGeometry.js`](../wwwroot/js/viewGeometry.js): the 2D view's pan and zoom
-arithmetic, the point a 3D label hangs from, and the polygon that stands in for a circle. That file has no
-DOM or three.js dependency and carries the same export guard as its equivalent in the sibling project —
+[`tests/jstests/`](../tests/jstests) runs under Node's built-in test runner — `node --test`, no packages —
+against the pure helpers in [`wwwroot/js/viewGeometry.js`](../wwwroot/js/viewGeometry.js): the 2D view's
+pan and zoom arithmetic, the point a 3D label hangs from, and the polygon that stands in for a circle.
+That file has no DOM or three.js dependency and carries the same export guard as its equivalent in the
+sibling project —
 `module.exports` under Node, `window.viewGeometry` in the browser — which is what lets one file serve both.
 
 **A layout format has no curves.** GDSII knows boundaries and paths and nothing else, so an ellipse is a
@@ -4847,8 +4923,8 @@ accepts. The view simply stopped drawing, with nothing in the console.
 
 ### End-to-end tests
 
-[`e2e/`](../e2e) drives a real browser with **Playwright**, against the app served by
-[`playwright.config.js`](../playwright.config.js) — which starts `dotnet run` itself, with
+[`tests/e2e/`](../tests/e2e) drives a real browser with **Playwright**, against the app served by
+[`playwright.config.js`](../tests/playwright.config.js) — which starts `dotnet run` itself, with
 `--no-launch-profile` for the same reason the manual instructions use it. 853 specs across launch, the 2D
 and 3D views, the text editor and its save path, the URL state, everything that leaves the app, the 3D
 view's own controls, naming and coloring layers, the process stack, opening an OASIS file, how the app fits
@@ -4882,7 +4958,7 @@ the popup opened.
 
 #### Waiting for something that is already true
 
-**`loadDeck` in [`drc.spec.js`](../e2e/drc.spec.js) waited for the Check button, which a sky130 example
+**`loadDeck` in [`drc.spec.js`](../tests/e2e/drc.spec.js) waited for the Check button, which a sky130 example
 already has.** A bundled deck of thirty rules arrives with the file, so `#drcRun` is visible *before* the
 upload starts — measured directly: `isVisible()` is already true on the line above. The wait passed
 instantly and the helper returned with the read, the parse and the save all still in flight.
@@ -4913,12 +4989,12 @@ Five of those are worth singling out:
 - **Re-entering the 3D view five times must leave one canvas.** A leaked WebGL context per visit is
   invisible until the browser starts dropping the oldest, and nothing but a real browser can count them.
 - **The page must not grow a scrollbar, and the 3D canvas must match the box it is in.** The view is sized
-  by a chain of flex rules through five elements ([`layout-fit.spec.js`](../e2e/layout-fit.spec.js)); break
+  by a chain of flex rules through five elements ([`layout-fit.spec.js`](../tests/e2e/layout-fit.spec.js)); break
   any link and the app is taller than the window again. The canvas is the other half: a drawing surface
   has a pixel size of its own that CSS does not touch, so it has to be told, and its box now changes
   without the window changing with it.
 - **An edit made, the page reloaded, and the edit undone**
-  ([`undo-across-reload.spec.js`](../e2e/undo-across-reload.spec.js)). The library tests already prove a stack
+  ([`undo-across-reload.spec.js`](../tests/e2e/undo-across-reload.spec.js)). The library tests already prove a stack
   written down and rebuilt undoes onto the right shapes byte for byte; what only a browser can check is
   whether it reaches the session at all, comes back with the file rather than after it, and survives a trip
   to another view. It found the bug the library tests could not: three deletions undone after a reload put
@@ -4926,7 +5002,7 @@ Five of those are worth singling out:
   leaves a saved file with no such layer, and the flattener skips an element whose layer it cannot look up.
   Everything that checked bytes passed.
 - **A slider set, and then a different file opened**
-  ([`slider-carry.spec.js`](../e2e/slider-carry.spec.js)). The 3D view's Distance and the 2D view's Opacity
+  ([`slider-carry.spec.js`](../tests/e2e/slider-carry.spec.js)). The 3D view's Distance and the 2D view's Opacity
   look like the same control and are not the same kind of thing, which is the whole point: opacity is an
   argument to `SvgWriter.Build` on every draw, where spacing is written *onto* the file as a height on each
   `Layer`. A new file brings new `Layer` objects, stacked at the library's default by layer discovery, and
@@ -4979,8 +5055,10 @@ Two habits the specs are written with, both learned by getting them wrong first:
 dotnet run           # the app, on http://localhost:5105
 
 dotnet test          # 2,022 C# unit and corpus tests
+
+cd tests             # the browser tooling lives with the specs it runs
 npm test             # 41 browser-JS units, Node's own runner, nothing to install
-npm run test:e2e     # 853 Playwright end-to-end specs; it starts the app itself
+npm run test:e2e     # 857 Playwright end-to-end specs; it starts the app itself
 npm run screenshots  # retakes the documentation's screenshots
 ```
 
@@ -5196,15 +5274,15 @@ everything untagged still runs: 1,239 of 1,259 on CI, all 1,259 locally. The tes
 `[Trait("Needs", "KLayout")]` rather than by failing with a message about a tool nobody was told to have.
 
 **And CI skips one end-to-end spec, for the same kind of reason.**
-[`e2e/large-layout.spec.js`](../e2e/large-layout.spec.js) opens a generated twenty-thousand-shape file six
-times over, each test under a five-minute budget. On a GitHub runner — two shared cores, no GPU — that was
-half the job's twenty-five minutes and it timed out twice anyway, and the timeout does not report what it
-looks like: the poll gives up still counting the twenty polygons of the bundled Mosfet, which is exactly
-what an upload that never happened looks like. So the spec skips itself when `process.env.CI` is set, the
-same switch [`playwright.config.js`](../playwright.config.js) sizes its worker count with. **It still runs
-locally, where the numbers mean something** — a shared runner is not a machine to measure a browser on. The
-spec carries the note about what putting it back on CI would need, which is a `dotnet build GdsII.Cli`
-before the suite starts.
+[`tests/e2e/large-layout.spec.js`](../tests/e2e/large-layout.spec.js) opens a generated
+twenty-thousand-shape file six times over, each test under a five-minute budget. On a GitHub runner — two
+shared cores, no GPU — that was half the job's twenty-five minutes and it timed out twice anyway, and the
+timeout does not report what it looks like: the poll gives up still counting the twenty polygons of the
+bundled Mosfet, which is exactly what an upload that never happened looks like. So the spec skips itself
+when `process.env.CI` is set, the same switch [`playwright.config.js`](../tests/playwright.config.js)
+sizes its worker count with. **It still runs locally, where the numbers mean something** — a shared runner
+is not a machine to measure a browser on. The spec carries the note about what putting it back on CI would
+need, which is a `dotnet build GdsII.Cli` before the suite starts.
 
 ## Known gaps
 
@@ -5351,7 +5429,7 @@ Carried here so they are not rediscovered. None of these are regressions; they a
   every met2 shape to whatever it overlapped — `70/20` was called met2 when it is met3, `64/44` was called
   nsdm when it is pwell, and `95/20` was called text when it is npc. The whole via stack above met1 was
   missing. None of it showed, because every bundled example is a standard cell that stops at met1, so the
-  wrong rows were exactly the rows nothing exercised. [`ShippedLayermapTests`](../tests/ShippedLayermapTests.cs)
+  wrong rows were exactly the rows nothing exercised. [`ShippedLayermapTests`](../tests/GDSViewer.Tests/ShippedLayermapTests.cs)
   now reads the pairs out of `layers.py` in the vendored zip and holds the file to them, in both directions —
   each pair has the name sky130 gives it, *and* each name sits on the pair sky130 gives it, because two rows
   naming each other's pairs satisfy the first check for neither and both.
@@ -5394,7 +5472,7 @@ Carried here so they are not rediscovered. None of these are regressions; they a
 
   It was refused for a reason that has since gone rather than out of strictness for its own sake. Accepting
   it would have meant drawing a shape this app could not then write back, and one set of rules for both
-  directions is the rule here. [`Fracture`](../GdsII/Fracture.cs) answered that: a shape too large for one
+  directions is the rule here. [`Fracture`](../GdsII/Geometry/Fracture.cs) answered that: a shape too large for one
   record is cut into several boundaries on the way out, so such a file now opens *and* saves — which is the
   condition attached to relaxing any row of this table.
 
@@ -5412,7 +5490,7 @@ Carried here so they are not rediscovered. None of these are regressions; they a
 - **A shape of more than 8,190 corners is written as several, because GDSII cannot hold it as one.** A
   record carries its own total length in a two-byte field, so 65535 bytes is the most one can be — which
   for an `XY`, at two four-byte coordinates a point, is 8,191 points, and a boundary repeats its first
-  corner at the end, so 8,190 corners. Past that [`Fracture`](../GdsII/Fracture.cs) cuts the shape into
+  corner at the end, so 8,190 corners. Past that [`Fracture`](../GdsII/Geometry/Fracture.cs) cuts the shape into
   pieces that each fit and together cover exactly the same ground.
 
   **It is reached by ordinary work.** A comb — an interdigitated capacitor, a set of fingers, a guard ring
@@ -5422,7 +5500,7 @@ Carried here so they are not rediscovered. None of these are regressions; they a
   kind. The drawing tools cannot: an ellipse's side count is clamped to 512.
 
   The cut runs along an integer coordinate and Clipper works in integers, so the pieces are exact rather
-  than nearly right — [`FractureTests`](../tests/FractureTests.cs) compares areas, not corners, because
+  than nearly right — [`FractureTests`](../tests/GDSViewer.Tests/FractureTests.cs) compares areas, not corners, because
   the corners are deliberately not the same ones. What is lost is that the shape was one object, which is
   a thing GDSII has no way to say about a polygon this size anyway.
 
