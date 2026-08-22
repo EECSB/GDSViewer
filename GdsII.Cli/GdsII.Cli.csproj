@@ -30,7 +30,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>GdsII.Cli</PackageId>
     <Title>gds</Title>
-    <Description>Command-line tool for GDSII, OASIS and DXF layout files: inspect, dump, validate, convert between any two, run booleans, trace nets, measure, and export SVG or a 3D model.</Description>
+    <Description>Command-line tool for GDSII, OASIS and DXF layout files: inspect, dump, validate, convert between any two, run booleans, check against a design rule deck, trace nets, measure, and export SVG or a 3D model (STL, OBJ, GLTF, GLB) with each layer at its own height from a layermap.</Description>
     <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;cli;dotnet-tool</PackageTags>
 
     <!--

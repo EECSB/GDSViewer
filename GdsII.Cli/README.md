@@ -54,7 +54,9 @@ gds model cell.gds --layermap sky130.csv -o wafer.glb     # its real process sta
 ```
 
 `layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize`, everything past the third
-column optional. A layer the mapping placed keeps its own height, and `--spacing` only spaces out the rest.
+column optional. A layer the mapping placed keeps its own height, and `--spacing` opens a gap on top of
+wherever each layer already rests — nought by default, so the model comes out at the process stack the
+mapping describes. Raise it to pull the layers apart and see between them.
 
 ## Two things worth knowing
 

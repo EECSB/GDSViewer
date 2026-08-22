@@ -99,9 +99,10 @@ namespace GdsII
         #region Geometry ********************************************************************
 
         ///<summary>
-        ///Walks one side of the centerline, offset by <paramref name="distance"/> - negative for the other
-        ///side. Interior corners are mitered: the two offset edges are extended until they meet, which is
-        ///what keeps the outline a single unbroken loop.
+        ///Walks one side of the centerline, offset by the half-width in <paramref name="halves"/> at each
+        ///point - <paramref name="sign"/> is +1 for one side and -1 for the other, which is what makes the
+        ///two calls trace opposite edges of the same run. Interior corners are mitered: the two offset
+        ///edges are extended until they meet, which is what keeps the outline a single unbroken loop.
         ///</summary>
         private static List<Vector> offsetSide(List<Vector> centerline, double[] halves, double sign)
         {

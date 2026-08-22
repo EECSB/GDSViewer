@@ -17,10 +17,14 @@
 
       A first package at 0.x says "expect this to move under you", and the parts a consumer touches -
       reading a file, walking the model, flattening, writing either format - have been settled for a
-      while and are pinned by 827 tests against 897 real layouts. Anything that would break them is a 2.0,
-      which is what the number is for.
+      while and are pinned by 2,022 tests against 897 real layouts. Anything that would break them is a
+      2.0, which is what the number is for.
+
+      1.1.0 adds the authoring side - Shapes, PathBuilder and BezierBuilder, and the edits that put what
+      they produce into a file. Additive, so the minor: nothing a 1.0.0 consumer reads, walks, flattens
+      or writes behaves differently.
     -->
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
 
     <Authors>EECSB</Authors>
     <Copyright>Public domain (The Unlicense)</Copyright>

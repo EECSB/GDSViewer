@@ -12,8 +12,8 @@ namespace GdsII
     ///tracking an angle. That is the whole difference between this and a list of points.
     ///
     ///The route is a centerline. <see cref="Centerline"/> hands it back as one, for a `PATH` element or for
-    ///another builder to work from, and <see cref="BuildPolygon"/> outlines it at the width - through the
-    ///same outliner a drawn path uses, so the two agree about corners.
+    ///another builder to work from, and <see cref="BuildPolygon(int)"/> outlines it at the width - through
+    ///the same outliner a drawn path uses, so the two agree about corners.
     ///
     ///Angles are degrees and **positive turns left**, which is the direction mathematics turns and the
     ///direction the y axis in a layout points. Coordinates accumulate in double and round once, at the end.

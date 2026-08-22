@@ -360,13 +360,19 @@ became one.
 A release is a tag:
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
+git tag v1.1.0 && git push origin v1.1.0
 ```
 
 [`.github/workflows/publish-nuget.yml`](../.github/workflows/publish-nuget.yml) builds it, runs the tests, packs both,
 pushes to nuget.org and opens a GitHub Release with the same `.nupkg` files attached. It refuses to run if the
 tag and `Directory.Build.props` disagree about the version, which is the mistake that would otherwise publish
 a number nobody chose.
+
+**The release carries the web app too.** After packing, the workflow publishes `GDSViewer.csproj` and zips
+its `wwwroot` as `GDSViewer-<version>-web.zip` — trimmed, AOT compiled, precompressed, with the service
+worker's asset manifest written. The app has no server side, so those files behind any static web server
+*are* the deployment. Published rather than built, because a `bin` folder from a plain build is none of
+those things. **v1.0.0 has no such zip**: the step was added after that tag was cut.
 
 **No API key is stored.** It authenticates by Trusted Publishing: GitHub issues a short-lived signed OIDC
 token naming this repository and this workflow file, nuget.org checks it against a policy registered there,

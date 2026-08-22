@@ -128,6 +128,14 @@ Shapes.Ellipse(0, 0, radiusX: 800, radiusY: 300);
 Shapes.RegularPolygon(0, 0, radius: 500, sides: 6, turnDegrees: 30);
 ```
 
+**A ring comes back as two loops**, because GDSII has no hole: a shape with one is either two elements or a
+keyhole, and which of those you want is yours to decide. `Booleans.Combine` with `BooleanOperation.Not` cuts
+the inner from the outer where a keyhole is what you are after.
+
+```csharp
+var (outside, inside) = Shapes.Ring(0, 0, outerRadius: 500, innerRadius: 300);
+```
+
 A **Bézier** curve runs between its first and last control point; the ones between pull it towards them
 without being on it. `BuildPolygon` outlines it at a width, which is better than keeping it as a `PATH`:
 a path's ends are applied by whatever reads the file and readers differ, where an outline is the shape itself.
