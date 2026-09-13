@@ -176,3 +176,53 @@
     width: 15px;
     height: 15px;
 }
+
+/*
+    A view too narrow for the row and Admire side by side: the row goes up the right-hand side, above Admire,
+    instead of across the foot of the view.
+
+    **They collided on a phone at every label three.js gives them.** Measured at 375 wide, the centered pair
+    ran into Admire by 42 pixels at their shortest (ENTER VR and START AR, a phone that can do both) and by 92
+    at NOT SUPPORTED. A real iPhone has no WebXR at all and gets WEBXR NOT AVAILABLE at 180 pixels each, which
+    is a row wider than the view itself - and any phone opening the page over plain http gets WEBXR NEEDS
+    HTTPS at the same width. The first button sat over the axis indicator in every one of those.
+
+    **And on a laptop, before any of that.** At 1024 by 768 the layer sidebar leaves the view 543 wide, and
+    the three buttons a mouse gets ran 88 pixels into Admire. So this asks how wide the *view* is rather than
+    the window: the sidebar opening and closing changes the answer, and a media query cannot see that.
+
+    **800, because that is what the widest row needs.** Centered, a row clears Admire only when the view is
+    its own width plus 254 - Admire's 103 and its 1rem margin, twice over because the row is centered, and a
+    gap. The widest row any browser builds is 542 (two WEBXR NOT AVAILABLE and Open On Phone, in a desktop
+    browser with no WebXR), which comes to 796. At the 1400 by 900 the specs run at the view is 844, and the
+    row stays a row.
+
+    A column fits every label. Each button keeps whatever width three.js hands it, they line up on the right
+    edge with Admire under them, and the axis indicator keeps its corner to itself.
+
+    **A height given rather than measured**, so the column clears Admire by construction: the same 41 pixels
+    the padding, the font and the border already come to, written down so the offset below can be worked out
+    from it instead of guessed at.
+*/
+.viewWrapper {
+    container: view3d / inline-size;
+}
+
+@container view3d (max-width: 800px) {
+    .xrButton {
+        height: 2.6rem;
+    }
+
+    .xrButtons {
+        left: auto;
+        right: 1rem;
+        transform: none;
+
+        /*Admire's own offset, its height, and the gap the column keeps between its buttons.*/
+        bottom: calc(1rem + 2.6rem + 0.5rem);
+
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.5rem;
+    }
+}

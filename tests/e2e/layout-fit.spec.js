@@ -395,11 +395,15 @@ test('the 3D canvas leaves no part of its container showing', async ({ page }) =
 ///Asserted either side of the old breakpoint and against the *view pane* rather than a pixel count, since
 ///the claim is that the two agree - a theme that changed the border width should not have to come here.
 ///
-test('the sidebar keeps its top border at every width', async ({ page }) => {
+///**Down to 768 and no further.** Below that the sidebar goes under the view again - on purpose this time,
+///for a phone - and the borders that are wrong beside the view are the right ones under it. It was 700 here,
+///which is now on the other side of that line; phone-layout.spec.js holds that side.
+///
+test('the sidebar keeps its top border at every width it sits beside the view', async ({ page }) => {
     await gotoExample(page, MOSFET, '2d');
     await expect(page.locator('#layerSidebar')).toBeVisible();
 
-    for (const width of [1250, 1150, 900, 700]) {
+    for (const width of [1250, 1150, 900, 768]) {
         await page.setViewportSize({ width, height: 700 });
 
         await expect.poll(async () => {

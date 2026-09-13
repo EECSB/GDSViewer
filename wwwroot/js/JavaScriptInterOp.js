@@ -1,6 +1,5 @@
 //We select the SVG into the page
 let svg;
-let ratio;
 
 const initialViewBox = {
     x: -2000,
@@ -32,7 +31,7 @@ let isFirstClick = true;
 let svgResizeObserver = null;
 
 //The size the grid and the ruler were last drawn across, so the observer above can tell a real resize from
-//being woken by its own drawing. See updateRatio.
+//being woken by its own drawing. See onViewResized.
 let lastDrawnWidth = 0;
 let lastDrawnHeight = 0;
 
@@ -41,6 +40,39 @@ let pointerOrigin = {
     x: 0,
     y: 0
 };
+
+///
+///How many layout units one screen pixel was when the drag began.
+///
+///**Read off the SVG's own matrix at the press**, rather than kept up to date on the side. The number this
+///replaced was measured whenever the SVG last changed size, and then scaled by the zoom a second time - right
+///only if that measurement had been taken at the starting zoom, on a square view whose width was the tight
+///side. Zoom in and then open a sidebar, turn a phone round, or simply have a view wider than it is tall, and
+///every drag moved the layout faster or slower than the pointer. The matrix is what the drawing is actually
+///drawn through, so a drag worked out from it keeps what was under the pointer under it.
+///
+let panUnitsPerPixel = 0;
+
+//Which pointer the drag belongs to, so a second finger on the view cannot move it from somewhere else.
+let panPointerId = null;
+
+///
+///The fingers moving the view, by pointer id, and where each one is now.
+///
+///A mouse is one pointer and needs one origin. Fingers are several, and the view followed whichever of them
+///moved last: each press overwrote the one origin and both fingers dragged against it, so the drawing jumped
+///between them. Only fingers pressed with no tool in hand are here - with one in hand a touch belongs to the
+///tool, which hears it through its own handlers the way it hears a click.
+///
+const fingersDown = new Map();
+
+///
+///Two fingers at once: where they landed, and what the view was then.
+///
+///Every move is worked out against the start rather than against the move before it, so rounding in one step
+///cannot pile up over a long pinch - the view is always exactly what the fingers now say it should be.
+///
+let pinch = null;
 
 
 //Called on every first render of the 2D view, so it runs again each time that view is returned to.
@@ -113,22 +145,25 @@ function registerSVGEvents(view) {
         retypeLabelUnder(event);
     });
 
-    //Calculate the ratio based on the viewBox width and the SVG width.
-    updateRatio();
+    //Drawn across whatever the SVG measures on arrival.
+    onViewResized();
 
     //The SVG's own box, rather than the window.
     //
     //The view is sized by what the layout leaves it now, so the SVG can change width while the window sits
     //still - the sidebar taking more room, a control above it wrapping. A window listener hears none of
-    //that, and the ratio stays measured against a width the SVG no longer has, which drags the drawing at
-    //the wrong speed. This still covers the window, since a narrower window is a narrower SVG.
+    //that, and the grid and the ruler stay drawn across a box the SVG no longer has. This still covers the
+    //window, since a narrower window is a narrower SVG.
+    //
+    //It used to keep the pan's pixel size up to date as well, which is where the wrong-speed drags came
+    //from - see panUnitsPerPixel. A drag measures that for itself now.
     //
     //Disconnected first because this runs on every visit to the view, on the element Blazor has just
     //made - the observer from last time is watching one that is no longer in the document.
     if (svgResizeObserver != null)
         svgResizeObserver.disconnect();
 
-    svgResizeObserver = new ResizeObserver(updateRatio);
+    svgResizeObserver = new ResizeObserver(onViewResized);
     svgResizeObserver.observe(svg);
 
     const wrapper = document.getElementById("svgWrapper");
@@ -187,22 +222,21 @@ function registerSVGEvents(view) {
     });
 }
 
-//How many viewBox units one screen pixel is, which is what turns a drag in pixels into a pan in the
-//layout's own coordinates. Recomputed on resize because the SVG's on-screen width changes with it.
-function updateRatio() {
+///
+///The SVG has changed size, so what is drawn across the visible part of it is drawn again.
+///
+function onViewResized() {
     if (svg == null)
         return;
 
     const width = svg.getBoundingClientRect().width;
 
-    //A hidden or not-yet-laid-out SVG measures zero, and dividing by it would make every later drag NaN.
+    //A hidden or not-yet-laid-out SVG measures zero, and has no visible part to draw across.
     if (width === 0)
         return;
 
-    ratio = viewBox.width / width;
-
     //
-    //And the two things drawn across *what is on screen* are drawn again, because that is what just moved.
+    //The two things drawn across *what is on screen* are drawn again, because that is what just moved.
     //
     //The viewBox does not change when the window does - the geometry rescales itself and needs nothing -
     //but the grid and the ruler are explicit paths spanning the visible area, and a wider window shows
@@ -267,9 +301,8 @@ function panWith(event) {
 
     const pointerPosition = getPointFromEvent(event);
 
-    //ratio converts a pixel into layout units at the current size; viewGeometry also damps by the zoom,
-    //so a drag moves what is under the cursor by the same amount however far in it is.
-    const panned = window.viewGeometry.pannedOrigin(viewBox, initialViewBox.height, pointerOrigin, pointerPosition, ratio);
+    //At the pixel size the drag began with - see panUnitsPerPixel.
+    const panned = window.viewGeometry.pannedOrigin(viewBox, pointerOrigin, pointerPosition, panUnitsPerPixel);
 
     newViewBox.x = panned.x;
     newViewBox.y = panned.y;
@@ -290,6 +323,19 @@ function onPointerMove(event) {
     //whatever else is going on.
     if (middlePanning) {
         panWith(event);
+
+        return;
+    }
+
+    //A finger moving the view says where it is now, whichever gesture it turns out to be part of.
+    if (fingersDown.has(event.pointerId)) {
+        const at = getPointFromEvent(event);
+
+        fingersDown.set(event.pointerId, { x: at.x, y: at.y });
+    }
+
+    if (pinch != null) {
+        pinchWith();
 
         return;
     }
@@ -332,6 +378,10 @@ function onPointerMove(event) {
     }
 
     if (!isPointerDown)
+        return;
+
+    //Only the finger the drag belongs to moves it. A mouse is one pointer, so this only ever turns a finger away.
+    if (event.pointerType === 'touch' && event.pointerId !== panPointerId)
         return;
 
     panWith(event);
@@ -384,6 +434,8 @@ function onPointerDown(event) {
         pointerOrigin.x = from.x;
         pointerOrigin.y = from.y;
 
+        panUnitsPerPixel = unitsPerPixel();
+
         return;
     }
 
@@ -413,12 +465,119 @@ function onPointerDown(event) {
         return;
     }
 
-    isPointerDown = true;
-
     //Get the starting click/touchdown on the start of the drag.
-    var pointerPosition = getPointFromEvent(event);
-    pointerOrigin.x = pointerPosition.x;
-    pointerOrigin.y = pointerPosition.y;
+    const pointerPosition = getPointFromEvent(event);
+
+    //
+    //**A second finger turns the drag into a pinch.**
+    //
+    //The first finger of a fresh touch clears whatever was left over: a finger lifted somewhere the view never
+    //heard about is still in the list, and would make the next single finger a pinch against a point nobody
+    //is touching.
+    //
+    if (event.pointerType === 'touch') {
+        if (event.isPrimary) {
+            fingersDown.clear();
+            pinch = null;
+        }
+
+        fingersDown.set(event.pointerId, { x: pointerPosition.x, y: pointerPosition.y });
+
+        if (fingersDown.size >= 2) {
+            if (pinch == null)
+                startPinch();
+
+            return;
+        }
+    }
+
+    beginPan(event.pointerId, pointerPosition);
+}
+
+///Starts a drag from a point, at whatever a screen pixel is in the view right now.
+function beginPan(pointerId, from) {
+    isPointerDown = true;
+    panPointerId = pointerId;
+
+    pointerOrigin.x = from.x;
+    pointerOrigin.y = from.y;
+
+    panUnitsPerPixel = unitsPerPixel();
+}
+
+///
+///Two fingers are down, so they zoom and drag the view from here.
+///
+///A drag one of them already had going stops where it stands, and the pinch starts from what is on screen
+///rather than from where that drag began. Two fingers that cannot be measured against the drawing - an SVG not
+///laid out yet - are left alone, and the first one carries on dragging as it was.
+///
+function startPinch() {
+    const [first, second] = fingersDown.keys();
+    const a = fingersDown.get(first);
+    const b = fingersDown.get(second);
+
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const anchor = layoutPointAt(middle.x, middle.y);
+    const perPixel = unitsPerPixel();
+
+    if (anchor == null || !(perPixel > 0))
+        return;
+
+    viewBox.x = newViewBox.x;
+    viewBox.y = newViewBox.y;
+
+    isPointerDown = false;
+
+    pinch = {
+        first: first,
+        second: second,
+        distance: Math.hypot(b.x - a.x, b.y - a.y),
+        middle: middle,
+        anchor: anchor,
+        unitsPerPixel: perPixel,
+        from: { x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height }
+    };
+}
+
+///
+///Where the two fingers now put the view.
+///
+///The arithmetic is viewGeometry's, where Node tests it. This is only the measuring and the drawing.
+///
+function pinchWith() {
+    const a = fingersDown.get(pinch.first);
+    const b = fingersDown.get(pinch.second);
+
+    if (a == null || b == null)
+        return;
+
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+
+    const box = window.viewGeometry.pinchedViewBox(
+        pinch.from,
+        pinch.anchor,
+        pinch.middle,
+        middle,
+        pinch.distance,
+        Math.hypot(b.x - a.x, b.y - a.y),
+        pinch.unitsPerPixel);
+
+    viewBox.x = box.x;
+    viewBox.y = box.y;
+    viewBox.width = box.width;
+    viewBox.height = box.height;
+
+    newViewBox.x = box.x;
+    newViewBox.y = box.y;
+
+    svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`);
+
+    //Everything the wheel redraws, and for the same reasons: the grid and the ruler are drawn across what is on
+    //screen, and a stipple is held at a size in pixels.
+    drawRuler();
+    drawGrid();
+    scalePatterns();
 }
 
 ///
@@ -449,6 +608,10 @@ function onPointerUp(event) {
         }
         catch { }
     }
+
+    //A finger that was moving the view is let go of first, and a lift that was only that goes no further.
+    if (event.pointerType === 'touch' && liftFinger(event.pointerId))
+        return;
 
     //
     //Ended before the tool is asked, and it keeps the view where the drag left it.
@@ -488,6 +651,57 @@ function onPointerUp(event) {
 
     //The end of a pan, which is where C# gets told what is on screen - see reportViewBox.
     reportViewBoxWhenSettled();
+}
+
+///
+///A finger has come off the view. True when that is all it was, and the rest of onPointerUp has nothing to end.
+///
+///**Every lift arrives twice.** A touch that comes up is followed by a pointerleave, which onPointerLeave passes
+///on here once the capture has gone. For one finger that is harmless - its drag simply ends a second time - but
+///a finger lifted out of a pinch while the other stays down would end the drag the other one is still making.
+///So a finger already let go of is ignored for as long as any other is still moving the view.
+///
+function liftFinger(pointerId) {
+    if (!fingersDown.has(pointerId))
+        return fingersDown.size > 0;
+
+    fingersDown.delete(pointerId);
+
+    if (pinch != null) {
+        if (pointerId !== pinch.first && pointerId !== pinch.second)
+            return true;
+
+        pinch = null;
+
+        //Where C# gets told what is on screen, the same as at the end of a pan.
+        reportViewBoxWhenSettled();
+
+        carryOnWith();
+
+        return true;
+    }
+
+    //The finger the drag belonged to ends it the ordinary way. Any other had no drag of its own to end.
+    return pointerId !== panPointerId;
+}
+
+///
+///Whatever is still down once a finger of a pinch lifts: two more carry on pinching, one carries on dragging.
+///
+///From where the view is now, either way. Picking up from where those fingers first landed would put the view
+///back to before the gesture they were part of, which reads as the drawing jumping.
+///
+function carryOnWith() {
+    if (fingersDown.size >= 2) {
+        startPinch();
+
+        return;
+    }
+
+    const next = fingersDown.entries().next();
+
+    if (!next.done)
+        beginPan(next.value[0], next.value[1]);
 }
 
 //Selection//////////////////////////////////////

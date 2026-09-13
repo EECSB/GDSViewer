@@ -776,6 +776,20 @@ a, .btn-link {
 #gdsSVG {
     user-select: none;
     -webkit-user-select: none;
+
+    /*
+        And a finger on it moves the drawing, not the page.
+
+        Left to the browser, a drag on a touch screen was the browser's own: a few pixels in, it decided the
+        gesture was a scroll, cancelled the pointer the view was following, and moved the page instead - which on
+        a phone, where the page scrolls down to its sidebars, is the page sliding away under a drawing that never
+        moved. A pinch was the browser's too. none gives both to the view, which drags with one finger and zooms
+        with two - see startPinch in JavaScriptInterOp.js.
+
+        On the SVG alone. The bars and buttons over the drawing sit beside it rather than inside it, so a touch
+        on one of them is still a tap, and a thumb on the toolbar or on a sidebar still scrolls the page.
+    */
+    touch-action: none;
 }
 
 /*
@@ -2725,8 +2739,134 @@ body:has(.viewerPageFull) #mainAppContainer {
     It only showed on a narrow window, which is why it read as the border coming and going with a resize
     rather than as a rule that had outlived its layout. Measured at 1150 against 1250: top border 0px
     against 0.8, left 0.8 against 0. The row is `flex-wrap: nowrap` and the two sit on one line at every
-    width down to 700, so there is no arrangement left for these to be right in.
+    width down to 768, so above that there is no arrangement left for these to be right in.
+
+    Below it there is one again, and it is the phone block that follows: the sidebar goes back under the
+    view, on purpose this time, and takes a border arrangement of its own with it.
 */
+
+/*
+    A phone: the page's margins given to the view, and the sidebars put under it.
+
+    **Below 768 pixels there is no row to share.** The layer sidebar is 16em and the cell tree 15rem, and
+    neither shrinks - right beside a drawing on a laptop, and fatal on a phone. Measured at 375 wide, the two
+    wanted 496 pixels of a 345-pixel row: the view pane was left 89, the tree took all of that, and the
+    drawing measured zero. Nothing was drawn at all. So here they stop sharing the row and take a line each
+    under the drawing, and the page scrolls down to them.
+
+    **Which means letting the page off the window.** Everything from .page down is a chain that fits the app
+    to exactly the window's height, with min-height: 0 at every link so nothing can push past it. That is
+    what keeps a desktop from ever scrolling, and it is exactly what would clip anything put under the view.
+    .page gives up its height here, and the rest of the chain is left with nothing to divide - every box is
+    as tall as what is in it.
+
+    **And the margins go, top and bottom as well as the sides.** Four rems above and below and a 90% cap
+    either side is a frame on a laptop. On a phone it was 128 pixels of height and 30 of width spent on bare
+    page, and a row hanging four pixels past both edges that let the whole page be dragged sideways - the
+    900-pixel rule above took the padding that row's gutter was sitting in. The same three things full
+    screen takes away, for the same reasons.
+
+    **A height of its own for whichever view is up**, since none of them can take what the window has left
+    any more. svh rather than the dvh .page uses: the address bar comes and goes as a page scrolls, and a
+    view sized in dvh would be resized - and redrawn - every time it did. svh is the window with the bar
+    showing, which does not move. And 70 rather than all of it, so the top of whatever is underneath shows
+    below the drawing: a sign there is more, and somewhere a thumb scrolls the page rather than the drawing.
+
+    **`#app` in front of the scoped ones.** Blazor writes a scoped rule as `#mainAppContainer[b-...]`, and
+    GDSViewer.styles.css is linked after this file, so a bare id here ties it and loses. The id in front
+    breaks the tie - the same job `body:has()` does for full screen.
+
+    767.98 rather than 767, Bootstrap's own edge: a window 767.5 wide is below 768 and still gets this.
+*/
+@media (max-width: 767.98px) {
+    #app .page {
+        height: auto;
+    }
+
+    .content {
+        padding: 0 !important;
+    }
+
+    body .viewerPageRow {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    #app #mainAppContainer {
+        max-width: 100%;
+    }
+
+    /*A line each, rather than one line between them.*/
+    #app #viewContainer {
+        flex-wrap: wrap;
+    }
+
+    #viewPane {
+        flex: 0 0 100%;
+    }
+
+    #layerSidebar {
+        flex: 0 0 100%;
+
+        /*
+            Capped, so a file with a hundred layers scrolls inside the list rather than making the page a
+            hundred rows long - and the opacity slider stays at the foot of the panel, still in reach.
+        */
+        max-height: 60vh;
+        max-height: 60svh;
+
+        /*Under the view now: the view's bottom edge is the divider, and the left edge is its own again.*/
+        border-top: none;
+        border-left: 1px solid #41464b61;
+    }
+
+    /*
+        The 3D and text views. The 2D one is sized with the cell tree, after the tree's own rules - it
+        shares a wrapper with the tree, and the wrapper stops being the height here.
+    */
+    .viewWrapper,
+    #viewPane .editorPane {
+        height: 70vh;
+        height: 70svh;
+    }
+
+    /*
+        A layer row's switches, big enough for a thumb.
+
+        18 pixels is a target for a mouse, which lands exactly where it is put. A fingertip covers most of a row
+        of them, and the eye and the padlock sat six pixels apart - so turning a layer off was about as likely to
+        lock it. 32 each, with the tracks to hold them and the row let out to the width of the screen, so the
+        name column keeps its minimum. The glyphs stay at the size they were: it is the target that was short,
+        not the drawing, and the icons carry their own width.
+
+        Through #layerSidebar because the rules they override are further down this file, and the id is what
+        wins over them without having to be.
+    */
+    #layerSidebar .layerRow {
+        grid-template-columns: 1.6em 16px minmax(5.5em, 1fr) 32px 32px 32px 1.6em;
+        max-width: none;
+        padding: 3px 0;
+    }
+
+    #layerSidebar .layerEyeButton,
+    #layerSidebar .layerLockButton,
+    #layerSidebar .layerSettingsButton {
+        width: 32px;
+        height: 32px;
+    }
+
+    /*
+        The first row of the toolbar in line with the rows under it.
+
+        The first group gives up its left gutter so the bar's own six pixels are the whole inset, which is right
+        for a bar on one line. A phone's bar is never on one line, and every row after the first starts with a
+        group that kept its gutter - so the first row's buttons sat ten pixels further left than every row
+        below them. The gutter back puts them all on one edge.
+    */
+    .viewToolbar > .toolbarItem:first-child {
+        padding-left: 10px;
+    }
+}
 
 /*
     A popup over the view.
@@ -5034,6 +5174,68 @@ body.sidebarResizing .sidebarGrabber {
 body.sidebarResizing {
     cursor: col-resize;
     user-select: none;
+}
+
+/*
+    The cell tree on a phone: under the drawing rather than beside it.
+
+    The same move the phone block after full screen makes for the layer sidebar, one box further in - see
+    there for why. The tree is a column inside the 2D view's own wrapper, so it is the wrapper that wraps,
+    and the tree takes a line under the canvas instead of 15rem out of a drawing that had none to give.
+
+    Down here rather than up in that block because these are all overrides of the rules just above, and an
+    override written before the rule it overrides loses to it.
+*/
+@media (max-width: 767.98px) {
+    #svgWrapper {
+        flex-wrap: wrap;
+        height: auto;
+    }
+
+    #svgWrapper > .viewCanvas {
+        flex: 0 0 100%;
+        height: 70vh;
+        height: 70svh;
+    }
+
+    #svgWrapper > .cellTree {
+        /*After the drawing. order: -1 is what put it on the left.*/
+        order: 0;
+        flex: 0 0 100%;
+        max-height: 50vh;
+        max-height: 50svh;
+
+        border-right: none;
+        border-top: 1px solid #41464b61;
+    }
+
+    /*
+        And a scroll that reaches the end of the rows goes on to the page.
+
+        contain is right where the page never scrolls, since there is nothing for a scroll to leak into.
+        Here there is: at the foot of the list the page would refuse to move, and a thumb would have to go
+        looking for somewhere else to scroll it from.
+    */
+    .cellTreeRows {
+        overscroll-behavior: auto;
+    }
+
+    /*A panel as wide as the window has no width to drag.*/
+    .sidebarGrabber {
+        display: none;
+    }
+
+    /*
+        And no picture. It shows the cell under the pointer, and a finger is not over anything until it presses
+        - which opens the cell rather than previewing it. On a phone the frame was 15rem of "Point at a cell" out
+        of a panel capped at half the screen, and the rows got what little it left. The same call the example
+        list makes below 760.
+
+        Through #cellTree, since the frame's own rule is further down the file and would otherwise win on order.
+    */
+    #cellTree .cellTreePreviewFrame {
+        display: none;
+    }
 }
 
 /*

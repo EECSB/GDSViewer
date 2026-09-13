@@ -10,36 +10,142 @@ test('panning moves the viewBox against the drag, so the layout follows the curs
     const viewBox = { x: 0, y: 0, width: 4000, height: 4000 };
 
     //Dragging right by 100 pixels at 1 unit per pixel moves the window 100 units left.
-    const panned = geometry.pannedOrigin(viewBox, 4000, { x: 0, y: 0 }, { x: 100, y: 50 }, 1);
+    const panned = geometry.pannedOrigin(viewBox, { x: 0, y: 0 }, { x: 100, y: 50 }, 1);
 
     assert.strictEqual(panned.x, -100);
     assert.strictEqual(panned.y, -50);
 });
 
-test('panning scales with the ratio, which is units per screen pixel', () => {
+test('panning scales with how many units a screen pixel is', () => {
     const viewBox = { x: 0, y: 0, width: 4000, height: 4000 };
 
-    const panned = geometry.pannedOrigin(viewBox, 4000, { x: 0, y: 0 }, { x: 10, y: 0 }, 4);
+    const panned = geometry.pannedOrigin(viewBox, { x: 0, y: 0 }, { x: 10, y: 0 }, 4);
 
     assert.strictEqual(panned.x, -40);
 });
 
-test('panning is damped by the zoom, so a drag moves the same distance however far in it is', () => {
-    //Zoomed in to a quarter of the initial height, a pixel covers a quarter as much layout.
-    const zoomedIn = { x: 0, y: 0, width: 1000, height: 1000 };
+//
+//The zoom is already in the pixel size, and is not counted a second time.
+//
+//It was: the pan damped its ratio by the zoom on top, so the same pixel size moved a zoomed-in view a fraction
+//as far - right only when that ratio had been measured at the starting zoom, which a resize while zoomed in
+//stopped being true. Two views at different zooms with the same pixel size now pan by the same amount.
+//
+test('a pixel moves the view by the units it is, whatever the zoom', () => {
+    const wide = geometry.pannedOrigin({ x: 0, y: 0, width: 4000, height: 4000 }, { x: 0, y: 0 }, { x: 100, y: 0 }, 2);
+    const zoomedIn = geometry.pannedOrigin({ x: 0, y: 0, width: 1000, height: 1000 }, { x: 0, y: 0 }, { x: 100, y: 0 }, 2);
 
-    const panned = geometry.pannedOrigin(zoomedIn, 4000, { x: 0, y: 0 }, { x: 100, y: 0 }, 1);
-
-    assert.strictEqual(panned.x, -25);
+    assert.strictEqual(wide.x, -200);
+    assert.strictEqual(zoomedIn.x, -200);
 });
 
 test('panning starts from where the viewBox already is', () => {
     const viewBox = { x: -2000, y: -1000, width: 4000, height: 4000 };
 
-    const panned = geometry.pannedOrigin(viewBox, 4000, { x: 0, y: 0 }, { x: 100, y: 100 }, 1);
+    const panned = geometry.pannedOrigin(viewBox, { x: 0, y: 0 }, { x: 100, y: 100 }, 1);
 
     assert.strictEqual(panned.x, -2100);
     assert.strictEqual(panned.y, -1100);
+});
+
+//
+//Where a layout point lands in an SVG of a given size, the way a browser fits a viewBox into one by default:
+//scaled by whichever side is tighter, and centered along the other. The pinch arithmetic is checked against
+//this rather than against its own formula, so a test cannot agree with a mistake by repeating it.
+//
+function fitted(box, size) {
+    const perPixel = Math.max(box.width / size.width, box.height / size.height);
+
+    return {
+        perPixel: perPixel,
+        left: (size.width - (box.width / perPixel)) / 2,
+        top: (size.height - (box.height / perPixel)) / 2
+    };
+}
+
+function screenOf(box, size, point) {
+    const fit = fitted(box, size);
+
+    return { x: ((point.x - box.x) / fit.perPixel) + fit.left, y: ((point.y - box.y) / fit.perPixel) + fit.top };
+}
+
+function layoutOf(box, size, spot) {
+    const fit = fitted(box, size);
+
+    return { x: box.x + ((spot.x - fit.left) * fit.perPixel), y: box.y + ((spot.y - fit.top) * fit.perPixel) };
+}
+
+function assertNear(actual, expected, message) {
+    assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: ${actual} is not ${expected}`);
+}
+
+test('spreading two fingers to twice the distance halves the view, about the point between them', () => {
+    //A phone: taller than wide, so the width is the tight side.
+    const size = { width: 375, height: 568 };
+    const from = { x: -1500, y: -800, width: 3000, height: 3000 };
+    const middle = { x: 200, y: 300 };
+    const anchor = layoutOf(from, size, middle);
+
+    const box = geometry.pinchedViewBox(from, anchor, middle, middle, 100, 200, fitted(from, size).perPixel);
+
+    assertNear(box.width, 1500, 'width');
+    assertNear(box.height, 1500, 'height');
+
+    const landed = screenOf(box, size, anchor);
+
+    assertNear(landed.x, middle.x, 'x');
+    assertNear(landed.y, middle.y, 'y');
+});
+
+test('closing the fingers zooms out, and the point between them still stays put', () => {
+    //Wider than tall this time, so the height is the tight side and the drawing is centered across.
+    const size = { width: 900, height: 500 };
+    const from = { x: 0, y: 0, width: 2000, height: 2000 };
+    const middle = { x: 610, y: 140 };
+    const anchor = layoutOf(from, size, middle);
+
+    const box = geometry.pinchedViewBox(from, anchor, middle, middle, 240, 80, fitted(from, size).perPixel);
+
+    assertNear(box.width, 6000, 'width');
+
+    const landed = screenOf(box, size, anchor);
+
+    assertNear(landed.x, middle.x, 'x');
+    assertNear(landed.y, middle.y, 'y');
+});
+
+test('two fingers moved together without spreading drag the view exactly as far as they went', () => {
+    const size = { width: 800, height: 500 };
+    const from = { x: 0, y: 0, width: 4000, height: 4000 };
+    const startMiddle = { x: 400, y: 250 };
+    const middle = { x: 460, y: 160 };
+    const anchor = layoutOf(from, size, startMiddle);
+
+    const box = geometry.pinchedViewBox(from, anchor, startMiddle, middle, 120, 120, fitted(from, size).perPixel);
+
+    assert.strictEqual(box.width, from.width);
+
+    const landed = screenOf(box, size, anchor);
+
+    assertNear(landed.x, middle.x, 'x');
+    assertNear(landed.y, middle.y, 'y');
+});
+
+test('a pinch stops at the smallest view the wheel allows, rather than refusing the gesture', () => {
+    const from = { x: 0, y: 0, width: 400, height: 400 };
+
+    const box = geometry.pinchedViewBox(from, { x: 200, y: 200 }, { x: 0, y: 0 }, { x: 0, y: 0 }, 10, 1000, 1);
+
+    assert.strictEqual(box.width, geometry.MINIMUM_SIZE);
+    assert.strictEqual(box.height, geometry.MINIMUM_SIZE);
+});
+
+test('two fingers landing on the same spot do not collapse the view to nothing', () => {
+    const from = { x: 0, y: 0, width: 4000, height: 4000 };
+
+    const box = geometry.pinchedViewBox(from, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, 0, 50, 1);
+
+    assert.ok(box.width >= geometry.MINIMUM_SIZE);
 });
 
 test('scrolling down zooms out and scrolling up zooms in', () => {

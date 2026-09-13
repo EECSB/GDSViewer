@@ -33,15 +33,54 @@
     ///<summary>
     ///Where the viewBox origin moves to for a drag from origin to pointer, both in screen pixels.
     ///
-    ///ratio converts a pixel into layout units at the current size, and scaleRatio takes the zoom into
-    ///account so that a drag moves what is under the cursor by the same amount however far in you are.
+    ///unitsPerPixel is what one screen pixel was in the layout when the drag began, read off the SVG's own
+    ///matrix - so the zoom and the size of the view are already in it, and a drag moves the layout by exactly
+    ///the pixels dragged. What was under the pointer at the press is still under it at the release.
+    ///
+    ///**The zoom is not applied a second time.** This took a ratio measured whenever the view last changed
+    ///size and damped it by the zoom on top, which was right only if that measurement had been taken at the
+    ///starting zoom, on a square view whose width was the tight side. A resize while zoomed in, or a view
+    ///wider than it is tall, and every drag after it moved the layout faster or slower than the pointer.
     ///</summary>
-    function pannedOrigin(viewBox, initialHeight, origin, pointer, ratio) {
-        const scaleRatio = initialHeight / viewBox.height;
+    function pannedOrigin(viewBox, origin, pointer, unitsPerPixel) {
+        return {
+            x: viewBox.x - ((pointer.x - origin.x) * unitsPerPixel),
+            y: viewBox.y - ((pointer.y - origin.y) * unitsPerPixel)
+        };
+    }
+
+    ///<summary>
+    ///The viewBox two fingers make, from where they landed to where they are now - a zoom and a drag at once.
+    ///
+    ///**About the point between them.** The layout point that was under the middle of the two fingers when
+    ///they landed ends up under the middle of them now: spreading them zooms in on that spot, and moving them
+    ///together carries it along. Which is the wheel's anchored zoom with a scale that varies smoothly, plus
+    ///how far the middle has traveled - exact, because the SVG fits its viewBox the default way (xMidYMid
+    ///meet) and a pinch scales both sides of the box alike.
+    ///
+    ///**Held at the wheel's floor rather than refused.** A notch that would go under MINIMUM_SIZE is not
+    ///taken; a pinch is one continuous gesture, so it stops at the floor and stays there however much further
+    ///the fingers spread.
+    ///
+    ///from is the viewBox when the fingers landed, anchor the layout point under their first middle, and
+    ///unitsPerPixel what a screen pixel was then. The middles and the distances are in screen pixels, and a
+    ///distance under a pixel counts as one - two fingers can land on the same spot.
+    ///</summary>
+    function pinchedViewBox(from, anchor, startMiddle, middle, startDistance, distance, unitsPerPixel) {
+        let scale = Math.max(startDistance, 1) / Math.max(distance, 1);
+
+        const smallest = Math.min(from.width, from.height);
+
+        if (scale < 1 && smallest * scale < MINIMUM_SIZE)
+            scale = Math.min(1, MINIMUM_SIZE / smallest);
+
+        const perPixel = unitsPerPixel * scale;
 
         return {
-            x: viewBox.x - ((pointer.x - origin.x) * ratio / scaleRatio),
-            y: viewBox.y - ((pointer.y - origin.y) * ratio / scaleRatio)
+            x: anchor.x - ((anchor.x - from.x) * scale) - ((middle.x - startMiddle.x) * perPixel),
+            y: anchor.y - ((anchor.y - from.y) * scale) - ((middle.y - startMiddle.y) * perPixel),
+            width: from.width * scale,
+            height: from.height * scale
         };
     }
 
@@ -319,6 +358,7 @@
         ZOOM_FACTOR: ZOOM_FACTOR,
         MINIMUM_SIZE: MINIMUM_SIZE,
         pannedOrigin: pannedOrigin,
+        pinchedViewBox: pinchedViewBox,
         zoomedSize: zoomedSize,
         measurement: measurement,
         labelCenterX: labelCenterX,

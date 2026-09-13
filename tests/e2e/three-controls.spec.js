@@ -10,6 +10,38 @@ test.beforeEach(async ({ page }) => {
     await expect(page.locator('#container canvas')).toBeVisible();
 });
 
+///
+///The controls at the foot of the view - the headset row and Admire - as a picture of whether they collide.
+///
+///Only the ones drawn: Open On Phone is in the markup on a phone and not shown. Inside means within the view's
+///own left and right edges, since a row wider than the view is the other way these went wrong.
+///
+async function footOfTheView(page) {
+    return page.evaluate(() => {
+        const shown = [...document.querySelectorAll('#xrButtons > *'), document.getElementById('admire')];
+        const boxes = shown.map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
+        const view = document.querySelector('#container').getBoundingClientRect();
+
+        let overlapping = false;
+
+        for (let i = 0; i < boxes.length; i++) {
+            for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i];
+                const b = boxes[j];
+
+                if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+                    overlapping = true;
+            }
+        }
+
+        return {
+            overlapping: overlapping,
+            arrangement: getComputedStyle(document.getElementById('xrButtons')).flexDirection,
+            inside: boxes.every(box => box.left >= view.left && box.right <= view.right)
+        };
+    });
+}
+
 test('the QR popup encodes the address, so it carries the file and view', async ({ page }) => {
     await page.locator('#openOnPhone').click();
 
@@ -414,6 +446,44 @@ test.describe('on a touch device', () => {
         await expect.poll(async () => page.locator('#xrButtons button:visible').count(), { timeout: 30000 })
             .toBe(2);
     });
+
+    ///
+    ///And the two that stay go up the side above Admire, rather than across the foot of the view into it.
+    ///
+    ///Nothing three.js can say fits beside Admire at this width. What it says here is what a desktop Chromium
+    ///gets, NOT SUPPORTED at 150 pixels; a real iPhone has no WebXR at all and gets WEBXR NOT AVAILABLE at 180 -
+    ///so the buttons are relabeled the way three.js would and asked again, at the widest they ever are.
+    ///
+    test('the headset buttons stack above Admire instead of running into it', async ({ page }) => {
+        await expect.poll(async () => page.locator('#xrButtons button:visible').count(), { timeout: 30000 })
+            .toBe(2);
+
+        await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'column', inside: true });
+
+        await page.evaluate(() => {
+            for (const button of document.querySelectorAll('#VRButton, #ARButton')) {
+                button.textContent = 'WEBXR NOT AVAILABLE';
+                button.style.width = '180px';
+            }
+        });
+
+        await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'column', inside: true });
+    });
+});
+
+///
+///The same stack on a laptop, once the layer sidebar leaves the view too narrow for the row.
+///
+///At 1024 by 768 the view is 543 wide, and the three buttons a mouse gets ran 88 pixels into Admire - which is
+///why the rule asks how wide the view is rather than the window. At the 1400 the rest of this file runs at,
+///the view is 844 and the row stays a row, which the tests on the row and on Admire hold.
+///
+test('on a narrow laptop window the view controls stack rather than overlap', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+
+    await expect.poll(async () => page.locator('#xrButtons button').count(), { timeout: 30000 }).toBe(3);
+
+    await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'column', inside: true });
 });
 
 ///

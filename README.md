@@ -82,9 +82,10 @@ drawing, the grid, measuring, tracing a net, fill patterns, the cell tree and th
   opens: cells stay blocks and placements stay inserts rather than being flattened, arrays become one
   repeated insert, and the layer numbers go into the layer names — `L68D20` — since that is the only
   place a DXF has to put them. So a layout can go back to whoever sent you the drawing.
-- 🟦 **2D view** — the layout as an SVG, one path a layer with a subpath per element, drag to pan, scroll to
-  zoom, adjustable opacity to see through stacked layers. Twenty thousand shapes pan at the screen's own
-  frame rate. **Download Image** saves the whole layout, not only the part on screen.
+- 🟦 **2D view** — the layout as an SVG, one path a layer with a subpath per element, drag to pan, scroll or
+  pinch to zoom, adjustable opacity to see through stacked layers. Twenty thousand shapes pan at the screen's
+  own frame rate. **Download Image** saves the whole layout, not only the part on screen. On a phone the
+  drawing takes the whole width and the sidebars sit under it.
 - 🎯 **Center the view**, in 2D or in 3D, from the button in the top-right of the canvas — for when you have panned or
   orbited the layout off the edge of the window. Both views frame the layout when it opens, so this is for
   getting back rather than for arriving. And **where you are looking is part of the link**: frame

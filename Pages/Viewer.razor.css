@@ -53,7 +53,12 @@
     flex: 1;
     min-height: 0;
 
-    /*Single-line for the same reason as .viewerPageRow: the view and the sidebar take this row's height.*/
+    /*
+        Single-line for the same reason as .viewerPageRow: the view and the sidebar take this row's height.
+
+        Except on a phone, where it wraps and the sidebar goes under the view - see the phone block after
+        full screen in app.css, which is where the page is let off the window's height as well.
+    */
     flex-wrap: nowrap;
 }
 

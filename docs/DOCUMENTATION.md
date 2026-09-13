@@ -1969,6 +1969,42 @@ one attribute, which ties `.viewerPageFull #mainAppContainer` exactly, and `GDSV
 after `app.css` so the tie goes to the 80%. The leading element breaks it, and keeps the whole full-screen
 story in one block instead of scattering a rule into the component's own sheet to win on source order.
 
+**On a phone the sidebars go under the view, and the page scrolls.** Below 768 pixels there is no row to
+share. The layer sidebar is 16em and the cell tree 15rem, neither shrinks, and on a phone that is fatal rather
+than cramped: measured at 375×812, the two wanted 496 pixels of a 345-pixel row, the view pane was left 89, the
+cell tree took all of it, and the SVG came out **0 pixels wide**. Nothing was drawn at all. At 768 the drawing
+had 188 pixels, about a quarter of its row. Loading at phone size and resizing down to it gave the same numbers
+to the pixel, so it was never the resize handling — there was simply no arrangement for a narrow screen.
+
+So under 768 the drawing takes a line of its own and each sidebar takes one under it: the canvas, the cell
+tree, then the layer sidebar, every one the width of the screen. That means letting the page off the window.
+Everything from `.page` down is a chain that fits the app to exactly `100dvh` with `min-height: 0` at every
+link, which is what stops a desktop ever scrolling and exactly what would clip anything put under the view;
+`.page` gives up its height there, and every box becomes as tall as what is in it. The page's margins go with
+it — the same three things full screen takes. On a phone they had been 128 pixels of height, 30 of width, and
+a row hanging four pixels past both edges that let the whole page be dragged sideways.
+
+Each view gets a height of its own, since none of them can take what the window has left any more: `70svh`,
+not `dvh`. The address bar comes and goes as a page scrolls, and a view sized in `dvh` would be resized and
+redrawn every time it did; `svh` is the window with the bar showing, which does not move. Seventy rather than
+all of it, so the top of whatever is underneath shows below the drawing — a sign there is more, and somewhere
+for a thumb to scroll the page, since a finger on the drawing moves the drawing. The cell tree is capped at
+`50svh` and loses its preview picture, which follows a pointer no finger is ever over; the layer sidebar is
+capped at `60svh`, so a hundred layers scroll inside the list rather than making the page a hundred rows
+long. The tree's rows hand a scroll on to the page at their end, where a desktop keeps it. A layer row's
+eye, padlock and gear go from 18 pixels to 32: they sat six apart, so a thumb meaning to hide a layer was
+about as likely to lock it. And the toolbar's first group gets back the 10-pixel gutter it gives up so a
+one-line bar is inset by the bar's own padding alone — a phone's bar is never one line, every later row
+starts with a group that kept its gutter, and the first row sat ten pixels left of all the rows under it.
+
+Measured after, at 375×812: the SVG 373×568, no sideways overflow, the toolbar at x=0 straight under the
+banner, the tree and then the sidebar below the drawing, and the 3D canvas and the text editor both 374×568.
+At 768×1024 and 1024×768 every rectangle is identical to before. The rules are two blocks in `app.css`, each
+after the rules it overrides — one after full screen for the page and the sidebar, one after the sidebar
+grabbers for the cell tree — with `#app` in front of the scoped ones, for the same tie `body:has()` breaks
+above. Pinned by [`phone-layout.spec.js`](../tests/e2e/phone-layout.spec.js), including both sides of the edge
+at 767 and 768.
+
 **Center is on the drawing, not in the bar.** One button, two answers: the 2D view fits the drawing into its
 `viewBox`, and the 3D view works out how far back a camera has to stand to see the whole stack. That is the
 same shape as opacity and layer spacing — one question each view answers its own way.
@@ -2049,9 +2085,35 @@ mirrored relative to how a layout tool shows it. That is long-standing and appli
 geometry alike.
 
 Pan and zoom are handled in [`wwwroot/js/JavaScriptInterOp.js`](../wwwroot/js/JavaScriptInterOp.js),
-which `registerSVGEvents` wires up on first render: pointer (or mouse plus touch) drag adjusts the
-`viewBox` origin, scaled by a ratio that accounts for both window resizes and the current zoom, and a
-wheel handler on `#svgWrapper` grows or shrinks the `viewBox`.
+which `registerSVGEvents` wires up on first render: a pointer drag moves the `viewBox` origin, a wheel
+handler on `#svgWrapper` zooms it about the pointer, and on a touch screen one finger drags and two pinch.
+
+**A drag moves the layout by exactly the pixels dragged.** How many layout units a screen pixel is gets read
+off the SVG's own `getScreenCTM()` at the press, and the whole drag is worked out from that. It used to be a
+`ratio` — the `viewBox` width over the SVG's width, refreshed by a `ResizeObserver` — scaled by the zoom a
+second time on top. That was right only if the ratio had last been measured at the starting zoom, on a square
+view whose width was the tight side: zoom in and then open a sidebar, turn a phone round, or simply have a view
+wider than it is tall, and every drag afterwards carried the layout faster or slower than the pointer. The
+matrix is what the drawing is drawn through, so there is nothing left to drift. The observer is still there,
+for the grid and the ruler, which are drawn across whatever is on screen.
+
+**Two fingers zoom about the point between them, and drag while they do.** The layout point under the fingers'
+middle when they land stays under their middle for the whole gesture: spreading them is the wheel's anchored
+zoom with a scale that varies smoothly, and moving them together carries that point along. It is worked out
+against where the fingers started rather than move by move, so nothing accumulates, and it stops at the wheel's
+`MINIMUM_SIZE` floor rather than refusing, since a pinch is one continuous gesture. Lift one finger and the
+other carries on dragging from where the view now is, not from where it first landed. The arithmetic is
+`pinchedViewBox` in [`viewGeometry.js`](../wwwroot/js/viewGeometry.js), unit-tested under Node against an
+independent model of how a browser fits a `viewBox` rather than against its own formula. Fingers are followed
+only in pan mode — with a tool in hand a touch belongs to the tool — and none of this is needed in 3D, where
+OrbitControls already orbits with one finger and pinches with two.
+
+**`touch-action: none` on `#gdsSVG` is what lets any of it arrive.** Without it the browser owned a drag on a
+touch screen: a few pixels in, it decided the gesture was a scroll, cancelled the pointer, and moved the page —
+on a phone, where the page scrolls down to its sidebars, the page slid away under a drawing that did not move.
+It is on the SVG alone, so a tap on a button over the drawing is still a tap and a thumb on the toolbar still
+scrolls. Pinned through the browser's real touch input rather than dispatched events, which never meet that
+decision at all — see [`touch-navigation.spec.js`](../tests/e2e/touch-navigation.spec.js).
 
 **It has to be safe to run more than once**, because leaving the 2D view and returning is a first render
 again. The listeners on the SVG go away with the element Blazor replaced, but the one on `window` does
@@ -4187,6 +4249,25 @@ this button by id to insert the other two before it, and `getElementById` does n
 displayed, so nothing there changes. The spec emulates touch rather than merely narrowing the window,
 since a width alone cannot tell a phone from a touchscreen laptop and would pass either way.
 
+**In a narrow view the row goes up the side above Admire instead of across the foot.** Centered along the
+bottom, the row ran into Admire whenever the view was too narrow for the two side by side — and three.js
+decides the labels, not this app. They are `ENTER VR` / `START AR` at 100 pixels, `NOT SUPPORTED` at 150, and
+`WEBXR NOT AVAILABLE` or `WEBXR NEEDS HTTPS` at 180: every iPhone, having no WebXR, and any phone on plain
+http. Measured at 375 wide the collision was 42 pixels at the shortest labels, 92 at `NOT SUPPORTED` and 122
+at the longest, where the row was also wider than the view; the first button sat over the axis indicator in
+all three. On a laptop at 1024×768 the layer sidebar leaves the view 543 wide, and the three buttons a mouse
+gets ran 88 pixels into Admire.
+
+So it is a **container query on the 3D view's own width**, not a media query on the window's: the sidebar
+opening or closing changes the answer, which a media query cannot see. The threshold is 800, because a
+centered row clears Admire only when the view is the row's width plus 254 (Admire's 103 and its `1rem`
+margin, twice over for centering, and a gap), and the widest row any browser builds is 542 — two `WEBXR NOT
+AVAILABLE` and Open On Phone, in a desktop browser without WebXR. At the 1400×900 the specs run at the view
+is 844 and the row stays a row. Below 800 each button keeps whatever width three.js gives it, they line up on
+the right edge over Admire, and the buttons get an explicit `2.6rem` height so the column clears Admire by
+construction rather than by a measured 41 pixels. Blazor's scoped CSS rewrites the selectors inside
+`@container` like any other rule.
+
 ## The text editor view
 
 [`Components/TextEditor.razor`](../Components/TextEditor.razor) shows `GDS.AsText()` in Monaco.
@@ -4618,7 +4699,7 @@ Three layers, because they catch different things:
 | Layer | Where | Run with | Count | Needs |
 |---|---|---|---|---|
 | C# unit and corpus | [`tests/GDSViewer.Tests/`](../tests/GDSViewer.Tests) | `dotnet test` | 2,022 | nothing |
-| Browser-JS unit | [`tests/jstests/`](../tests/jstests) | `npm test` | 41 | Node only, no packages |
+| Browser-JS unit | [`tests/jstests/`](../tests/jstests) | `npm test` | 46 | Node only, no packages |
 | End-to-end | [`tests/e2e/`](../tests/e2e) | `npm run test:e2e` | 857 in 61 files | `npm install` in `tests/`, and a browser |
 
 On CI the C# run is 1,989: the thirty-three tests marked `Needs=KLayout` use it as a second implementation to
@@ -5057,7 +5138,7 @@ dotnet run           # the app, on http://localhost:5105
 dotnet test          # 2,022 C# unit and corpus tests
 
 cd tests             # the browser tooling lives with the specs it runs
-npm test             # 41 browser-JS units, Node's own runner, nothing to install
+npm test             # 46 browser-JS units, Node's own runner, nothing to install
 npm run test:e2e     # 857 Playwright end-to-end specs; it starts the app itself
 npm run screenshots  # retakes the documentation's screenshots
 ```

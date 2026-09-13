@@ -59,7 +59,7 @@ names are guessed onto it — a blank layout is not a sky130 cell, the same reas
 
 ## The 2D editor
 
-The layout as SVG: drag to pan, scroll to zoom, adjustable opacity so stacked layers can be seen through.
+The layout as SVG: drag to pan, scroll or pinch to zoom, adjustable opacity so stacked layers can be seen through.
 Twenty thousand shapes pan at the screen's own frame rate.
 
 ![The 2D editor](images/2d-view.png)
