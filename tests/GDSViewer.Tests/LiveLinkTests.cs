@@ -439,7 +439,9 @@ public class LiveLinkTests : IDisposable
             await Until(() => first.State == LiveLinkState.Ended, "the first tab to be let go");
 
             Assert.Equal("Another tab was linked.", first.Ending);
-            Assert.Equal(LiveLinkState.Linked, second.State);
+
+            //LinkAsync is back once the server has said it; the tab hears it a moment later (red on a 2-core runner).
+            await Until(() => second.State == LiveLinkState.Linked, "the second tab to be linked");
         }
     }
 
