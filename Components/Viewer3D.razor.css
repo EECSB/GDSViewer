@@ -28,7 +28,14 @@
     bottom: 1em;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 9999;
+
+    /*
+        **Over the canvas and under the page's own windows**, as every overlay in this sheet is: 23 to 25, in the
+        order they were. They were 9997 to 9999, over everything on the page - the assistant's window among it,
+        which opens over this view now that its spark is in the bar, and had this row's Open On Phone taking the
+        press meant for its Send. And the bar's menus at 30, which hang over the view. See .aiWindow in app.css.
+    */
+    z-index: 25;
 
     display: flex;
     align-items: stretch;
@@ -57,9 +64,8 @@
 
         three.js's own are white on a tenth of black at half opacity, which reads on a dark scene and
         vanishes on a light one - and the default scene here is light gray, so these were a smudge until
-        the pointer found them. A solid dark panel fixed that and overcorrected: four filled slabs across
-        the foot of the view are the loudest thing on screen, and what they are is three ways out of it
-        and a camera toggle.
+        the pointer found them. A solid dark panel fixed that and overcorrected: filled slabs across the
+        foot of the view are the loudest thing on screen, and what they are is three ways out of it.
 
         So: barely there, but drawn in ink rather than in white. The wash is enough to keep dark text off
         a dark backdrop, and the border and the text carry the legibility that the fill used to.
@@ -70,8 +76,8 @@
 
     /*
         The weight three.js uses, kept. A heavier one reads better and does not fit: "VR NOT SUPPORTED" is
-        the longest label any of these four carries and it wraps to two lines at 600, which makes one
-        button in a row of four taller than the rest. What these needed was contrast, not weight, and the
+        the longest label any of these three carries and it wraps to two lines at 600, which makes one
+        button in the row taller than the rest. What these needed was contrast, not weight, and the
         panel behind them is where that comes from - so nowrap as well, since the next label somebody adds
         will be longer than this one.
     */
@@ -126,103 +132,545 @@
 }
 
 /*
-    Admire, in the far corner rather than in the row.
+    A view too narrow for the row along its foot: the row goes up the right-hand side instead.
 
-    It takes .xrButton's look whole - the same white outline over almost nothing, the same height, the same
-    margin off the edge - and changes only where it is and how wide. The row it is beside is centered and
-    holds the ways of leaving this view for a headset or a phone; this does something to the view you are
-    in, so it goes where nothing else is.
+    **The axis indicator has the bottom-left corner**, an 88-pixel square 12 in from the edges, and the row is centered
+    on the middle of the view - so once the view is narrower than the row with that corner's width either side of it,
+    the row's first button sits over the indicator. On a phone every label three.js gives it is too wide for that, at
+    375: a real iPhone has no WebXR at all and gets WEBXR NOT AVAILABLE at 180 pixels a button, a row wider than the
+    view itself, and any phone opening the page over plain http gets WEBXR NEEDS HTTPS at the same width. And on a
+    laptop: at 1024 by 768 the layer sidebar leaves the view 543 wide. So what matters is how wide the *view* is rather
+    than the window - the sidebar opening and closing changes the answer, and a media query cannot see that.
 
-    Sized to the word rather than to the 150px the other three share, because that width is what makes three
-    buttons of different names line up as a set and this is not one of them.
+    It was Admire the row had to clear until 2026-10-17, a button in the bottom-right corner; Admire is a switch in the
+    view's settings now, and the indicator is what is left down here for the row to run into.
+
+    **A class the viewer sets, not a width written here.** The row is as wide as the labels three.js gives it, and those
+    differ by browser - three NOT SUPPORTED buttons are 482 pixels, the widest row any browser builds is 542 - so no one
+    width is right. ThreeInterop's fitXrButtons lays the row out, measures it against the indicator's corner and the
+    view's right edge, and adds `stacked` when it would meet either - again whenever the view resizes or three.js
+    relabels a button. At 1280 by 720, the size the specs run at, the view is 747 and the row of 150s fits along the foot.
+
+    A column fits every label. Each button keeps whatever width three.js hands it, they line up on the right edge, and
+    the indicator keeps its corner to itself. A height given rather than measured - the same 41 pixels the padding, the
+    font and the border already come to - so a column of them is one height whatever three.js puts in each.
 */
-.admireButton {
-    position: absolute;
-    z-index: 9999;
+.xrButtons.stacked .xrButton {
+    height: 2.6rem;
+}
 
-    /*
-        rem, not em. The other buttons' row is 1em off the edge at the page's own 16px, and this button
-        carries a 13px font from .xrButton - so 1em here is 13, and the two end up three pixels apart on a
-        line they are meant to share. The root's em is the one that means what the row meant.
-    */
-    bottom: 1rem;
+.xrButtons.stacked {
+    left: auto;
     right: 1rem;
+    transform: none;
 
-    width: auto;
-    padding-left: 14px;
-    padding-right: 14px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
 }
 
 /*
-    Running, said as the one button down here that is not a dark panel.
+    What the keys do while the chip game runs, top left - the one corner of the view nothing else is in: the
+    headset row has the foot of it, Center the top right, and the axis indicator the bottom left.
+    The game is started from the Settings menu, so this panel is all of it the view shows.
 
-    The picture cannot say it - the icon is a still drawing of a moving camera either way - and the camera
-    moving is easy to miss on a layout with no landmarks in it. A color rather than a brightness, because
-    the buttons are legible at rest now and "slightly brighter" is not a state anybody notices.
+    pointer-events off, so the mouse moving across it still lands on the canvas: moving the mouse looks round the
+    car, and the wheel zooms the chase camera, and neither should stop working over a third of the corner. Its
+    sliders and boxes take the pointer back - see .gameOptions.
+
+    **No taller than the view**: a short window or a large font had its last rows - the sound and the music - under the
+    edge, out of reach. A column, so its parts can give way in turn - the keys first, then the options - see .gameKeys.
 */
-.admireButton.admireOn {
-    background: rgba(45, 108, 223, 0.85);
-    border-color: rgba(0, 0, 0, 0.55);
+.gameHud {
+    position: absolute;
+
+    /*Over the VR row as well, at 25, which a short window brings up under the panel's second column of ticks.*/
+    z-index: 26;
+    top: 1rem;
+    left: 1rem;
+
+    display: flex;
+    flex-direction: column;
+    max-width: calc(100% - 2rem);
+    max-height: calc(100% - 2rem);
+    overflow: hidden;
+    padding: 10px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+    color: #16181c;
+    font: normal 12px sans-serif;
+    pointer-events: none;
+
+    /*The scene behind it blurred, so the lines read over the neon and a busy backdrop alike.*/
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+
+/*
+    Below the frame rate when Debug info is on, which wants the same corner - the way the 2D view's selection
+    panel steps down below it. The meter is first in the view, so this can see it.
+
+    **Further than the selection panel's 8.5rem**, which this first borrowed and which put the panel over the
+    meter's last rows: in 3D the meter has three more - the scene's frames, its draw calls and its triangles -
+    and measured 11.3rem from the top of the view to its foot. See chip-game.spec.js, which measures it again.
+*/
+.frameMeter ~ .gameHud {
+    top: 12rem;
+    max-height: calc(100% - 13rem);
+}
+
+/*Put away by its ×, until Settings, Game controls brings it back - see ChipGame.setPanel.*/
+.gameHud.gameHudClosed {
+    display: none;
+}
+
+/*
+    The layer the car is on, and the × that puts the panel away, across the top of it. The name is empty until the car
+    first lands, and then it is what the panel leads with.
+*/
+.gameHudHead {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.gameLayer {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/*
+    The popups' close button, rounded as theirs are by the popup it is in - see .popupDiv .buttonStyle2 - and taking the
+    pointer back from the panel, which lets it through to the view.
+*/
+.gameHud .gameHudClose {
+    flex: none;
+    margin: -3px -5px 0 0;
+    border-radius: 3px;
+    font-size: 14px;
+    pointer-events: auto;
+}
+
+/*
+    **The keys give way first** where the panel would run off the foot of the view, cut at their foot - the lines a game
+    needs most are at the top - so the options under them, which are what is clicked, keep their room. The weight is
+    what has them give way before the options do; see .gameOptions for those.
+*/
+.gameKeys {
+    display: flex;
+    flex: 0 100 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/*
+    **A key and what it does, in two columns** - the keys in a column of their own, so what they do starts in one place
+    down the list and reads as a list rather than as sentences. See the key lists in Viewer3D.razor.
+*/
+.gameKey {
+    display: grid;
+    grid-template-columns: 7.2em auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.gameKeyCaps {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    color: #4a4f57;
+    white-space: nowrap;
+}
+
+/*The slash between two keys, or a button and a key, quieter than either.*/
+.gameKeyOr {
+    margin: 0 2px;
+    color: #8a8f97;
+}
+
+/*
+    The car's keys and options, the plane's or the jet's: the interop puts gameHudPlane or gameHudJet on the panel
+    while one of them is being flown - see ChipGame.showVehicle - and gameForAir is the plane's and the jet's both. All
+    are flex, the key lists and the ticks alike, so showing one is that.
+*/
+.gameHud .gameForPlane,
+.gameHud .gameForJet,
+.gameHud .gameForAir,
+.gameHud.gameHudPlane .gameForCar,
+.gameHud.gameHudJet .gameForCar {
+    display: none;
+}
+
+.gameHud.gameHudPlane .gameForPlane,
+.gameHud.gameHudJet .gameForJet,
+.gameHud.gameHudPlane .gameForAir,
+.gameHud.gameHudJet .gameForAir {
+    display: flex;
+}
+
+/*
+    A key cap. The color is said outright because Bootstrap's kbd is white on near-black, and a white cap
+    with that white lettering left in it read as a row of empty boxes.
+*/
+.gameKeys kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    margin-right: 2px;
+    padding: 0 4px;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    border-radius: 3px;
+    background: #fff;
+    color: #16181c;
+    box-shadow: none;
+    font: 600 11px sans-serif;
+    line-height: 1.5;
+    text-align: center;
+}
+
+/*
+    The lists, sliders and boxes under the keys: the vehicle and the view, top speed, the size, draw distance, invert
+    pitch, lock on, limit jump, the textures, the neon, the sound and the music.
+
+    The one part of the panel that takes the pointer, since a slider has to be dragged. A rule above them and Settings
+    at their head, so the keys read as what to press and these as what to set.
+
+    **The part that scrolls**, once the keys over it have given way and it still runs off the foot of the view: taking
+    the pointer, it takes the wheel too, which the rest of the panel lets through to the view. The panel scrolled whole
+    could not be, since the wheel over its keys is the camera's - and the options it hid were out of the wheel's reach.
+    Never shorter than a couple of rows, so there is always one to scroll by.
+*/
+.gameOptions {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 3.6em;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    pointer-events: auto;
+}
+
+/*The options' heading, Settings, as bold as the layer's name over the keys.*/
+.gameOptionsHead {
+    margin-bottom: 2px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/*
+    A name, the slider and its number, in columns, so the sliders start and end in one place - and for the size, the
+    box for how small it goes after them. The name's column is wide enough for Draw distance on one line, and the
+    number's for a size in hundredths, 0.05×.
+*/
+.gameOption {
+    display: grid;
+    grid-template-columns: 6.8em 110px 3em auto;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+
+.gameOption input {
+    width: 110px;
+    margin: 0;
+    accent-color: #1b6ec2;
+}
+
+/*The vehicle and the view, in the sliders' column and as wide as they are.*/
+.gameOption .gameOptionPick {
+    width: 110px;
+    margin: 0;
+    font: inherit;
+}
+
+/*Four places and the spinner, which is as many as the least takes.*/
+.gameOption .gameOptionLeast {
+    width: 4.4em;
+    font: inherit;
+}
+
+.gameOptionSaid {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+/*
+    The ticks in two columns rather than a column of their own, which made the panel twice as tall as the settings in it
+    needed. Hidden ones - the car's, or the plane's and the jet's - take no cell, so the rest close up.
+*/
+.gameOptionChecks {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    column-gap: 18px;
+    row-gap: 4px;
+    margin-top: 2px;
+}
+
+.gameOptionCheck {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.gameOptionCheck input {
+    margin: 0;
+    accent-color: #1b6ec2;
+}
+
+/*
+    A message across the top of the view for a moment - a fall off the edge, a long jump.
+
+    Hidden by its opacity rather than by display, so the fade the interop starts by adding the class is a
+    transition rather than a jump. The text stays in it after it fades; the class is what says whether it is
+    being said.
+*/
+.gameToast {
+    position: absolute;
+    z-index: 24;
+    top: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+
+    padding: 8px 16px;
+    border-radius: 6px;
+    background: rgba(22, 24, 28, 0.78);
     color: #fff;
+    font: 700 18px sans-serif;
+    white-space: nowrap;
+    pointer-events: none;
+
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
 }
 
-.admireButton.admireOn:hover {
-    background: rgba(45, 108, 223, 0.95);
-    border-color: rgba(0, 0, 0, 0.8);
-}
-
-/*So the orbit sits on the middle of the word, like the QR code beside it.*/
-.admireIcon {
-    width: 15px;
-    height: 15px;
+.gameToast.gameToastShown {
+    opacity: 1;
 }
 
 /*
-    A view too narrow for the row and Admire side by side: the row goes up the right-hand side, above Admire,
-    instead of across the foot of the view.
-
-    **They collided on a phone at every label three.js gives them.** Measured at 375 wide, the centered pair
-    ran into Admire by 42 pixels at their shortest (ENTER VR and START AR, a phone that can do both) and by 92
-    at NOT SUPPORTED. A real iPhone has no WebXR at all and gets WEBXR NOT AVAILABLE at 180 pixels each, which
-    is a row wider than the view itself - and any phone opening the page over plain http gets WEBXR NEEDS
-    HTTPS at the same width. The first button sat over the axis indicator in every one of those.
-
-    **And on a laptop, before any of that.** At 1024 by 768 the layer sidebar leaves the view 543 wide, and
-    the three buttons a mouse gets ran 88 pixels into Admire. So this asks how wide the *view* is rather than
-    the window: the sidebar opening and closing changes the answer, and a media query cannot see that.
-
-    **800, because that is what the widest row needs.** Centered, a row clears Admire only when the view is
-    its own width plus 254 - Admire's 103 and its 1rem margin, twice over because the row is centered, and a
-    gap. The widest row any browser builds is 542 (two WEBXR NOT AVAILABLE and Open On Phone, in a desktop
-    browser with no WebXR), which comes to 796. At the 1400 by 900 the specs run at the view is 844, and the
-    row stays a row.
-
-    A column fits every label. Each button keeps whatever width three.js hands it, they line up on the right
-    edge with Admire under them, and the axis indicator keeps its corner to itself.
-
-    **A height given rather than measured**, so the column clears Admire by construction: the same 41 pixels
-    the padding, the font and the border already come to, written down so the offset below can be worked out
-    from it instead of guessed at.
+    Across the top of the view, in the middle: the score, and under it Limit jump's meter in the car or the weapons' heat
+    in the plane and the jet. Nothing else is up there - the panel has the left of it and Center the right - and the
+    toast is lower down, at a fifth of the way.
 */
-.viewWrapper {
-    container: view3d / inline-size;
+.gameTop {
+    position: absolute;
+    z-index: 24;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
 }
 
-@container view3d (max-width: 800px) {
-    .xrButton {
-        height: 2.6rem;
+.gameScore {
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(22, 24, 28, 0.72);
+    color: #fff;
+    font: 600 13px sans-serif;
+    white-space: nowrap;
+}
+
+/*In the electrons' blue. A block of its own, so the little jump an electron gives it can scale it.*/
+.gameScore output {
+    display: inline-block;
+    min-width: 2ch;
+    margin-left: 4px;
+    color: #7fdcff;
+    font-weight: 700;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+/*
+    The meter: a cell a jump, each filled as far as that jump has come back - see ChipGame.showMeter. Green while there
+    are jumps to be had, and red and pulsing while it fills from empty, which is the wait before the next.
+*/
+.gameJumps {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(22, 24, 28, 0.62);
+    color: #fff;
+    font: 600 11px sans-serif;
+}
+
+.gameJumps[hidden] {
+    display: none;
+}
+
+.gameJumpsName {
+    margin-right: 3px;
+}
+
+.gameJumpCell {
+    width: 22px;
+    height: 8px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    overflow: hidden;
+}
+
+.gameJumpFill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #7ee081;
+}
+
+.gameJumps.gameJumpsRecharging .gameJumpFill {
+    background: #ff6b6b;
+}
+
+.gameJumps.gameJumpsRecharging {
+    animation: gameRecharging 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes gameRecharging {
+    from {
+        opacity: 0.6;
     }
 
-    .xrButtons {
-        left: auto;
-        right: 1rem;
-        transform: none;
-
-        /*Admire's own offset, its height, and the gap the column keeps between its buttons.*/
-        bottom: calc(1rem + 2.6rem + 0.5rem);
-
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 0.5rem;
+    to {
+        opacity: 1;
     }
+}
+
+/*
+    The weapons' heat, where the jump meter is in the car: a bar for the gun and one for the jet's missiles, each as full
+    as its weapon is hot - see ChipGame.showHeat. Green to amber to red along the way, and the whole of a weapon red and
+    pulsing while it cools from overheated, which is the wait before it fires again.
+*/
+.gameHeat {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(22, 24, 28, 0.62);
+    color: #fff;
+    font: 600 11px sans-serif;
+}
+
+.gameHeat[hidden],
+.gameHeatOne[hidden] {
+    display: none;
+}
+
+.gameHeatOne {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.gameHeatCell {
+    width: 64px;
+    height: 8px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    overflow: hidden;
+}
+
+/*The colors as wide as the whole cell, so a bar a third full is green, rather than all three squeezed into a third.*/
+.gameHeatFill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #7ee081, #ffd34d 60%, #ff8a3d) 0 0 / 64px 100% no-repeat;
+}
+
+.gameHeatOne.gameHeatHot .gameHeatFill {
+    background: #ff6b6b;
+}
+
+.gameHeatOne.gameHeatHot {
+    animation: gameRecharging 0.8s ease-in-out infinite alternate;
+}
+
+/*
+    The crosshair and the missile's bracket, put over their places on screen by a transform the interop writes every
+    frame they move - see ChipGame.pinTo - from the top left of the view. White with a dark edge, so either reads over a
+    light layer and a dark one.
+*/
+.gameCrosshair,
+.gameLock {
+    position: absolute;
+    z-index: 24;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.gameCrosshair[hidden],
+.gameLock[hidden] {
+    display: none;
+}
+
+.gameCrosshair {
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+/*The dot in the middle of it.*/
+.gameCrosshair::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+.gameLock {
+    width: 38px;
+    height: 38px;
+    border: 2px solid #ff3b3b;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/*
+    The jet's HUD: the glass a fighter's green lines are drawn on, in the middle of the view, in first person - see
+    ChipGame.showJetHud. As big as the view lets it be, up to a size that leaves the sky round it; the pointer goes
+    through it to the view, which is the stick. Under the missile's bracket, which it is drawn with; the crosshair is not
+    there with it.
+*/
+.gameJetHud {
+    position: absolute;
+    z-index: 23;
+    top: 50%;
+    left: 50%;
+    width: min(380px, 70%);
+    height: min(300px, 62%);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.gameJetHud[hidden] {
+    display: none;
 }

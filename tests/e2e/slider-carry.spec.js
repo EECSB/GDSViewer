@@ -11,7 +11,7 @@
 //scene and a document rather than a value anything in C# can be asked for.
 const { test, expect } = require('@playwright/test');
 const { gotoExample, expectLoaded, selectExample, selectView, stackHeights, svgCounts,
-        MOSFET, SKY130_CELL, clearLayerNames, LAYER_RUNG } = require('./helpers');
+        MOSFET, SKY130_CELL, bareNumbers, LAYER_RUNG } = require('./helpers');
 
 //SKY130_CELL is the cell's name; the picker lists files, so the extension goes back on. Same as history.spec.
 const SKY130_FILE = `${SKY130_CELL}.gds`;
@@ -39,8 +39,8 @@ test.describe('a slider set before the file that follows it', () => {
         await gotoExample(page, MOSFET, '3d');
 
         //On bare numbers: the shipped mapping now carries sky130's real stack, and this is about the even
-        //spacing the slider applies to a file that has none. See clearLayerNames.
-        await clearLayerNames(page);
+        //spacing the slider applies to a file that has none. See bareNumbers.
+        await bareNumbers(page);
 
         await slideTo(page, 'layerSpacing', 700);
 
@@ -48,7 +48,7 @@ test.describe('a slider set before the file that follows it', () => {
 
         //Spread by the slider: the step is the even stack's own rung plus what the slider opened on top of
         //it - see LAYER_RUNG. It used to be the slider's number alone, back when that number was measured
-        //from the rung rather than from nought.
+        //from the rung rather than from zero.
         expect(first.length).toBeGreaterThan(2);
         expect(first[1] - first[0]).toBe(LAYER_RUNG + 700);
 
@@ -57,10 +57,7 @@ test.describe('a slider set before the file that follows it', () => {
         await expectLoaded(page);
         await page.waitForTimeout(1500);
 
-        //And this one arrives with the mapping too - opening a different example re-arms it - so it needs the
-        //same clearing as the first before its steps mean what this test measures.
-        await clearLayerNames(page);
-
+        //And this one arrives on bare numbers too: the PDK in use names nothing, in any file - see bareNumbers.
         const second = await stackHeights(page);
 
         expect(second.length).toBeGreaterThan(2);
@@ -83,15 +80,15 @@ test.describe('a slider set before the file that follows it', () => {
     ///reported was never one the file had been drawn at. Harmless while nothing read it and a bug the
     ///moment the value above is applied to a file.
     ///
-    ///That minimum is nought now, and the slider opens there: a file arrives on the stack its layermap
+    ///That minimum is zero now, and the slider opens there: a file arrives on the stack its layermap
     ///describes, and anything the control says is a gap opened on top of it.
     ///
     test('the distance the slider opens on is the one the file was stacked at', async ({ page }) => {
         await gotoExample(page, MOSFET, '3d');
 
         //On bare numbers: the shipped mapping now carries sky130's real stack, and this is about the even
-        //spacing the slider applies to a file that has none. See clearLayerNames.
-        await clearLayerNames(page);
+        //spacing the slider applies to a file that has none. See bareNumbers.
+        await bareNumbers(page);
 
         const opened = await page.locator('#layerSpacing').inputValue();
         const heights = await stackHeights(page);
@@ -99,7 +96,7 @@ test.describe('a slider set before the file that follows it', () => {
         expect(heights.length).toBeGreaterThan(2);
 
         //What the control says, and what the scene is - the same number, once the rung these rest on is
-        //allowed for. At the slider's nought that leaves the bare rung, which is the point: nothing added.
+        //allowed for. At the slider's zero that leaves the bare rung, which is the point: nothing added.
         expect(heights[1] - heights[0]).toBe(LAYER_RUNG + Number(opened));
     });
 
@@ -142,8 +139,8 @@ test.describe('a slider set before the file that follows it', () => {
         await gotoExample(page, MOSFET, '3d');
 
         //On bare numbers: the shipped mapping now carries sky130's real stack, and this is about the even
-        //spacing the slider applies to a file that has none. See clearLayerNames.
-        await clearLayerNames(page);
+        //spacing the slider applies to a file that has none. See bareNumbers.
+        await bareNumbers(page);
 
         await slideTo(page, 'layerSpacing', 350);
 
@@ -165,6 +162,57 @@ test.describe('a slider set before the file that follows it', () => {
 
         expect(back.length).toBeGreaterThan(2);
         expect(back[1] - back[0]).toBe(LAYER_RUNG + 350);
+    });
+
+    ///
+    ///**How far the distance slider reaches is the box beside it.** The slider stopped at 700, which pulls a standard
+    ///cell well apart and does little to a big design with many layers. Lowered under the distance, the reach brings
+    ///the distance down with it - the stack included - so the slider never says less than the scene shows. And it is
+    ///kept the way the distance is: across a reload, in the session.
+    ///
+    test('the box beside the distance slider sets how far it reaches', async ({ page }) => {
+        await gotoExample(page, MOSFET, '3d');
+
+        //On bare numbers, for the even stack the steps below are measured on. See bareNumbers.
+        await bareNumbers(page);
+
+        await expect(page.locator('#layerSpacing')).toHaveAttribute('max', '700');
+        await expect(page.locator('#layerSpacingRange')).toHaveValue('700');
+
+        await page.locator('#layerSpacingRange').fill('5000');
+        await page.locator('#layerSpacingRange').press('Enter');
+
+        await expect(page.locator('#layerSpacing')).toHaveAttribute('max', '5000');
+
+        //Past where it used to stop, and the stack with it.
+        await slideTo(page, 'layerSpacing', 4000);
+
+        await expect(page.locator('#layerSpacing')).toHaveValue('4000');
+
+        const spread = await stackHeights(page);
+
+        expect(spread[1] - spread[0]).toBe(LAYER_RUNG + 4000);
+
+        //Brought down under the distance, which comes down to it.
+        await page.locator('#layerSpacingRange').fill('1000');
+        await page.locator('#layerSpacingRange').press('Enter');
+
+        await expect(page.locator('#layerSpacing')).toHaveAttribute('max', '1000');
+        await expect(page.locator('#layerSpacing')).toHaveValue('1000');
+
+        await page.waitForTimeout(1500);
+
+        const lowered = await stackHeights(page);
+
+        expect(lowered[1] - lowered[0]).toBe(LAYER_RUNG + 1000);
+
+        //And there after a reload.
+        await page.reload();
+        await expect(page.locator('#container canvas')).toBeVisible({ timeout: 30000 });
+
+        await expect(page.locator('#layerSpacingRange')).toHaveValue('1000');
+        await expect(page.locator('#layerSpacing')).toHaveAttribute('max', '1000');
+        await expect(page.locator('#layerSpacing')).toHaveValue('1000');
     });
 
     ///<summary>And the opacity the same way, since it is the other view's half of the same hole.</summary>

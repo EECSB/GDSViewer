@@ -88,6 +88,15 @@ function registerSVGEvents(view) {
 
     keys.view = view;
 
+    //A settle left over from the last visit belongs to the element Blazor has just replaced, and so did any shift
+    //the picture was wearing. This SVG is framed by the shell once it is drawn - see applyViewBox and frameOn.
+    holdSettling();
+
+    pictureShift = null;
+
+    //The new element says which tool is in hand from the start: Pan's open hand, when a view opens with no other.
+    svg.style.cursor = toolCursor();
+
     //
     //The middle button belongs to the view, not to the browser.
     //
@@ -122,6 +131,9 @@ function registerSVGEvents(view) {
     ruler.active = false;
     clearRuler();
 
+    //The frame round something just put down belonged to the last visit's drawing.
+    hidePiece();
+
     //The chosen node belongs to the SVG Blazor has just replaced, so the reference to it is stale.
     selection.active = false;
     selection.chosen = null;
@@ -133,9 +145,22 @@ function registerSVGEvents(view) {
     window.removeEventListener('keydown', onEditorKey);
     window.addEventListener('keydown', onEditorKey);
 
+    //And the paste the key turns into, which carries the clipboard - see onEditorPaste.
+    window.removeEventListener('paste', onEditorPaste);
+    window.addEventListener('paste', onEditorPaste);
+
     //A polygon is finished by clicking its first corner, by Enter, or by this - between the three, somebody
     //who has not been told will find one.
     svg.addEventListener('dblclick', function (event) {
+        //Writing just put down opens a box for its words - see OnPieceRetyped. Not on its arrows, where two presses are two turns.
+        const onArrow = event.target != null && event.target.closest != null && event.target.closest('.pieceTurn') != null;
+
+        if (piece.active && piece.kind === 'text' && piece.view != null && !onArrow && pieceUnder(event)) {
+            piece.view.invokeMethodAsync('OnPieceRetyped');
+
+            return;
+        }
+
         if (drawing.active && (drawing.mode === 'poly' || drawing.mode === 'path')) {
             finishShape();
 
@@ -200,22 +225,12 @@ function registerSVGEvents(view) {
             viewBox.y = newViewBox.y;
         }
 
-        var viewBoxString = `${newViewBox.x} ${newViewBox.y} ${viewBox.width} ${viewBox.height}`;
-
-        //Apply new viewBox coordinates.
-        svg.setAttribute('viewBox', viewBoxString);
-
-        //The measurement is drawn in the layout's coordinates, so it pans and zooms with the geometry -
-        //but its line width and lettering are sized against how much layout is on screen, and that is
-        //exactly what has just changed.
-        drawRuler();
-
-        //And the grid is only drawn across what is on screen, which has just become somewhere else.
-        drawGrid();
-
-        //The one gesture that changes how many pixels a layout unit is, which is what a stipple's size is
-        //held against. Pan does not call this: it moves the window without resizing it.
-        scalePatterns();
+        //
+        //**The picture is scaled, not drawn again** - see showViewBox. The ruler, the grid, the stipples and
+        //the outlines, which are sized against how much layout is on screen, are put right once the wheel
+        //stops, along with the viewBox itself.
+        //
+        showViewBox();
 
         //A wheel has no "up", so the only end to a zoom is it stopping.
         reportViewBoxWhenSettled();
@@ -255,11 +270,18 @@ function onViewResized() {
     lastDrawnWidth = width;
     lastDrawnHeight = height;
 
+    //A gesture's shift was worked out for the size the SVG had, and it fits its viewBox to the size it has now.
+    if (pictureShift != null)
+        showViewBox();
+
     drawGrid();
     drawRuler();
 
     //The box changed size, so a layout unit is a different number of pixels than it was.
     scalePatterns();
+
+    scaleOutlines();
+    scalePiece();
 }
 
 function getPointFromEvent(event) {
@@ -307,10 +329,9 @@ function panWith(event) {
     newViewBox.x = panned.x;
     newViewBox.y = panned.y;
 
-    svg.setAttribute('viewBox', `${newViewBox.x} ${newViewBox.y} ${viewBox.width} ${viewBox.height}`);
-
-    //Drawn only across what is on screen, which is what has just moved.
-    drawGrid();
+    //The picture already drawn, moved - see showViewBox. The grid moves with it, drawn past the edges by the
+    //same margin the shapes are, and is drawn again for where the view is once the drag is over.
+    showViewBox();
 }
 
 function onPointerMove(event) {
@@ -336,6 +357,13 @@ function onPointerMove(event) {
 
     if (pinch != null) {
         pinchWith();
+
+        return;
+    }
+
+    //The frame of what was just put down, being sized or moved: the pointer is the drag's until it is let go.
+    if (piece.drag != null) {
+        onPieceMove(event);
 
         return;
     }
@@ -400,6 +428,16 @@ function onPointerDown(event) {
         return;
 
     //
+    //**A press on the drawing puts away words selected anywhere else**, which the browser leaves selected here - the
+    //drawing selects nothing, so nothing takes their place. Left up, Ctrl+C with a shape chosen would copy words
+    //picked out in the assistant's conversation a while before rather than the shape - see wordsSelected.
+    //
+    const selected = window.getSelection();
+
+    if (selected != null && !selected.isCollapsed)
+        selected.removeAllRanges();
+
+    //
     //**The view keeps the pointer for the whole gesture.**
     //
     //Without this a drag is only a drag for as long as the browser feels like sending the events to this
@@ -436,11 +474,22 @@ function onPointerDown(event) {
 
         panUnitsPerPixel = unitsPerPixel();
 
+        holdSettling();
+
+        //A closed hand over any tool, for as long as the view is held - and the tool's own cursor back after.
+        if (svg != null)
+            svg.style.cursor = 'grabbing';
+
         return;
     }
 
+    //Writing or a picture just put down has its frame first: a press on it sizes or moves it, and a press anywhere
+    //else puts it down for good and goes on to whatever it was for. See onPieceDown.
+    if (piece.active && event.button === 0 && onPieceDown(event))
+        return;
+
     //Before the tools, for the reason above: a press while something is being carried puts it down, whatever
-    //was in hand when it was picked up.
+    //was in hand when it was picked up. Choosing a tool or a shape puts it back first - see emptyHand.
     if (carrying.active) {
         onCarryDown(event);
 
@@ -494,7 +543,7 @@ function onPointerDown(event) {
     beginPan(event.pointerId, pointerPosition);
 }
 
-///Starts a drag from a point, at whatever a screen pixel is in the view right now.
+///Starts a drag from a point, at whatever a screen pixel is in the view right now - the open hand closing on it.
 function beginPan(pointerId, from) {
     isPointerDown = true;
     panPointerId = pointerId;
@@ -503,6 +552,11 @@ function beginPan(pointerId, from) {
     pointerOrigin.y = from.y;
 
     panUnitsPerPixel = unitsPerPixel();
+
+    holdSettling();
+
+    if (svg != null)
+        svg.style.cursor = 'grabbing';
 }
 
 ///
@@ -538,6 +592,8 @@ function startPinch() {
         unitsPerPixel: perPixel,
         from: { x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height }
     };
+
+    holdSettling();
 }
 
 ///
@@ -571,13 +627,9 @@ function pinchWith() {
     newViewBox.x = box.x;
     newViewBox.y = box.y;
 
-    svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`);
-
-    //Everything the wheel redraws, and for the same reasons: the grid and the ruler are drawn across what is on
-    //screen, and a stipple is held at a size in pixels.
-    drawRuler();
-    drawGrid();
-    scalePatterns();
+    //Moved and scaled rather than drawn again, as the wheel does - see showViewBox. What the wheel puts right
+    //when it stops, this puts right when a finger lifts.
+    showViewBox();
 }
 
 ///
@@ -625,6 +677,24 @@ function onPointerUp(event) {
         viewBox.x = newViewBox.x;
         viewBox.y = newViewBox.y;
 
+        if (svg != null)
+            svg.style.cursor = toolCursor();
+
+        //
+        //**Told about, the way the end of any other pan is.** This used to stop here, so a middle-button drag
+        //on a large layout left the picture drawn for wherever the view had been: past the margin there was
+        //nothing on screen until some other gesture happened to report. It is also what puts the viewBox on
+        //the drag's end now - see showViewBox - so without it the view would stay a moved picture.
+        //
+        reportViewBoxWhenSettled();
+
+        return;
+    }
+
+    //The frame's drag, which no tool heard the start of.
+    if (piece.drag != null) {
+        onPieceUp();
+
         return;
     }
 
@@ -648,6 +718,9 @@ function onPointerUp(event) {
     //Save the new viewBox coordinates based on the last pointer position.
     viewBox.x = newViewBox.x;
     viewBox.y = newViewBox.y;
+
+    if (svg != null)
+        svg.style.cursor = toolCursor();
 
     //The end of a pan, which is where C# gets told what is on screen - see reportViewBox.
     reportViewBoxWhenSettled();
@@ -759,7 +832,7 @@ function stopSelecting() {
     clearSelection();
 
     if (svg != null)
-        svg.style.cursor = '';
+        svg.style.cursor = toolCursor();
 }
 
 function clearSelection() {
@@ -857,7 +930,7 @@ function onSelectClick(event) {
     //**Chosen means in the set, not alone in it.** This read `chosen.length === 1` and so only waited for a
     //selection of one - press on any of several and the press was reported at once, which replaced the
     //selection with the shape under the pointer before the drag had begun. Everything downstream of that is
-    //built to move a group: liftChosen lifts the whole set for the preview and OnElementDragged writes one
+    //built to move a group: liftForDrag lifts the whole set for the preview and OnElementDragged writes one
     //edit per distinct model. They were being handed a set of one, so dragging a band of chosen shapes moved
     //the one that was grabbed and dropped the rest.
     //
@@ -1195,10 +1268,12 @@ function reshapeLifted(corner, dx, dy) {
     for (const shape of lifted.querySelectorAll('path, polygon')) {
         let original = shape.dataset.originalGeometry;
 
+        //A path's corners written out first: the picture writes a shape as steps between them, and moving
+        //one step would carry every corner after it along. See absolutePath in viewGeometry.
         if (original == null && shape.tagName === 'polygon')
             original = shape.getAttribute('points');
         else if (original == null)
-            original = shape.getAttribute('d');
+            original = window.viewGeometry.absolutePath(shape.getAttribute('d'));
 
         shape.dataset.originalGeometry = original;
 
@@ -1410,13 +1485,24 @@ function onDismissRetype(event) {
 
     const box = document.getElementById(RETYPE_BOX_ID);
 
-    if (box == null || event.target === box)
-        return;
+    if (box != null && event.target !== box)
+        retyping.view.invokeMethodAsync('OnRetypeDismissed');
 
-    retyping.view.invokeMethodAsync('OnRetypeDismissed');
+    //The same for the box writing's words are typed into, saying whether the press was on the writing's own frame,
+    //which keeps the frame up - see OnWordsDismissed.
+    const words = document.getElementById(WORDS_BOX_ID);
+
+    if (words != null && event.target !== words) {
+        const frame = document.getElementById(PIECE_ID);
+        const onFrame = frame != null && event.target != null && frame.contains(event.target);
+
+        retyping.view.invokeMethodAsync('OnWordsDismissed', onFrame);
+    }
 }
 
 const RETYPE_BOX_ID = 'canvasLabelText';
+
+const WORDS_BOX_ID = 'canvasWritingText';
 
 //The bar's menus/////////////////////////////////
 
@@ -1477,6 +1563,19 @@ function onDismissBarMenus(event) {
 
         one.view.invokeMethodAsync(one.closed);
     }
+}
+
+///
+///Whether a box or a dropdown inside this panel has the keyboard - which holds it open when the pointer leaves it.
+///
+///A dropdown's list is drawn by the browser over the page, so choosing from it leaves the pointer wherever the choice
+///was, and its first move from there is a leave that has nothing to do with being finished. See leaveTools.
+///
+function typingIn(menu) {
+    const panel = document.getElementById(menu);
+    const focused = document.activeElement;
+
+    return panel != null && focused != null && panel.contains(focused) && focused.matches('input, select, textarea');
 }
 
 ///
@@ -1589,6 +1688,63 @@ function selectAllIn(box) {
         box.select();
 }
 
+///
+///Resolves once the browser has put on screen what the page holds now - see Painting.AfterPaintAsync, which is
+///what calls it: C# awaits this between rendering a message and starting the work the message is about.
+///
+///**A frame and then a timer**, because a frame's callbacks run before its paint: the timer is the first moment
+///after one, which is when what was rendered is known to have been drawn.
+///
+///**And a timer on its own as a floor.** A page that is not being shown - a tab in the background, a pane that is
+///hidden - gets no frames at all, and work waiting on one would never start.
+///
+function afterPaint() {
+    return new Promise(function (resolve) {
+        let done = false;
+
+        const finish = function () {
+            if (done)
+                return;
+
+            done = true;
+            resolve();
+        };
+
+        requestAnimationFrame(function () {
+            setTimeout(finish, 0);
+        });
+
+        setTimeout(finish, AFTER_PAINT_LONGEST);
+    });
+}
+
+///The longest a wait for a paint lasts, for a page that is given no frames.
+const AFTER_PAINT_LONGEST = 100;
+
+///
+///Resolves on the page's next turn: once the browser has seen to what was waiting - a press, a frame to draw - and no
+///later. What a picture drawn at a pace lets the page in with, every few milliseconds - see Pacer.PageTurn.
+///
+///**A message the page posts to itself, not a timer**, because a timer set from inside another is held to four
+///milliseconds, which at a picture's pace is most of a slice again. One channel for every turn, answered in order.
+///
+const pageTurnChannel = new MessageChannel();
+const pageTurnsWaiting = [];
+
+pageTurnChannel.port1.onmessage = function () {
+    const turned = pageTurnsWaiting.shift();
+
+    if (turned)
+        turned();
+};
+
+function pageTurn() {
+    return new Promise(function (resolve) {
+        pageTurnsWaiting.push(resolve);
+        pageTurnChannel.port2.postMessage(null);
+    });
+}
+
 //Vertex handles/////////////////////////////////
 
 const HANDLES_ID = 'vertexHandles';
@@ -1681,7 +1837,7 @@ function startDrawing(view, mode, segments, width) {
 
 ///Switches between the shapes, dropping whatever was half-drawn in the one before.
 function setDrawMode(mode, segments, width) {
-    if (mode === 'poly' || mode === 'ellipse' || mode === 'text' || mode === 'path')
+    if (mode === 'poly' || mode === 'ellipse' || mode === 'text' || mode === 'path' || mode === 'writing')
         drawing.mode = mode;
     else
         drawing.mode = 'rect';
@@ -1716,7 +1872,7 @@ function stopDrawing() {
     clearDrawing();
 
     if (svg != null)
-        svg.style.cursor = '';
+        svg.style.cursor = toolCursor();
 }
 
 function clearDrawing() {
@@ -1749,12 +1905,23 @@ function onDrawDown(event) {
         return;
     }
 
+    //Writing as shapes the same way: put down where it is clicked, reading "Text", with a box over it for the
+    //words. See OnWritingPlaced.
+    if (drawing.mode === 'writing') {
+        const point = layoutPointFromEvent(event);
+
+        if (point != null && drawing.view != null)
+            drawing.view.invokeMethodAsync('OnWritingPlaced', point.x, point.y);
+
+        return;
+    }
+
     drawing.from = layoutPointFromEvent(event);
 }
 
 function onDrawMove(event) {
-    //Nothing follows the pointer for a label: it lands where it is clicked, at a size this view fixes.
-    if (drawing.mode === 'text')
+    //Nothing follows the pointer for a label, or for writing: each lands where it is clicked.
+    if (drawing.mode === 'text' || drawing.mode === 'writing')
         return;
 
     if (drawing.mode === 'poly' || drawing.mode === 'path') {
@@ -1784,8 +1951,8 @@ function onDrawMove(event) {
 ///the wrong space.
 ///
 function onDrawUp(event) {
-    //A polygon, a path and a label are clicked rather than dragged, so releasing the button ends nothing.
-    if (drawing.mode === 'poly' || drawing.mode === 'path' || drawing.mode === 'text')
+    //A polygon, a path, a label and writing are clicked rather than dragged, so releasing the button ends nothing.
+    if (drawing.mode === 'poly' || drawing.mode === 'path' || drawing.mode === 'text' || drawing.mode === 'writing')
         return;
 
     if (drawing.from == null)
@@ -1826,7 +1993,8 @@ function onDrawUp(event) {
     if (ellipse) {
         //Handed over as the corners it came out as, down the same path a clicked polygon takes. The shape
         //on screen and the shape in the file are then the same points rather than two answers worked out
-        //twice from the same box.
+        //twice from the same box - each put on the rule deck's grid while snapping, a fraction of a grid
+        //step from where the preview drew it (deckGrid in Viewer2DSvg.razor).
         handOver(window.viewGeometry.ellipseCorners(from, to, segments, circle));
 
         return;
@@ -2214,8 +2382,48 @@ function stopCarrying() {
     if (carried != null)
         carried.remove();
 
+    //The tool's own again: Esc puts a cell back with the pencil still in hand, which is a crosshair, not an arrow.
     if (svg != null)
-        svg.style.cursor = '';
+        svg.style.cursor = toolCursor();
+}
+
+///
+///The cursor the tool in hand shows, for when something that showed its own is put away.
+///
+///**Pan is an open hand** (asked for 2026-10-30): it is the tool in hand when no other is, and a press with it takes
+///hold of the view rather than of anything in it, which an arrow did not say. A drag closes the hand - see beginPan.
+///
+function toolCursor() {
+    if (carrying.active)
+        return 'copy';
+
+    if (drawing.active || ruler.active)
+        return 'crosshair';
+
+    if (selection.active)
+        return 'pointer';
+
+    return 'grab';
+}
+
+///
+///Swaps what is in hand for a new drawing of it, keeping where it is and which way up.
+///
+///For writing or a picture whose size, words or layer changed while it was being carried: the thing in hand
+///is the same thing, drawn differently, and picking it up afresh would drop the turn and the mirror somebody
+///had already given it. Nothing happens when nothing is in hand - a change made with nothing carried is a
+///setting for the next one, not a reason to pick something up.
+///
+function replaceCarried(markup, middleX, middleY) {
+    if (!carrying.active)
+        return;
+
+    carrying.markup = markup;
+    carrying.middle = { x: middleX, y: middleY };
+
+    carryNode().innerHTML = markup;
+
+    placeCarried();
 }
 
 ///A quarter to the right, on whatever is being carried. Ctrl+R, and nothing at all when nothing is.
@@ -2374,6 +2582,718 @@ function carryNode() {
     return group;
 }
 
+//A picture as squares/////////////////////////////
+
+///
+///Lets the same file be chosen again.
+///
+///A file input reports a change and nothing else, and choosing the file it already holds is not a change - so
+///a logo tidied up in a paint program and chosen again under the same name would be silently ignored. Cleared
+///once the file has been read, which is the last thing the input is needed for.
+///
+function forgetChosenFile(id) {
+    const input = document.getElementById(id);
+
+    if (input != null)
+        input.value = '';
+}
+
+///
+///A picture read into squares: `across` of them wide, as many high as its proportions make that, and each
+///one lit or not - see litRows for which, and drawnSide for which side of the picture that is, told by the
+///ground round its edge. Null when the browser cannot read the bytes as a picture at all.
+///
+///With its own size in pixels beside them, which is the most squares across worth reading it at, and the side
+///that was taken as the shape, for a picture with nothing on it to be said as one.
+///
+///**Here because a canvas is the only thing in the app that can read a PNG.** What happens to the squares
+///afterwards - outlines, merging, units - is C#'s, and testable there; this only turns a file into rows.
+///
+///An `across` of nothing means as many as the picture has pixels, so a small monochrome logo comes through
+///one square a pixel, exactly as drawn. Nothing comes out wider or taller than `most`, a ceiling C# sets: a
+///photograph read at its own resolution would be millions of squares, and a layout of millions of
+///shapes is not a logo.
+///
+///**Smoothed only on the way down.** Shrunk, a pixel that is half edge comes out half gray and the threshold
+///decides it, which is the faithful answer; grown, smoothing would round every corner of a picture whose
+///pixels were the point, so each one is copied as the block it was.
+///
+async function pictureSquares(bytes, type, across, most) {
+    const address = URL.createObjectURL(new Blob([bytes], { type: type || '' }));
+    const picture = new Image();
+
+    try {
+        picture.src = address;
+
+        await picture.decode();
+    }
+    catch {
+        URL.revokeObjectURL(address);
+
+        return null;
+    }
+
+    const naturalWidth = picture.naturalWidth;
+    const naturalHeight = picture.naturalHeight;
+
+    //A picture that decodes with no size - an SVG with neither a width nor a viewBox - has no shape to keep.
+    if (!(naturalWidth > 0) || !(naturalHeight > 0)) {
+        URL.revokeObjectURL(address);
+
+        return null;
+    }
+
+    let width = naturalWidth;
+
+    if (across > 0)
+        width = across;
+
+    width = Math.max(1, Math.min(width, most));
+
+    let height = Math.max(1, Math.round(naturalHeight * width / naturalWidth));
+
+    //A tall picture is held to the ceiling by its height instead, keeping its proportions.
+    if (height > most) {
+        width = Math.max(1, Math.round(width * most / height));
+        height = most;
+    }
+
+    const canvas = document.createElement('canvas');
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const drawing = canvas.getContext('2d', { willReadFrequently: true });
+
+    drawing.imageSmoothingEnabled = width < naturalWidth;
+    drawing.imageSmoothingQuality = 'high';
+    drawing.drawImage(picture, 0, 0, width, height);
+
+    URL.revokeObjectURL(address);
+
+    const pixels = drawing.getImageData(0, 0, width, height).data;
+    const drawn = window.viewGeometry.drawnSide(pixels, width, height);
+
+    return {
+        width: width,
+        height: height,
+        naturalWidth: naturalWidth,
+        naturalHeight: naturalHeight,
+        drawn: drawn,
+        rows: window.viewGeometry.litRows(pixels, width, height, drawn)
+    };
+}
+
+//Writing or a picture just put down//////////////
+
+const PIECE_ID = 'pieceFrame';
+
+///How big the corner's square is, in screen pixels whatever the zoom.
+const PIECE_HANDLE_PIXELS = 11;
+
+///
+///How far a press on the frame goes, in screen pixels, before it is a drag: less is a hand that shook in a click or a
+///double-click, which moved the piece by a unit or two and put it down again under the pointer (2026-11-01).
+///
+const PIECE_DRAG_PIXELS = 4;
+
+///
+///Writing or a picture just put down, with a frame round it: its corner sizes it and its middle moves it, until
+///Enter, Escape or a press anywhere else puts it down for good - asked for 2026-10-19, in place of the panels'
+///boxes for a height, a size of square and a number of squares across.
+///
+///**The frame is drawn here and the shapes are C#'s.** What is under the frame is already in the file, as one
+///step of undo. A drag moves only the frame; on the release C# puts the writing or the picture down again in
+///its own place, at the new size or in the new place - the same step, so one undo still takes all of it back.
+///Drawing a picture again is a canvas read and a merge, which is a release's worth of work rather than a
+///pointer move's.
+///
+let piece = {
+    active: false,
+    view: null,
+
+    ///'text' or 'picture'. A double-click on writing opens a box for its words.
+    kind: '',
+
+    ///The frame, in the layout's own units: its corner nearest the origin, and its size.
+    box: null,
+
+    ///A drag under way: 'size' from the corner or 'move' from anywhere else inside, where it began, and the
+    ///frame it has made so far.
+    drag: null,
+
+    ///The two arrows' icons, { left, right }, as the toolbar draws Turn left and Turn right - see drawPieceFrame.
+    arrows: null
+};
+
+function showPiece(view, kind, x, y, width, height, arrows) {
+    piece.active = true;
+    piece.view = view;
+    piece.kind = kind;
+    piece.box = { x: x, y: y, width: width, height: height };
+    piece.drag = null;
+    piece.arrows = arrows || null;
+
+    drawPieceFrame(piece.box);
+}
+
+function hidePiece() {
+    piece.active = false;
+    piece.view = null;
+    piece.drag = null;
+
+    const frame = document.getElementById(PIECE_ID);
+
+    if (frame != null)
+        frame.remove();
+}
+
+///Puts the frame back after a render took it out, the way restoreCarried puts back what is in hand.
+function restorePiece() {
+    if (!piece.active || svg == null || document.getElementById(PIECE_ID) != null)
+        return;
+
+    drawPieceFrame(pieceShown());
+}
+
+///The frame where it is seen: where a drag has taken it, or where the piece is.
+function pieceShown() {
+    if (piece.drag != null && piece.drag.shown != null)
+        return piece.drag.shown;
+
+    return piece.box;
+}
+
+///Drawn again for a new zoom, since the corner's square is a size on the screen rather than in the layout.
+function scalePiece() {
+    if (piece.active)
+        drawPieceFrame(pieceShown());
+}
+
+///
+///The frame, and the square on its corner that sizes it.
+///
+///The corner farthest from the origin, which is the bottom right on screen: this view draws Y downward, so the
+///frame's top left is the one place in it that stays put while it is sized.
+///
+function drawPieceFrame(box) {
+    if (svg == null || box == null)
+        return;
+
+    let frame = document.getElementById(PIECE_ID);
+
+    if (frame == null) {
+        frame = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        frame.setAttribute('id', PIECE_ID);
+
+        svg.appendChild(frame);
+    }
+
+    const perPixel = unitsPerPixel() || 1;
+    const handle = PIECE_HANDLE_PIXELS * perPixel;
+
+    const outline = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+
+    outline.setAttribute('class', 'pieceOutline');
+    outline.setAttribute('x', box.x);
+    outline.setAttribute('y', box.y);
+    outline.setAttribute('width', Math.max(box.width, 0));
+    outline.setAttribute('height', Math.max(box.height, 0));
+
+    const corner = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+
+    corner.setAttribute('class', 'pieceHandle');
+    corner.setAttribute('x', box.x + box.width - (handle / 2));
+    corner.setAttribute('y', box.y + box.height - (handle / 2));
+    corner.setAttribute('width', handle);
+    corner.setAttribute('height', handle);
+
+    frame.replaceChildren(outline, corner);
+
+    //
+    //**And two arrows over it that turn it a quarter either way** - asked for 2026-10-21, beside R and Shift+R. Over the
+    //middle of its top edge, which is where the pointer is: writing and pictures go down with their middle where they
+    //were put. Not while it is dragged, when they would be a press away from turning a frame in mid-air.
+    //
+    if (piece.arrows != null && piece.drag == null) {
+        const size = PIECE_ARROW_PIXELS * perPixel;
+        const apart = PIECE_ARROW_APART_PIXELS * perPixel;
+        const top = box.y - (PIECE_ARROW_GAP_PIXELS * perPixel) - size;
+        const middle = box.x + (box.width / 2);
+
+        frame.appendChild(pieceArrow('left', piece.arrows.left, middle - size - (apart / 2), top, size, 'Turn left a quarter (Shift+R)'));
+        frame.appendChild(pieceArrow('right', piece.arrows.right, middle + (apart / 2), top, size, 'Turn right a quarter (R)'));
+    }
+
+    //How big it is coming out, beside the corner while it is being dragged.
+    if (piece.drag != null && piece.drag.mode === 'size' && piece.drag.shown != null) {
+        const size = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+
+        size.setAttribute('class', 'pieceSize');
+        size.setAttribute('x', box.x + box.width + handle);
+        size.setAttribute('y', box.y + box.height + (handle * 1.6));
+        size.setAttribute('font-size', 12 * perPixel);
+        size.textContent = pieceSizeSaid(box);
+
+        frame.appendChild(size);
+    }
+}
+
+///How big each of the frame's arrows is, how far over the frame they sit, and how far apart, in screen pixels.
+const PIECE_ARROW_PIXELS = 22;
+const PIECE_ARROW_GAP_PIXELS = 8;
+const PIECE_ARROW_APART_PIXELS = 4;
+
+///
+///One of the frame's arrows: a square with the toolbar's own turn icon in it, which a press turns the piece a quarter
+///that way - see onPieceDown. Its tooltip is an SVG title, which is what a drawing has for one. The icon is drawn on
+///16 units, set a sixth of the square in from each side.
+///
+function pieceArrow(way, icon, x, y, size, says) {
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+    arrow.setAttribute('class', 'pieceTurn');
+    arrow.setAttribute('data-turn', way);
+
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+
+    title.textContent = says;
+
+    const face = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+
+    face.setAttribute('class', 'pieceTurnFace');
+    face.setAttribute('x', x);
+    face.setAttribute('y', y);
+    face.setAttribute('width', size);
+    face.setAttribute('height', size);
+    face.setAttribute('rx', size * 0.2);
+
+    const inset = size / 6;
+    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+    glyph.setAttribute('class', 'pieceTurnIcon');
+    glyph.setAttribute('transform', 'translate(' + (x + inset) + ' ' + (y + inset) + ') scale(' + ((size - (2 * inset)) / 16) + ')');
+    glyph.innerHTML = icon;
+
+    arrow.replaceChildren(title, face, glyph);
+
+    return arrow;
+}
+
+///
+///Asks C# to turn the piece a quarter 'right' or 'left', or mirror it 'across' or 'down' - see OnPieceTurned. Not
+///while its frame is being dragged, which would end on a frame the size it was before the turn.
+///
+function turnPiece(way) {
+    if (piece.view == null || piece.drag != null)
+        return;
+
+    piece.view.invokeMethodAsync('OnPieceTurned', way);
+}
+
+///A frame's size as the readout says sizes: microns when the file says what a unit is.
+function pieceSizeSaid(box) {
+    if (scaleMicronsPerUnit == null)
+        return Math.round(box.width) + ' × ' + Math.round(box.height);
+
+    const across = Math.round(box.width * scaleMicronsPerUnit * 1000) / 1000;
+    const down = Math.round(box.height * scaleMicronsPerUnit * 1000) / 1000;
+
+    return across + ' × ' + down + ' µm';
+}
+
+///
+///A press while the frame is up: on the frame it starts a drag, and anywhere else it puts the piece down for good
+///and goes on to whatever it was for - true when it was the frame's.
+///
+function onPieceDown(event) {
+    const frame = document.getElementById(PIECE_ID);
+    const target = event.target;
+
+    if (frame == null || target == null || !frame.contains(target)) {
+        //With its words' box open, the box's own dismissal puts it down, keeping what was typed - see
+        //onDismissRetype. Only the frame goes from here.
+        if (document.getElementById(WORDS_BOX_ID) != null)
+            hidePiece();
+        else
+            endPiece();
+
+        return false;
+    }
+
+    //One of the arrows over it: a quarter that way, and no drag.
+    const arrow = target.closest('.pieceTurn');
+
+    if (arrow != null) {
+        event.preventDefault();
+
+        turnPiece(arrow.getAttribute('data-turn'));
+
+        return true;
+    }
+
+    const from = layoutPointFromEvent(event);
+
+    if (from == null)
+        return true;
+
+    let mode = 'move';
+
+    if (target.classList != null && target.classList.contains('pieceHandle'))
+        mode = 'size';
+
+    event.preventDefault();
+
+    piece.drag = { mode: mode, from: from, box: { ...piece.box }, shown: null, clientX: event.clientX, clientY: event.clientY };
+
+    return true;
+}
+
+///
+///The frame following the pointer: sized from its fixed corner, its proportions kept, or moved whole.
+///
+///**Sized along its own diagonal** - by how far the pointer has gone along the line from the fixed corner through
+///the dragged one - so a frame wider than it is tall is sized by going across and a tall one by going down. It was
+///sized by whichever of the two had gone further in proportion, and on a line of writing seven squares tall a hand
+///drifting down a few pixels as it went across made it twice as wide.
+///
+function onPieceMove(event) {
+    const drag = piece.drag;
+    const at = layoutPointFromEvent(event);
+
+    if (drag == null || at == null || !(drag.box.width > 0) || !(drag.box.height > 0))
+        return;
+
+    if (drag.shown == null && Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY) < PIECE_DRAG_PIXELS)
+        return;
+
+    const ratio = drag.box.height / drag.box.width;
+
+    if (drag.mode === 'size') {
+        const diagonal = (drag.box.width * drag.box.width) + (drag.box.height * drag.box.height);
+        const along = (((at.x - drag.box.x) * drag.box.width) + ((at.y - drag.box.y) * drag.box.height)) / diagonal;
+        const least = 6 * (unitsPerPixel() || 1);
+        const width = Math.max(least, along * drag.box.width);
+
+        drag.shown = { x: drag.box.x, y: drag.box.y, width: width, height: width * ratio };
+    }
+    else {
+        drag.shown = {
+            x: drag.box.x + (at.x - drag.from.x),
+            y: drag.box.y + (at.y - drag.from.y),
+            width: drag.box.width,
+            height: drag.box.height
+        };
+    }
+
+    drawPieceFrame(drag.shown);
+}
+
+///
+///The drag over: C# puts the piece down again at the frame's new size or in its new place, and shows the frame
+///round what it made. A press that went nowhere changes nothing.
+///
+function onPieceUp() {
+    const drag = piece.drag;
+
+    piece.drag = null;
+
+    //
+    //A press that went nowhere leaves the frame as it is. Drawn again, its outline and corner would be new elements, and
+    //the browser fires no click - nor the double-click that opens writing's words - for a press that came down on an
+    //element no longer there (2026-11-01, asked for: the double-click did nothing once the words had been kept).
+    //
+    if (drag == null || drag.shown == null || piece.view == null) {
+        if (piece.active && drag != null && drag.shown != null)
+            drawPieceFrame(piece.box);
+
+        return;
+    }
+
+    if (drag.mode === 'size') {
+        if (drag.shown.width !== drag.box.width)
+            piece.view.invokeMethodAsync('OnPieceSized', drag.shown.width);
+    }
+    else if (drag.shown.x !== drag.box.x || drag.shown.y !== drag.box.y) {
+        piece.view.invokeMethodAsync('OnPieceMoved', drag.shown.x - drag.box.x, drag.shown.y - drag.box.y);
+    }
+
+    //Drawn without the size beside it, where the drag left it, until C# shows it round what it put down.
+    drawPieceFrame(drag.shown);
+}
+
+///Put down for good: the frame goes, and C# lets go of it.
+function endPiece() {
+    const view = piece.view;
+
+    hidePiece();
+
+    if (view != null)
+        view.invokeMethodAsync('OnPieceDone');
+}
+
+///
+///The keys that belong to the piece while its frame is up. Enter and Escape put it down for good - Escape too,
+///since it is already in the file and the frame is all there is to leave - and Delete or Backspace take it
+///back, the way they take back anything chosen.
+///
+///**R turns it a quarter to the right and Shift+R to the left** (2026-10-21, asked for), and with Ctrl as well, which
+///is what turns a cell or a generated structure in hand - so one habit turns both. A bare R is no tool's, unlike the
+///letters shortcutFor answers to. Ctrl+M mirrors it top to bottom, as it mirrors what is in hand; a bare M is Measure.
+///
+function onPieceKey(event) {
+    const key = event.key.toLowerCase();
+    const held = event.ctrlKey === true || event.metaKey === true;
+
+    if (key === 'r' && !event.altKey) {
+        event.preventDefault();
+
+        if (event.shiftKey)
+            turnPiece('left');
+        else
+            turnPiece('right');
+
+        return true;
+    }
+
+    if (key === 'm' && held && !event.altKey) {
+        event.preventDefault();
+
+        turnPiece('down');
+
+        return true;
+    }
+
+    if (event.key === 'Escape' || event.key === 'Enter') {
+        event.preventDefault();
+
+        endPiece();
+
+        return true;
+    }
+
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+
+        const view = piece.view;
+
+        hidePiece();
+
+        if (view != null)
+            view.invokeMethodAsync('OnPieceDeleted');
+
+        return true;
+    }
+
+    return false;
+}
+
+///Whether a double-click landed on the frame, which on writing opens a box for its words.
+function pieceUnder(event) {
+    return pieceAt(event.clientX, event.clientY);
+}
+
+///Whether a point in the window is on the frame or its arrows - for the right button too, which C# asks about, since its menu is Blazor's.
+function pieceAt(x, y) {
+    const frame = document.getElementById(PIECE_ID);
+
+    if (frame == null)
+        return false;
+
+    for (const node of document.elementsFromPoint(x, y)) {
+        if (frame.contains(node))
+            return true;
+    }
+
+    return false;
+}
+
+///
+///Where the frame is drawn, in pixels from the corner of the view - for the box the words are typed into, the
+///way labelBox finds a label. Waits a few frames for it, since it is asked for straight after the edit.
+///
+async function pieceBox() {
+    const wrapper = document.getElementById('svgWrapper');
+
+    if (wrapper == null)
+        return null;
+
+    for (let tries = 0; tries < 30; tries++) {
+        const outline = document.querySelector('#' + PIECE_ID + ' .pieceOutline');
+
+        if (outline != null) {
+            const box = outline.getBoundingClientRect();
+            const frame = wrapper.getBoundingClientRect();
+
+            return { x: box.x - frame.x, y: box.y - frame.y, width: box.width, height: box.height };
+        }
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    return null;
+}
+
+//A picture or words brought in by a drop or a paste/////
+
+const PICTURE_INPUT_ID = 'stampPicture';
+
+///Where the picture handed over last should land, in the layout's units - or null for the middle of the view.
+let pictureAt = null;
+
+///
+///Whether a file is a picture: by its type, or by its name when the browser did not say.
+///
+///**Not an SVG**, which is a drawing in lines rather than a grid of pixels: Open reads one as shapes, a layer to each
+///color, and a drop does the same now. Counted as a picture, a drop on the drawing turned it into squares instead,
+///and offered nothing else (the 2026-10-21 audit).
+///
+function isPictureFile(file) {
+    if (file == null)
+        return false;
+
+    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name || ''))
+        return false;
+
+    if (typeof file.type === 'string' && file.type.startsWith('image/'))
+        return true;
+
+    return /\.(png|jpe?g|gif|bmp|webp)$/i.test(file.name || '');
+}
+
+///
+///A picture dropped or pasted on the drawing, handed to the Image row's own file input, and where it should land.
+///
+///**Through the input rather than around it**, the reason fileDrop gives for a layout: choosing a picture from
+///the menu already arrives there, and a second way in that read the bytes itself would be a second copy of the
+///reading, the refusals and the placing. False when the input is not there - a page that may not edit - or is not
+///listened to yet, so the caller can do what it would have done.
+///
+function handPicture(file, at) {
+    const input = document.getElementById(PICTURE_INPUT_ID);
+
+    if (input == null || input._blazorInputFileNextFileId === undefined || !isPictureFile(file))
+        return false;
+
+    const files = new DataTransfer();
+
+    files.items.add(file);
+
+    pictureAt = at;
+
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    return true;
+}
+
+///A picture dropped on the drawing, to land where it was let go. See fileDrop.js, which asks.
+function handDroppedPicture(event, file) {
+    return handPicture(file, layoutPointFromEvent(event));
+}
+
+///Where the picture just read should land, given once: a picture chosen from the menu afterwards has no say.
+function takePictureAt() {
+    const at = pictureAt;
+
+    pictureAt = null;
+
+    return at;
+}
+
+///
+///What copying shapes put on the clipboard, and whether it could.
+///
+///**Words on the clipboard are the way a paste tells shapes from writing.** Ctrl+V writes the clipboard's text
+///as shapes now, so copying shapes has to leave something there that says the next paste is them - otherwise
+///text copied from anywhere, at any time before, would be written instead. A sentence rather than nothing, since
+///pasted into anything else it says what it was.
+///
+let copiedMarker = null;
+
+///When the window was last come back to, which is the latest anything could have been copied somewhere else.
+let windowFocusedAt = 0;
+
+window.addEventListener('focus', function () {
+    windowFocusedAt = Date.now();
+});
+
+async function markShapesCopied(count) {
+    let text = count + ' shapes copied in GDS Viewer';
+
+    if (count === 1)
+        text = '1 shape copied in GDS Viewer';
+
+    copiedMarker = { text: text, written: false, at: Date.now() };
+
+    try {
+        await navigator.clipboard.writeText(text);
+
+        copiedMarker.written = true;
+    }
+    catch { }
+}
+
+///
+///Whether a paste is the shapes copied here: the clipboard says so, or the browser would not let this write it
+///and nothing can have been copied anywhere else since - the window has not been left.
+///
+function shapesWereCopied(text) {
+    if (/^\d+ shapes? copied in GDS Viewer$/.test(text.trim()))
+        return true;
+
+    return copiedMarker != null && !copiedMarker.written && copiedMarker.at > windowFocusedAt;
+}
+
+///
+///Ctrl+V on the drawing: the shapes copied here, words, or a picture - whatever the clipboard holds.
+///
+///**The paste event rather than the key**, since only the event carries the clipboard, and without asking: the
+///key is the permission. So the key is let through to the browser - see onEditorKey - and this is where it lands.
+///
+///**Words before a picture.** A spreadsheet or a document copies a picture of what was selected beside its text,
+///and the text is what was meant; a screenshot or a picture copied in a browser has no text to come first.
+///
+function onEditorPaste(event) {
+    if (document.getElementById('gdsSVG') == null || keys.view == null)
+        return;
+
+    if (isTyping(document.activeElement))
+        return;
+
+    event.preventDefault();
+
+    const data = event.clipboardData;
+    let text = '';
+    let picture = null;
+
+    if (data != null) {
+        text = data.getData('text/plain') || '';
+
+        for (const file of Array.from(data.files || [])) {
+            if (isPictureFile(file)) {
+                picture = file;
+
+                break;
+            }
+        }
+    }
+
+    if (shapesWereCopied(text) || (text.trim() === '' && picture == null)) {
+        keys.view.invokeMethodAsync('OnShortcut', 'paste');
+
+        return;
+    }
+
+    if (text.trim() !== '') {
+        keys.view.invokeMethodAsync('OnTextPasted', text);
+
+        return;
+    }
+
+    handPicture(picture, pointerLayoutPoint());
+}
+
 ///The preview element of the right kind, replacing one of the wrong kind if that is what is there.
 function previewNode(kind) {
     let preview = document.getElementById(DRAW_ID);
@@ -2425,7 +3345,29 @@ function onEditorKey(event) {
     if (document.getElementById('gdsSVG') == null || keys.view == null)
         return;
 
-    if (isTyping(document.activeElement))
+    //
+    //**And a key typed into a box is the box's, even once the box has gone.** Blazor answers a key before this
+    //hears it, and a box closed by its own key - Enter keeping writing's words - is out of the page by then, the
+    //keyboard back on the body: asked only what has focus now, Enter went on to put the writing down for good.
+    //
+    if (isTyping(document.activeElement) || isTyping(event.target))
+        return;
+
+    //
+    //**A cell in hand comes before everything, the drawing included** - the order the pointer already
+    //keeps, where carrying takes a press before any tool does.
+    //
+    //It sat below the drawing's own keys, and drawing.active is true the whole time the Draw tool is out,
+    //not only while a stroke is under way. So with the pencil in hand - which is where the Draw menu's Cell
+    //picks one up - Escape cleared a drawing that was not there and the cell stayed on the pointer, with
+    //no way to put it back short of placing it. And before the nudge and the shortcuts too: while a cell is
+    //being carried these keys are about the thing in hand rather than about whatever is chosen underneath.
+    //
+    if (carrying.active && onCarryKey(event))
+        return;
+
+    //And the frame round what was just put down: Enter or Escape put it down for good, Delete takes it back.
+    if (piece.active && onPieceKey(event))
         return;
 
     //
@@ -2450,11 +3392,6 @@ function onEditorKey(event) {
     if (drawing.active && (drawing.mode === 'poly' || drawing.mode === 'path') && onOutlineKey(event))
         return;
 
-    //Before the nudge and before the shortcuts: while a cell is being carried these keys are about the thing
-    //in hand rather than about whatever is chosen underneath it.
-    if (carrying.active && onCarryKey(event))
-        return;
-
     if (nudge(event))
         return;
 
@@ -2463,9 +3400,32 @@ function onEditorKey(event) {
     if (what == null)
         return;
 
+    //Words selected are the browser's to copy and cut - see wordsSelected.
+    if ((what === 'copy' || what === 'cut') && wordsSelected())
+        return;
+
+    //A paste is the browser's to start, since only its paste event carries the clipboard - which is what says
+    //whether this is the shapes copied here, words or a picture. See onEditorPaste.
+    if (what === 'paste')
+        return;
+
     event.preventDefault();
 
     keys.view.invokeMethodAsync('OnShortcut', what);
+}
+
+///
+///Whether words are selected for the browser to copy: in the assistant's conversation, a popup - anywhere on the page.
+///
+///**Ctrl+C and Ctrl+X are the browser's then**, as on any page: they copy the words. They were the drawing's whatever
+///was selected, which copied the chosen shape and left the clipboard alone - so nothing selected in the chat could be
+///copied with the keyboard while the 2D view was up. A press on the drawing puts such words away (see onPointerDown),
+///so after one the keys are the drawing's again.
+///
+function wordsSelected() {
+    const selected = window.getSelection();
+
+    return selected != null && !selected.isCollapsed && selected.toString().trim() !== '';
 }
 
 ///Whether the keyboard belongs to something being written in rather than to the layout.
@@ -2582,41 +3542,53 @@ let scaleMicronsPerUnit = null;
 ///rebuild - which is exactly why it is smooth. Telling C# on every pointer move would put a rebuild of the
 ///whole markup in the middle of the one interaction that had none.
 ///
-///**Grown by a margin before it is sent**, so an ordinary pan moves nothing new into view and costs
-///nothing at all; only a pan that leaves the margin behind is worth a rebuild. Half a viewport each way,
-///which is a drag most of the way across the window.
+///**The area as it is, with no margin.** C# draws a margin around it and decides whether what is on screen
+///is still inside what it drew, so the margin is its number to keep - see ViewMargin in Viewer2DSvg. It was
+///added here once, and C# compared the grown box with the last grown box: any pan at all moves a grown box out
+///of the last one on its leading edge, so every pan rebuilt the picture the margin was there to spare.
 ///
-const VIEW_MARGIN = 0.5;
-
 let viewSettling = null;
 
 function reportViewBox() {
     if (keys.view == null)
         return;
 
+    const report = viewReport();
+
+    if (report == null)
+        return;
+
+    keys.view.invokeMethodAsync('OnViewBoxChanged', ...report);
+}
+
+///
+///What reportViewBox sends: the area shown - left, bottom, right, top - and how many layout units a pixel is.
+///Null when nothing is shown yet.
+///
+///Its own function so fitToBounds can hand the same five numbers straight back, and the two can never send
+///different answers about one frame.
+///
+function viewReport() {
     const shown = shownArea();
 
     if (shown == null)
-        return;
+        return null;
 
-    const marginX = shown.width * VIEW_MARGIN;
-    const marginY = shown.height * VIEW_MARGIN;
-
-    keys.view.invokeMethodAsync(
-        'OnViewBoxChanged',
-        shown.x - marginX,
-        shown.y - marginY,
-        shown.x + shown.width + marginX,
-        shown.y + shown.height + marginY,
-        unitsPerPixel());
+    return [
+        shown.x,
+        shown.y,
+        shown.x + shown.width,
+        shown.y + shown.height,
+        unitsPerPixel()
+    ];
 }
 
 ///
 ///And where it is looking, exactly, so the session can put it back.
 ///
-///**Not the box reportViewBox sends.** That one is the *shown* area grown by half a viewport each way,
-///which is right for deciding what is worth drawing and wrong for coming back to - restoring it would zoom
-///out by the margin every time, and again on the visit after that. This is the viewBox itself.
+///**Not the box reportViewBox sends.** That one is the area *shown*, with the bands the window adds either
+///side of the viewBox, which is what is worth drawing. A session keeps the viewBox itself - what was set -
+///and the window adds its bands again, however wide it is next time.
 ///
 ///Told on settle for the same reason as the other, and separately because that one gives up early on a
 ///layout small enough not to need culling - which is most files, and all of them should come back where
@@ -2653,7 +3625,14 @@ function reportViewSettledWhenStill() {
     }, 1000);
 }
 
+///
 ///Waits for the gesture to stop before asking for that, so a drag is one report rather than a hundred.
+///
+///**And puts the viewBox on in the same moment.** Until now the gesture has only moved the picture - see
+///showViewBox - and both the new viewBox and a picture rebuilt for it cost the browser a raster of the whole
+///drawing. Done together, in one task, they are one raster rather than two: the report reaches C#, which
+///rebuilds the markup and hands it over before control comes back here.
+///
 function reportViewBoxWhenSettled() {
     if (viewSettling != null)
         clearTimeout(viewSettling);
@@ -2661,10 +3640,104 @@ function reportViewBoxWhenSettled() {
     viewSettling = setTimeout(function () {
         viewSettling = null;
 
+        commitViewBox();
         reportViewBox();
     }, 140);
 
     reportViewSettledWhenStill();
+}
+
+///
+///A gesture has started, so a settle still waiting from the last one waits for this one instead.
+///
+///Left to run, it would land in the middle of the drag: the viewBox put on and the picture rebuilt while the
+///pointer is still moving, which is a raster of the whole drawing in the one place there should be none. The
+///end of this gesture reports, as every end does, and that report covers both.
+///
+function holdSettling() {
+    if (viewSettling == null)
+        return;
+
+    clearTimeout(viewSettling);
+
+    viewSettling = null;
+}
+
+///
+///The shift the picture is wearing while a gesture is under way, or null when the viewBox is where the view is.
+///
+let pictureShift = null;
+
+///Where the view is now, whether or not the viewBox says so yet.
+function targetViewBox() {
+    return { x: newViewBox.x, y: newViewBox.y, width: viewBox.width, height: viewBox.height };
+}
+
+///
+///Shows the view where a gesture has taken it, by moving the picture already drawn rather than drawing it again.
+///
+///**Setting the viewBox on every move had the browser raster the whole drawing every frame.** The SVG is
+///painted as one picture, and a new viewBox is a new picture: on the RGB mixer a few notches in from its fit,
+///170,000 shapes, that was 117 ms a frame - and nearly all of it was the GPU process reading the picture back
+///in, tile by tile, every frame. Moving what is already drawn is the compositor's job and costs a frame nothing,
+///whatever the drawing holds, so a drag, a wheel and a pinch all move the picture with a CSS transform and the
+///viewBox is put on once, when the gesture stops. See commitViewBox.
+///
+///**Three things make that work.** The SVG is a layer of its own (`will-change`), so it can be moved without
+///being painted again; it shows what it draws past its own edges (`overflow: visible`), which is the margin
+///the view already builds the picture with, so a drag uncovers shapes rather than blank; and the canvas
+///clips to the view, so what is past the edges stays inside it. See #gdsSVG in app.css.
+///
+///Everything that maps the pointer to the layout keeps working unchanged in between: getScreenCTM includes the
+///element's transform, so a press, the readout and a wheel's anchor all land where the picture shows.
+///
+function showViewBox() {
+    if (svg == null)
+        return;
+
+    const applied = currentViewBox();
+    const width = svg.clientWidth;
+    const height = svg.clientHeight;
+
+    //Nothing drawn to move yet - before the first viewBox, or with the view not laid out - so it goes straight on.
+    if (applied == null || !(width > 0) || !(height > 0)) {
+        commitViewBox();
+
+        return;
+    }
+
+    pictureShift = window.viewGeometry.viewBoxShift(applied, targetViewBox(), width, height);
+
+    svg.style.transform = `matrix(${pictureShift.scale}, 0, 0, ${pictureShift.scale}, ${pictureShift.x}, ${pictureShift.y})`;
+}
+
+///
+///Puts the view on the viewBox and takes the picture's shift off, in the same moment, and puts right what is
+///sized against the view: the ruler, the grid, the stipples and the outlines.
+///
+///Nothing at all when the viewBox is already the view, which is every press that did not move anything: the
+///grid is drawn again from scratch, and drawing it is a raster of the whole drawing under it.
+///
+function commitViewBox() {
+    if (svg == null)
+        return;
+
+    const target = targetViewBox();
+    const text = `${target.x} ${target.y} ${target.width} ${target.height}`;
+
+    if (pictureShift == null && svg.getAttribute('viewBox') === text)
+        return;
+
+    svg.setAttribute('viewBox', text);
+    svg.style.transform = '';
+
+    pictureShift = null;
+
+    drawRuler();
+    drawGrid();
+    scalePatterns();
+    scaleOutlines();
+    scalePiece();
 }
 
 ///
@@ -2699,14 +3772,10 @@ function applyViewBox(text) {
     newViewBox.x = x;
     newViewBox.y = y;
 
-    svg.setAttribute('viewBox', `${x} ${y} ${width} ${height}`);
-
-    //Both are drawn across whatever is on screen, which has just become somewhere else. Same as the fit.
-    drawRuler();
-    drawGrid();
-
-    //And the stipples, which are held at a size on screen rather than in the layout.
-    scalePatterns();
+    //Straight on, with whatever is drawn across what is on screen drawn again. A gesture's settle still
+    //waiting would only put back the view this replaces.
+    holdSettling();
+    commitViewBox();
 
     //And so has what is worth drawing at all.
     reportViewBox();
@@ -2791,8 +3860,40 @@ function fitToDrawing() {
         return;
     }
 
+    frameOn(box);
+}
+
+///
+///Frames a box the caller worked out, rather than whatever happens to be drawn.
+///
+///**For a layout big enough that the view draws only what is on screen.** Measuring the drawing frames the
+///drawing, and there that is only the part being looked at: Center on a large layout zoomed in framed the
+///window it was looking through, a little larger. And opening one meant drawing every shape in it first, at a
+///zoom nothing had been decided for, so that there was something to measure - eleven seconds of building a
+///picture of 222,000 shapes on the dev server, thrown away the moment the fit replaced it with the 63,000
+///big enough to see.
+///
+///So C# hands over the layout's own extent, which it already has, and gets back what reportViewBox would send -
+///the shown area with its margin, and the units a pixel is - so it can draw for this frame straight away.
+///Null when there is no view to frame, which the caller answers by measuring the drawing as before.
+///
+function fitToBounds(x, y, width, height) {
+    if (svg == null)
+        return null;
+
+    if (!frameOn({ x: x, y: y, width: width, height: height }))
+        return null;
+
+    return viewReport();
+}
+
+///
+///Puts the view on a box with a tenth of a margin, squared off to the wider side. False for a box with no
+///size, which is not a viewBox a browser will draw.
+///
+function frameOn(box) {
     if (box == null || !(box.width > 0) || !(box.height > 0))
-        return;
+        return false;
 
     const size = Math.max(box.width, box.height) * 1.1;
 
@@ -2804,14 +3905,9 @@ function fitToDrawing() {
     newViewBox.x = viewBox.x;
     newViewBox.y = viewBox.y;
 
-    svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
-
-    //Both are drawn across whatever is on screen, which has just become somewhere else entirely.
-    drawRuler();
-    drawGrid();
-
-    //And the stipples, which are held at a size on screen rather than in the layout.
-    scalePatterns();
+    //Straight on, with the ruler, the grid, the stipples and the outlines drawn for it - see applyViewBox.
+    holdSettling();
+    commitViewBox();
 
     //And so has what is worth drawing at all.
     reportViewBox();
@@ -2826,6 +3922,33 @@ function fitToDrawing() {
     //
     //The effect is that a file nobody has moved carries no box, and comes back framed. Which is right.
     //
+
+    return true;
+}
+
+///
+///Zooms from the buttons beside Center: that many of the wheel's notches, positive in and negative out, about the
+///middle of the view - see viewGeometry.zoomedAboutMiddle.
+///
+///**Moved now and drawn once it stops**, the wheel's way - see showViewBox - so a run of presses is one rebuild
+///after the last of them rather than one each.
+///
+function zoomViewBy(notches) {
+    if (svg == null || notches === 0)
+        return;
+
+    const zoomed = window.viewGeometry.zoomedAboutMiddle(targetViewBox(), notches);
+
+    viewBox.x = zoomed.x;
+    viewBox.y = zoomed.y;
+    viewBox.width = zoomed.width;
+    viewBox.height = zoomed.height;
+
+    newViewBox.x = zoomed.x;
+    newViewBox.y = zoomed.y;
+
+    showViewBox();
+    reportViewBoxWhenSettled();
 }
 
 function setScale(micronsPerUnit) {
@@ -2874,7 +3997,7 @@ function showCursorAt(event) {
 ///keeping track.
 ///
 ///This is the last position **over the SVG**, which is the useful one and not an accident of where the
-///listener happens to be. The pointer travelling off the view onto a panel, or onto the menu it just opened
+///listener happens to be. The pointer traveling off the view onto a panel, or onto the menu it just opened
 ///with the right button, leaves this at the last place in the drawing it was - which is where somebody
 ///pressing Paste on that menu means.
 ///
@@ -2912,6 +4035,13 @@ const GRID_ID = 'gridOverlay';
 const GRID_LEAST_PIXELS = 5;
 
 ///
+///How far past each edge of the view the grid is drawn, as a share of the view's width and height: the half a
+///view the picture is drawn with, so a drag uncovers grid lines along with the shapes. Must match ViewMargin in
+///Viewer2DSvg, which decides how far the shapes go.
+///
+const VIEW_MARGIN = 0.5;
+
+///
 ///Sets the grid up, and is safe to call on every render.
 ///
 ///Called after each one on purpose: Blazor owns the markup inside the SVG and replaces it wholesale, which
@@ -2936,6 +4066,8 @@ function applyGrid(show, snap, pitch, toShapes) {
     //And the same reasoning for the fill patterns: a render replaces the <pattern> elements with fresh ones
     //carrying no transform, so this is the one call that cannot take the shortcut below.
     scalePatterns(true);
+
+    scaleOutlines();
 }
 
 ///
@@ -2987,7 +4119,12 @@ function scalePatterns(force) {
     if (patterns.length === 0)
         return;
 
-    const across = svg.getBoundingClientRect().width;
+    let across = svg.getBoundingClientRect().width;
+
+    //Measured as the element is laid out rather than as it is shown: the picture may be wearing a gesture's
+    //scale, and viewBox is already where that gesture is going. See showViewBox.
+    if (pictureShift != null)
+        across = across / pictureShift.scale;
 
     if (!(across > 0) || !(viewBox.width > 0))
         return;
@@ -3015,8 +4152,47 @@ function scalePatterns(force) {
         if (!(wanted > 0))
             wanted = WANTED_PATTERN_PIXELS;
 
-        pattern.setAttribute('patternTransform', `scale(${(wanted * ratio) / tile})`);
+        //Only when it changes. This runs after every render, and a pattern's transform set again is a pattern
+        //changed - which is the whole drawing painted again for a stipple that came out the size it already was.
+        const scaled = `scale(${(wanted * ratio) / tile})`;
+
+        if (pattern.getAttribute('patternTransform') !== scaled)
+            pattern.setAttribute('patternTransform', scaled);
     }
+}
+
+///
+///How wide a shape's outline is, in layout units. Must match SvgWriter.OutlineWidth, which is what writes it.
+///
+const OUTLINE_UNITS = 6;
+
+///
+///Below this much of a pixel, an outline is not a line anybody can see - and still costs one to draw.
+///
+const LEAST_OUTLINE_PIXELS = 0.25;
+
+///
+///Leaves the shapes' outlines out once they are too thin to see.
+///
+///**Every shape is stroked**, so a picture says where one shape ends and the next begins - at six layout
+///units, two pixels across a standard cell and a fortieth of one across a whole chip. There the stroke is
+///invisible and nowhere near free: on the RGB mixer at its fit, stroking 63,000 subpaths was 68 of the 117
+///milliseconds a frame of a pan took once the labels were gone. A quarter of a pixel is where it stops being
+///there to see.
+///
+///A class rather than a rebuild, so it follows the wheel as it turns: the markup is only rebuilt once a
+///gesture settles, and a zoom out would carry every outline until then. See #gdsSVG.hairlines in app.css.
+///
+function scaleOutlines() {
+    if (svg == null)
+        return;
+
+    const perPixel = unitsPerPixel();
+
+    if (!(perPixel > 0))
+        return;
+
+    svg.classList.toggle('hairlines', OUTLINE_UNITS / perPixel < LEAST_OUTLINE_PIXELS);
 }
 
 ///
@@ -3036,10 +4212,10 @@ function drawGrid() {
         return;
     }
 
-    const shown = shownArea();
+    const visible = shownArea();
     const perPixel = unitsPerPixel();
 
-    if (shown == null || perPixel <= 0)
+    if (visible == null || perPixel <= 0)
         return;
 
     const minor = grid.pitch / perPixel;
@@ -3051,6 +4227,35 @@ function drawGrid() {
 
         return;
     }
+
+    //
+    //**Past the edges of the view by the margin the shapes are drawn with**, because a drag moves the picture
+    //rather than drawing it again - see showViewBox - and what it uncovers has to have the grid on it as well
+    //as the shapes. Drawn again for where the view is once the drag is over.
+    //
+    const shown = {
+        x: visible.x - (visible.width * VIEW_MARGIN),
+        y: visible.y - (visible.height * VIEW_MARGIN),
+        width: visible.width * (1 + (2 * VIEW_MARGIN)),
+        height: visible.height * (1 + (2 * VIEW_MARGIN))
+    };
+
+    const step = grid.pitch;
+    const wide = step * 10;
+    const lines = [];
+
+    if (minor >= GRID_LEAST_PIXELS)
+        lines.push(gridLines(shown, step, perPixel * 0.6, 0.35));
+
+    lines.push(gridLines(shown, wide, perPixel, 0.6));
+
+    //
+    //**Left alone when it would come out the same.** This runs after every render of the view, and replacing
+    //the grid has the browser paint the whole drawing under it again - on a real chip, the cost of a frame of
+    //a pan, for lines that had not moved.
+    //
+    if (existing != null && sameGrid(existing, lines))
+        return;
 
     let group = existing;
 
@@ -3066,13 +4271,25 @@ function drawGrid() {
     while (group.firstChild != null)
         group.removeChild(group.firstChild);
 
-    const step = grid.pitch;
-    const wide = step * 10;
+    for (const line of lines)
+        group.appendChild(line);
+}
 
-    if (minor >= GRID_LEAST_PIXELS)
-        group.appendChild(gridLines(shown, step, perPixel * 0.6, 0.35));
+///Whether the grid on the page is already the lines that would be drawn.
+function sameGrid(group, lines) {
+    if (group.childNodes.length !== lines.length)
+        return false;
 
-    group.appendChild(gridLines(shown, wide, perPixel, 0.6));
+    for (let i = 0; i < lines.length; i++) {
+        const drawn = group.childNodes[i];
+
+        for (const name of ['d', 'stroke-width', 'opacity']) {
+            if (drawn.getAttribute(name) !== lines[i].getAttribute(name))
+                return false;
+        }
+    }
+
+    return true;
 }
 
 ///
@@ -3277,6 +4494,35 @@ function windowSize() {
 }
 
 ///
+///Brings an element into view inside whatever scrolls it, found by a selector - the rule just added at the foot of the
+///PDK manager's long table, say, which would otherwise land out of sight of the form that made it.
+///
+function scrollToElement(selector) {
+    const element = document.querySelector(selector);
+
+    if (element != null)
+        element.scrollIntoView({ block: 'nearest' });
+}
+
+///
+///How many pixels a picture needs to fill a frame, across and down: the frame's size on the page - or `least` CSS
+///pixels a side if that is more - at the screen's density. For the previews beside the lists, which are drawn as pixels
+///at the size they are shown so they are as sharp as the markup they replaced; see PreviewPictures. Null when there is
+///no such frame.
+///
+function picturePixels(selector, least) {
+    const frame = document.querySelector(selector);
+
+    if (frame == null)
+        return null;
+
+    const box = frame.getBoundingClientRect();
+    const density = window.devicePixelRatio || 1;
+
+    return [Math.round(Math.max(box.width, least) * density), Math.round(Math.max(box.height, least) * density)];
+}
+
+///
 ///Where a point on the screen is in the layout's own coordinates.
 ///
 ///The same conversion as rawLayoutPoint, from a pair of window coordinates rather than from an event -
@@ -3427,16 +4673,14 @@ function geometryIndex() {
     //
     //**A subpath at a time, because the picture is one path per layer.**
     //
-    //Split on the move that starts each shape, so an edge is never invented between the last corner of one
-    //shape and the first of the next - which is what reading the whole path's coordinates as one run would
-    //do, and it would offer a snap along a line that is not drawn anywhere.
+    //One shape each, so an edge is never invented between the last corner of one shape and the first of the
+    //next - which is what reading the whole path's coordinates as one run would do, and it would offer a snap
+    //along a line that is not drawn anywhere. Read through subpaths, since the picture writes a shape as steps
+    //between its corners rather than as the corners themselves.
     //
     for (const shape of svg.querySelectorAll(':scope > path[' + ELEMENTS_ATTRIBUTE + ']')) {
-        for (const run of shape.getAttribute('d').split('M')) {
-            if (run.length === 0)
-                continue;
-
-            const numbers = run.replace(/[LZ]/g, ' ').trim().split(/[\s,]+/).map(Number);
+        for (const subpath of window.viewGeometry.subpaths(shape.getAttribute('d'))) {
+            const numbers = subpath.corners;
 
             for (let i = 0; i + 1 < numbers.length; i += 2) {
                 const nextIsThere = i + 3 < numbers.length;
@@ -3511,7 +4755,7 @@ function stopRuler() {
     clearRuler();
 
     if (svg != null)
-        svg.style.cursor = '';
+        svg.style.cursor = toolCursor();
 }
 
 function clearRuler() {
@@ -3662,6 +4906,93 @@ function downloadSvg(filename, markup) {
 
 
 
+///
+///Puts text on the clipboard, for the share popup's Copy and the MCP server card's. True when it got there.
+///
+///**navigator.clipboard first**, which is the clipboard a page is meant to use - but only a secure page has
+///it, and inside an iframe only where the host page allowed it. **Then the old way**, selecting the text in
+///the box it is shown in and asking the document to copy that, which works in more places and is still the
+///press of a button rather than anything done behind somebody's back.
+///
+///Where neither is allowed the text is left selected, so the person who pressed Copy can press Ctrl+C - the
+///popup says so - rather than finding out at the paste that nothing was copied.
+///
+///The box can be a text field or any other element: the MCP server's code is a plain div, selected as a range.
+///
+async function copyText(text, boxId) {
+    try {
+        await navigator.clipboard.writeText(text);
+
+        return true;
+    }
+    catch (e) { }
+
+    const box = document.getElementById(boxId);
+
+    if (box == null)
+        return false;
+
+    if (typeof box.select === 'function') {
+        box.focus();
+        box.select();
+    }
+    else
+        window.getSelection().selectAllChildren(box);
+
+    try {
+        return document.execCommand('copy');
+    }
+    catch (e) {
+        return false;
+    }
+}
+
+///
+///Whether the app is inside somebody else's page, in an iframe - where the address is the embedder's, and
+///the shell leaves what it says alone. See takeOutOfAddress in Pages/Viewer.razor.
+///
+///Comparing the two windows is allowed across origins; it is reading anything off the outer one that is not.
+///
+function isInIframe() {
+    return window.self !== window.top;
+}
+
+///
+///Whether a test is driving this browser: one started by Playwright, or anything else that drives it through the
+///WebDriver protocol, says so here. See seedDevModels in Pages/Viewer.razor, which leaves such a browser's AI models
+///to the test - the dev models are a person's, and a spec that found a real key under Settings would spend it.
+///
+function isAutomatedInterOp() {
+    return navigator.webdriver === true;
+}
+
+///
+///Whether to ask, as the page opens, if a tour is wanted - see askAboutTour in Pages/Viewer.razor. Not inside somebody
+///else's page, and not in a browser a test is driving, where it would stand over every spec - unless the spec is the
+///question's own and has set `gdsAskTourUnderTest` before the page loaded.
+///
+function tourQuestionWanted() {
+    if (isInIframe())
+        return false;
+
+    return navigator.webdriver !== true || window.gdsAskTourUnderTest === true;
+}
+
+///
+///An address a frame can show a file from, made of its bytes as base64 - a PDK's PDF README, shown in the PDK manager.
+///A blob rather than a data: address, which Chromium will not show a PDF from in a frame. Let go of with
+///revokeObjectUrl when it is no longer shown.
+///
+function objectUrlOf(base64, contentType) {
+    const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+
+    return URL.createObjectURL(new Blob([bytes], { type: contentType }));
+}
+
+function revokeObjectUrl(url) {
+    URL.revokeObjectURL(url);
+}
+
 function BlazorDownloadFile(filename, contentType, content) {
     //Create the URL
     const file = new File([content], filename, { type: contentType });
@@ -3678,6 +5009,206 @@ function BlazorDownloadFile(filename, contentType, content) {
     //We don't need to keep the object URL, let's release the memory
     //On older versions of Safari, it seems you need to comment this line...
     URL.revokeObjectURL(exportUrl);
+}
+
+///
+///A picture, as a PNG: an SVG document drawn by the browser onto a canvas of the size given, on a ground.
+///
+///**The browser draws it, because the browser is what drew it on screen.** The markup is the one the 2D view
+///and the SVG download already use, so a PNG and an SVG of the same thing are the same picture - colors,
+///opacity, patterns and labels included - at whatever size is asked for. Loaded as an image rather than put
+///in the page, so nothing of the page's own style reaches it: the markup carries its own, which is what makes
+///it a picture that stands alone.
+///
+///Resolves to the PNG as a blob, or rejects with why not - a canvas has a largest size, and it differs
+///between browsers.
+///
+function pictureAsPng(documentText, width, height, ground) {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        const source = URL.createObjectURL(new Blob([documentText], { type: 'image/svg+xml' }));
+
+        image.onload = () => {
+            URL.revokeObjectURL(source);
+
+            const canvas = document.createElement('canvas');
+
+            canvas.width = width;
+            canvas.height = height;
+
+            const drawing = canvas.getContext('2d');
+
+            if (drawing == null) {
+                reject(new Error('This browser would not make a canvas that size.'));
+
+                return;
+            }
+
+            drawing.fillStyle = ground;
+            drawing.fillRect(0, 0, width, height);
+            drawing.drawImage(image, 0, 0, width, height);
+
+            canvas.toBlob(blob => {
+                if (blob == null)
+                    reject(new Error('This browser would not save a picture that size.'));
+                else
+                    resolve(blob);
+            }, 'image/png');
+        };
+
+        image.onerror = () => {
+            URL.revokeObjectURL(source);
+
+            reject(new Error('The picture could not be drawn.'));
+        };
+
+        image.src = source;
+    });
+}
+
+///The page's own ground, so a picture saved in dark mode is the one that was on screen.
+function viewGround() {
+    const pane = document.getElementById('viewPane');
+
+    if (pane != null) {
+        const ground = getComputedStyle(pane).backgroundColor;
+
+        if (ground && ground !== 'rgba(0, 0, 0, 0)' && ground !== 'transparent')
+            return ground;
+    }
+
+    return '#ffffff';
+}
+
+function saveBlob(filename, blob) {
+    const address = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = address;
+    link.download = filename;
+    link.style.display = 'none';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => URL.revokeObjectURL(address), 1000);
+}
+
+///
+///The whole layout as a PNG, <paramref name="longest"/> pixels on its longer side: the file's picture, for the
+///PNG choice beside the download button. The document is the one the SVG choice writes, sized here since only
+///its viewBox says how it is shaped.
+///
+///Null when it was saved, or a sentence saying why not.
+///
+async function downloadLayoutPng(filename, documentText, longest) {
+    const box = /viewBox="([^"]*)"/.exec(documentText);
+
+    if (box == null)
+        return 'There was no picture to save.';
+
+    const [, , across, down] = box[1].trim().split(/[\s,]+/).map(Number);
+
+    if (!(across > 0) || !(down > 0))
+        return 'There was no picture to save.';
+
+    let width = longest;
+    let height = Math.max(1, Math.round(longest * down / across));
+
+    if (down > across) {
+        height = longest;
+        width = Math.max(1, Math.round(longest * across / down));
+    }
+
+    const sized = documentText.replace('<svg ', `<svg width="${width}" height="${height}" `);
+
+    try {
+        saveBlob(filename, await pictureAsPng(sized, width, height, '#ffffff'));
+
+        return null;
+    }
+    catch (problem) {
+        return problem.message;
+    }
+}
+
+///
+///A picture for the AI assistant: the document drawn as a PNG of the size given, handed back as base64 rather
+///than saved - see LayoutPicture, which builds the document and says what is in it.
+///
+///On white whatever the page's own ground, since it is going to a model rather than onto this screen.
+///
+///Null when the browser would not draw it.
+///
+async function layoutPictureBase64(documentText, width, height) {
+    let blob;
+
+    try {
+        blob = await pictureAsPng(documentText, width, height, '#ffffff');
+    }
+    catch (problem) {
+        return null;
+    }
+
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const pieces = [];
+
+    //In slices, because fromCharCode takes its characters as arguments and a few hundred kilobytes of them is more
+    //arguments than a call can have.
+    for (let i = 0; i < bytes.length; i += 0x8000)
+        pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)));
+
+    return btoa(pieces.join(''));
+}
+
+///
+///The part of the layout the 2D view shows, in the layout's own coordinates - or null when there is no 2D view on
+///screen to ask. For the assistant, which is told where the person is looking.
+///
+function viewAreaShown() {
+    if (svg == null || !document.body.contains(svg))
+        return null;
+
+    const shown = shownArea();
+
+    if (shown == null || !(shown.width > 0) || !(shown.height > 0))
+        return null;
+
+    return { x: shown.x, y: shown.y, width: shown.width, height: shown.height };
+}
+
+///
+///What the 2D view is showing, as a PNG - the camera's picture, as pixels rather than as shapes.
+///
+///**Exactly what is on screen**: the area the view actually shows, which is wider than its viewBox when the
+///window is, at twice the view's size so it is sharp on a screen that is, on the ground it is drawn on. The
+///markup is built again by C# rather than copied off the page, for the reason the SVG camera gives: what is on
+///the page leaves out what is too small or off the edge, and the picture should not.
+///
+async function downloadViewPng(filename, markup) {
+    if (svg == null)
+        return 'There was no view to save.';
+
+    const shown = shownArea();
+    const rect = svg.getBoundingClientRect();
+
+    if (shown == null || !(rect.width > 0) || !(rect.height > 0))
+        return 'There was no view to save.';
+
+    const scale = Math.max(2, window.devicePixelRatio || 1);
+    const width = Math.round(rect.width * scale);
+    const height = Math.round(rect.height * scale);
+    const documentText = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${shown.x} ${shown.y} ${shown.width} ${shown.height}">${markup}</svg>`;
+
+    try {
+        saveBlob(filename, await pictureAsPng(documentText, width, height, viewGround()));
+
+        return null;
+    }
+    catch (problem) {
+        return problem.message;
+    }
 }
 
 function applyStyleForElement(data) {

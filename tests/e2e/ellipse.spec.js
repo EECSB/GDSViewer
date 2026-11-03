@@ -134,6 +134,10 @@ test.describe('what is drawn', () => {
     ///thing in the file is an ellipse, not which one.
     ///
     test('the corners lie on an ellipse', async ({ page }) => {
+        //Off, so the corners are the curve's rounded to the unit, which is what the tolerance below is for. With
+        //it on, the bundled deck puts them on its 5 nm grid, up to half a step from the curve - deck-grid.spec.
+        await snapToGrid(page, false);
+
         const before = await shapeCount(page);
 
         await dragBox(page, [140, 140], [360, 280]);

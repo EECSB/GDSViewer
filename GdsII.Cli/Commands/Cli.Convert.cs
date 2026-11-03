@@ -45,7 +45,8 @@ namespace GdsII.Cli
 
             File.WriteAllBytes(destination, asGds);
 
-            output.WriteLine($"Wrote {destination}: GDSII, {gds.StreamFormat.Structures.Count} structure(s).");
+            //KLayout's context goes out with the cells, first as it came in, so it is said with them.
+            output.WriteLine($"Wrote {destination}: GDSII, {structuresOf(gds)}.");
             output.WriteLine(sizeLine(path, asGds.Length));
 
             return Ok;
@@ -82,12 +83,17 @@ namespace GdsII.Cli
 
         private static int writeDxf(GDS gds, string source, string destination, TextWriter output)
         {
-            byte[] bytes = DxfWriter.Write(gds);
+            byte[] bytes = DxfWriter.Write(gds, out int skipped);
 
             File.WriteAllBytes(destination, bytes);
 
             output.WriteLine($"Wrote {destination}: DXF, {gds.StreamFormat.Structures.Count} cell(s).");
             output.WriteLine(sizeLine(source, bytes.Length));
+
+            //A NODE has no DXF entity, and a shape quietly missing from a converted file is found much later - so
+            //it is said here, as the OASIS conversion says its own.
+            if (skipped > 0)
+                output.WriteLine($"  {skipped} element(s) had no DXF equivalent and were left out. NODE elements are the usual reason.");
 
             //
             //**A DXF layer is a name, so the numbers go into one.** Said out loud because it is the one

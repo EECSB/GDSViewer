@@ -191,4 +191,49 @@ public class DrcMarkerTests
     }
 
     #endregion **************************************************************************
+
+
+
+    #region Waived and stepped to ******************************************************
+
+    ///<summary>
+    ///A waived fault is still drawn, carrying the class that grays it - it was found, and somebody let it stand -
+    ///and the one a row has stepped to is picked out and drawn last, so it is on top of its neighbors.
+    ///</summary>
+    [Fact]
+    public void A_waived_fault_is_drawn_quieter_and_the_one_stepped_to_last()
+    {
+        var first = Region("met1.1", At(0, 0), At(100, 0), At(100, 50));
+        var second = Region("met1.2", At(500, 0), At(600, 0), At(600, 50));
+
+        string markup = SvgWriter.Markers(new List<DrcViolation> { first, second }, new HashSet<string> { first.Key }, 0);
+
+        Assert.Contains($"{SvgWriter.MarkerClass} {SvgWriter.MarkerWaivedClass} {SvgWriter.MarkerCurrentClass}\" {SvgWriter.MarkerViolationAttribute}=\"0\"", markup);
+        Assert.Contains($"{SvgWriter.MarkerClass}\" {SvgWriter.MarkerViolationAttribute}=\"1\"", markup);
+        Assert.True(markup.IndexOf($"{SvgWriter.MarkerViolationAttribute}=\"1\"") < markup.IndexOf($"{SvgWriter.MarkerViolationAttribute}=\"0\""));
+    }
+
+    ///<summary>
+    ///What a waiver is kept by: the rule and the box, written the same in every locale - Swedish writes its minus
+    ///as U+2212, and a key written in it would never match one written anywhere else, or by the test.
+    ///</summary>
+    [Fact]
+    public void A_faults_key_is_its_rule_and_its_box_in_every_locale()
+    {
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+
+            Assert.Equal("met1.1@-1500,2000,-1400,2100", Region("met1.1", At(-1500, 2000), At(-1400, 2000), At(-1400, 2100)).Key);
+            Assert.Equal("grid.1@3,-7,3,-7", Point("grid.1", 3, -7).Key);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = was;
+        }
+    }
+
+    #endregion **************************************************************************
 }

@@ -457,5 +457,103 @@ rule met1.1 width met1 140 except marker ""Met1 width""";
         Assert.True(result.Complete);
     }
 
+    ///
+    ///**The gf180mcu deck finds nothing in GlobalFoundries' own cells** - all 229 bundled, every rule run (2026-11-02).
+    ///
+    ///Unlike sky130's above, this pins a number, because the number is the one a signed-off cell has to give: none. A
+    ///rule that reports one of them is a rule measured or transcribed wrong, which is how CO.3 and CO.4 left the deck -
+    ///each failed three of these cells by a sliver at an inside corner that the PDK's own deck passes. The cells are
+    ///checked alone, as they are opened from the picker, so nothing here leans on a neighbor.
+    ///
+    [Fact]
+    public void The_bundled_gf180mcu_deck_finds_nothing_in_gf180s_own_cells()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "gf180mcuD.drc")));
+        var failing = new List<string>();
+        int cells = 0;
+
+        foreach (string path in GdsTestData.Gf180SampleFiles())
+        {
+            var result = Drc.Check(deck, GdsFlattener.Flatten(new GDS(File.ReadAllBytes(path))));
+
+            Assert.Empty(result.NotRun);
+            Assert.True(result.Complete, Path.GetFileName(path));
+
+            foreach (var violation in result.Violations)
+                failing.Add($"{Path.GetFileName(path)}: {violation.RuleId}");
+
+            cells++;
+        }
+
+        Assert.Equal(229, cells);
+        Assert.True(failing.Count == 0, string.Join("; ", failing.Take(20)));
+    }
+
+    ///
+    ///**The ihp-sg13g2 deck finds nothing in IHP's own cells** - all 84 bundled, every rule run (2026-11-02). The number
+    ///a signed-off cell has to give, for the reason above: Cnt.c and Cnt.d left the deck when they reported seventeen of
+    ///these cells at inside corners, every contact there enclosed by 70 nm or more measured as distance; and Gat.b came
+    ///back clean only measured as distance rather than as squares, since sg13g2_tielo turns its poly at 45 degrees.
+    ///
+    [Fact]
+    public void The_bundled_ihp_sg13g2_deck_finds_nothing_in_ihps_own_cells()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "sg13g2.drc")));
+        var failing = new List<string>();
+        int cells = 0;
+
+        foreach (string path in GdsTestData.IhpSampleFiles())
+        {
+            var result = Drc.Check(deck, GdsFlattener.Flatten(new GDS(File.ReadAllBytes(path))));
+
+            Assert.Empty(result.NotRun);
+            Assert.True(result.Complete, Path.GetFileName(path));
+
+            foreach (var violation in result.Violations)
+                failing.Add($"{Path.GetFileName(path)}: {violation.RuleId}");
+
+            cells++;
+        }
+
+        Assert.Equal(84, cells);
+        Assert.True(failing.Count == 0, string.Join("; ", failing.Take(20)));
+    }
+
+    #endregion **************************************************************************
+
+
+
+    #region Rules switched off **********************************************************
+
+    ///<summary>
+    ///A rule switched off does not run: nothing is found under it, and nothing is reported as not run - it
+    ///was put aside, which is not a gap in the answer the way a rule that could not be measured is.
+    ///</summary>
+    [Fact]
+    public void A_rule_switched_off_finds_nothing_and_leaves_no_gap()
+    {
+        var deck = DrcDeck.Parse(NarrowDeck);
+        var layout = GdsFlattener.Flatten(Placed());
+
+        Assert.NotEmpty(Drc.Check(deck, layout).Violations);
+
+        var off = Drc.Check(deck, layout, new HashSet<string> { "met1.1" });
+
+        Assert.Empty(off.Violations);
+        Assert.True(off.Complete);
+    }
+
+    ///<summary>Only the rule named: another in the same deck still runs, and still finds what it finds.</summary>
+    [Fact]
+    public void Switching_one_rule_off_leaves_the_others_running()
+    {
+        string twoRules = NarrowDeck + "\nrule met1.2 width met1 150 \"Met1 width, stricter\"";
+
+        var result = Drc.Check(DrcDeck.Parse(twoRules), GdsFlattener.Flatten(Placed()), new HashSet<string> { "met1.1" });
+
+        Assert.NotEmpty(result.Violations);
+        Assert.All(result.Violations, violation => Assert.Equal("met1.2", violation.RuleId));
+    }
+
     #endregion **************************************************************************
 }

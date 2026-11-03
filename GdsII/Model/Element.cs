@@ -1,4 +1,5 @@
-﻿using static GdsII.GDS;
+﻿using System.Globalization;
+using static GdsII.GDS;
 using static GdsII.GDS.Record;
 
 namespace GdsII
@@ -58,6 +59,22 @@ namespace GdsII
         }
 
         private Bounds? box;
+
+        ///
+        ///This shape as one subpath of a picture, kept by the first view that draws it.
+        ///
+        ///**A view draws the same shapes over and over** - every pan that leaves its margin, every zoom, every
+        ///redraw after an edit - and writing their corners out as text is most of what drawing them costs: a
+        ///coordinate formatted is a string made and thrown away, and on the dev server, where none of this is
+        ///compiled, that was most of the seconds a redraw of the RGB mixer took. The corners never change, since
+        ///a changed shape is drawn as a new element, so neither does the text.
+        ///
+        ///**Only a view keeps it** - a picture drawn once, a download or `gds svg`, writes each shape afresh - so
+        ///the memory is paid only for the shapes a view has actually shown, which at a chip's fit is a quarter of
+        ///them, and since a shape is written as steps between its corners it is about half what it was. See
+        ///<see cref="SvgWriter"/>.
+        ///
+        internal string? Drawn { get; set; }
 
         ///<summary>
         ///Where in the library this came from, or null when nothing put it there.
@@ -242,6 +259,47 @@ namespace GdsII
             GetLayers(gds.StreamFormat.Structures);
         }
 
+        ///<summary>For <see cref="OfAsync"/>, which fills the table in a run at a time.</summary>
+        private AdditionalGDSInformation()
+        {
+        }
+
+        ///
+        ///The same table built with a pause between runs of elements - the last walk of a paced read, which was 23 ms
+        ///of gpiov2's in one go. See GDS.FromBytesAsync.
+        ///
+        internal static async ValueTask<AdditionalGDSInformation> OfAsync(GDS gds, Func<ValueTask> pause)
+        {
+            var information = new AdditionalGDSInformation();
+            int left = Pauses.Every;
+
+            foreach (var structure in gds.StreamFormat.Structures)
+            {
+                int from = 0;
+
+                while (from < structure.Elements.Count)
+                {
+                    int count = Math.Min(left, structure.Elements.Count - from);
+
+                    information.takeLayersOf(structure.Elements, from, count);
+
+                    from += count;
+                    left -= count;
+
+                    if (left == 0)
+                    {
+                        await pause();
+
+                        left = Pauses.Every;
+                    }
+                }
+            }
+
+            information.finishLayers();
+
+            return information;
+        }
+
         ///<summary>
         ///The gap between layers up the stacking axis before the 3D view's slider says otherwise. Equal to
         ///a layer's own depth, so the stack starts out with the layers touching.
@@ -314,25 +372,76 @@ namespace GdsII
             return true;
         }
 
+        ///
+        ///Puts a set of layers in the table that nothing is drawn on yet - a layout started from a technology's layers
+        ///rather than one at a time - and returns how many were not there before.
+        ///
+        ///**In a color each**, where one added alone comes in gray: the palette is divided again over the whole table,
+        ///as it would have been for a file read with these layers in it, so twenty layers arriving at once are not twenty
+        ///rows of the same gray. A color somebody chose is kept - a new layer is no reason to take one back.
+        ///
+        public int AddLayers(IEnumerable<LayerKey> keys)
+        {
+            int added = 0;
+
+            foreach (var key in keys)
+            {
+                if (AddLayer(key))
+                    added++;
+            }
+
+            if (added > 0)
+                assignColors(OrderedLayers(), keepChosen: true);
+
+            return added;
+        }
+
+        ///
+        ///Takes back what `previous` knew of each layer this table still has - its name, color, place in the stack,
+        ///role and the rest, as the very Layer it was - for a file read in again from its own text: every record is new
+        ///there, but the layers are the ones they were. See GDS.Deserialize.
+        ///
+        ///A layer the text no longer draws on is not brought back, as it would not be from a file; one it newly draws
+        ///on keeps what it arrived with.
+        ///
+        public void KeepLayersFrom(AdditionalGDSInformation previous)
+        {
+            foreach (var key in Layers.Keys.ToList())
+            {
+                if (previous.Layers.TryGetValue(key, out var was))
+                    Layers[key] = was;
+            }
+        }
+
         public void GetLayers(List<StructureModel> structures)
         {
             foreach (var structure in structures)
+                takeLayersOf(structure.Elements, 0, structure.Elements.Count);
+
+            finishLayers();
+        }
+
+        ///<summary>Adds a row for each layer the <paramref name="count"/> elements from <paramref name="from"/> are drawn on.</summary>
+        private void takeLayersOf(List<GDS.ElementModel> elements, int from, int count)
+        {
+            for (int at = from; at < from + count; at++)
             {
-                foreach (var elementModel in structure.Elements)
-                {
-                    if (elementModel.Element is not GDS.IHasLayer element)
-                        continue;
+                if (elements[at].Element is not GDS.IHasLayer element)
+                    continue;
 
-                    if (element.LAYER?.Data is not Int2Data layerRecord)
-                        continue;
+                if (element.LAYER?.Data is not Int2Data layerRecord)
+                    continue;
 
-                    var key = new LayerKey(layerRecord.Value, dataTypeOf(element));
+                var key = new LayerKey(layerRecord.Value, dataTypeOf(element));
 
-                    if (!Layers.ContainsKey(key))
-                        Layers.Add(key, new Layer(key, ""));
-                }
+                if (!Layers.ContainsKey(key))
+                    Layers.Add(key, new Layer(key, ""));
             }
+        }
 
+        ///<summary>Stacks and colors the rows once they are all in.</summary>
+        private void finishLayers()
+        {
             if (Layers.Count == 0)
                 return;
 
@@ -420,7 +529,7 @@ namespace GdsII
             //This read `spacing - DefaultLayerSpacing`, so the slider had to sit at 50 to add nothing and
             //its minimum was 50 for that reason alone - a control whose zero point was somewhere in the
             //middle of a constant that also meant something else entirely. The number is the spread now, so
-            //nought is nought and the stack a file opens on is the process stack.
+            //zero is zero and the stack a file opens on is the process stack.
             //
             int spread = spacing;
 
@@ -528,14 +637,22 @@ namespace GdsII
         ///the half where distinguishing them is the point, and it is what every layer-properties file does:
         ///KLayout's sky130 .lyp gives all 413 layer/datatype entries their own color.
         ///</summary>
-        private void assignColors(List<KeyValuePair<LayerKey, Layer>> orderedLayers)
+        ///
+        ///**More pairs than the palette has colors** walk it a color at a time and go round again, so neighbors still
+        ///differ and every color is used: the step, 255 over the count, was 0 from 256 pairs up and painted every
+        ///layer the first color (found by the 2026-10-21 audit; a full PDK's purposes pass 256 easily).
+        ///
+        private void assignColors(List<KeyValuePair<LayerKey, Layer>> orderedLayers, bool keepChosen = false)
         {
-            int colorStep = layerColors.Length / orderedLayers.Count;
+            int colorStep = Math.Max(1, layerColors.Length / orderedLayers.Count);
             int i = 0;
 
             foreach (var layer in orderedLayers)
             {
-                layer.Value.Color = layerColors[i];
+                //Its place in the gradient taken either way, so the layers around a kept color land where they would.
+                if (!keepChosen || !layer.Value.ColorIsCustom)
+                    layer.Value.Color = layerColors[i % layerColors.Length];
+
                 i += colorStep;
             }
         }
@@ -598,13 +715,54 @@ namespace GdsII
         ///</summary>
         public const short UnknownDataType = -1;
 
-        ///<summary>The way the pair is written everywhere else - KLayout, Magic, a PDK layermap.</summary>
+        ///<summary>
+        ///The way the pair is written everywhere else - KLayout, Magic, a PDK layermap. Invariant, since it names
+        ///a layer in a rule deck, a mask's file name and a DXF layer, none of which is prose.
+        ///</summary>
         public override string ToString()
         {
             if (DataType == UnknownDataType)
-                return $"{Number}/?";
+                return FormattableString.Invariant($"{Number}/?");
 
-            return $"{Number}/{DataType}";
+            return FormattableString.Invariant($"{Number}/{DataType}");
+        }
+
+        ///
+        ///The other way: `65/20` as a key, and `65/?` as the key of shapes whose data type could not be read, which
+        ///is how <see cref="ToString"/> writes one. The one grammar for the pair, so the CLI's filters, its
+        ///operations, the rule decks and the assistant read it the same way - four parsers of it disagreed about
+        ///`65/?`, and one of them read under the current culture. Whitespace round either number is ignored;
+        ///anything else - a bare number, a third field, a sign - is not a pair, and what a bare number means is
+        ///for the caller to say.
+        ///
+        public static bool TryParse(string? text, out LayerKey key)
+        {
+            key = default;
+
+            if (text is null)
+                return false;
+
+            string[] halves = text.Split('/');
+
+            if (halves.Length != 2)
+                return false;
+
+            if (!short.TryParse(halves[0].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out short number))
+                return false;
+
+            if (halves[1].Trim() == "?")
+            {
+                key = new LayerKey(number, UnknownDataType);
+
+                return true;
+            }
+
+            if (!short.TryParse(halves[1].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out short dataType))
+                return false;
+
+            key = new LayerKey(number, dataType);
+
+            return true;
         }
 
         ///<summary>
@@ -768,10 +926,10 @@ namespace GdsII
         ///<summary>
         ///Whether <see cref="Offset"/> and <see cref="Depth"/> were given rather than worked out.
         ///
-        ///The same idea as <see cref="ColorIsCustom"/>, and it does more work: the automatic stack is
-        ///recomputed whenever the 3D view's spacing slider moves, so without this a height typed in or read
-        ///from a layermap would last until the next nudge of that slider. A layer that has been told where
-        ///it belongs is left where it is, and the slider goes on spreading the rest around it.
+        ///The same idea as <see cref="ColorIsCustom"/>: it is what a written mapping goes by when it decides
+        ///whether to write a layer's stack columns down. Where the layer rests is <see cref="CustomHeight"/>'s to
+        ///say - <see cref="AdditionalGDSInformation.SetStackingOffsets"/> reads that, not this, and spreads every
+        ///layer, a placed one included, from where it rests.
         ///</summary>
         public bool StackIsCustom { get; set; }
 
@@ -841,11 +999,33 @@ namespace GdsII
         public const int DefaultPatternPixels = 9;
 
         ///
+        ///The picture the 3D view draws this layer's surface with, while it shows textures - by its file name, or null
+        ///for none, which is every layer until somebody gives it one.
+        ///
+        ///**The name rather than the picture.** A layermap is text, and the name is how it finds the picture: in the
+        ///folder beside the CSV, or the zip they came in together. The app keeps the picture itself in the browser,
+        ///under the same name, so this is all a session or a layermap needs to carry.
+        ///
+        public string? Texture { get; set; }
+
+        ///
+        ///How big one repeat of <see cref="Texture"/> is, in database units like the stack's two columns, or null for a
+        ///micron - see <see cref="DefaultTextureMicrons"/>.
+        ///
+        ///**In the layout's own units rather than in pixels**, unlike the 2D pattern's size: a picture of copper grain
+        ///is a texture of the thing, and is drawn the size the thing is, closer and further off alike.
+        ///
+        public int? TextureSize { get; set; }
+
+        ///<summary>One repeat of a texture when nothing has said otherwise, in microns - turned into each file's own units.</summary>
+        public const double DefaultTextureMicrons = 1;
+
+        ///
         ///Whether anything about this layer was said rather than worked out from the file.
         ///
         ///What makes a layer worth a row in a stored mapping: a row exists so it can be applied again, and a
-        ///layer nobody touched has nothing to apply. The seven things listed here are the seven
-        ///<see cref="GdsII.LayerNames.Apply"/> can set, which is not a coincidence - anything it can put back
+        ///layer nobody touched has nothing to apply. The nine things listed here are the nine
+        ///<see cref="GdsII.LayerNames.ApplyTo"/> can set, which is not a coincidence - anything it can put back
         ///has to be something this will write down.
         ///
         ///**A name and a role used to be the whole test**, which was true while they were the only two
@@ -866,7 +1046,9 @@ namespace GdsII
                     || Role != LayerRole.None
                     || Fill != LayerFill.None
                     || (PatternColor is string marks && marks.Length > 0)
-                    || PatternPixels is not null;
+                    || PatternPixels is not null
+                    || (Texture is string texture && texture.Length > 0)
+                    || TextureSize is not null;
             }
         }
 
@@ -878,6 +1060,31 @@ namespace GdsII
         ///file changed and the layer count with it.
         ///</summary>
         public bool ColorIsCustom { get; set; }
+
+        ///
+        ///Everything this row says about its layer, taken from another row for the same pair: the name, the color
+        ///and the fill, the place in the stack and the texture, and whether each was somebody's choice. For putting
+        ///a removed row's settings back onto the bare one an undo re-registers - into that instance rather than in
+        ///place of it, since the elements just flattened hold the instance, and a replacement left them drawn in the
+        ///bare row's gray under a swatch that said otherwise.
+        ///
+        public void TakeSettingsFrom(Layer other)
+        {
+            Name = other.Name;
+            Offset = other.Offset;
+            Resting = other.Resting;
+            Depth = other.Depth;
+            StackIsCustom = other.StackIsCustom;
+            CustomHeight = other.CustomHeight;
+            Role = other.Role;
+            Color = other.Color;
+            ColorIsCustom = other.ColorIsCustom;
+            Fill = other.Fill;
+            PatternColor = other.PatternColor;
+            PatternPixels = other.PatternPixels;
+            Texture = other.Texture;
+            TextureSize = other.TextureSize;
+        }
 
         ///<summary>
         ///How the layer is labeled in the UI. The numbers stay visible even when a name is known, the way

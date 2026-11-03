@@ -21,18 +21,18 @@ namespace GdsII
     ///formats that disagree about nearly everything:
     ///
     ///- **DXF is floating point and GDSII is integers.** Every coordinate is scaled and rounded exactly once,
-    ///  here, by <see cref="MicronsPerUnit"/> off the drawing's own `$INSUNITS`. A drawing that says nothing
-    ///  is taken as microns, which is stated rather than guessed at silently.
+    ///here, by <see cref="MicronsPerUnit"/> off the drawing's own `$INSUNITS`. A drawing that says nothing
+    ///is taken as microns, which is stated rather than guessed at silently.
     ///- **DXF layers are names and GDSII layers are numbers.** A name that *is* a number is taken as one -
-    ///  `68`, `68/20`, `L68D20` - because a drawing meant for a mask shop names its layers after the numbers
-    ///  the mask shop uses, and that is an instruction rather than a label. Anything else is numbered in the
-    ///  order the LAYER table declares it, so two runs of a file agree. Either way the name is carried onto
-    ///  the layer so nothing is lost - see <see cref="NumberFromName"/> and <see cref="Layer.Name"/>.
+    ///`68`, `68/20`, `L68D20` - because a drawing meant for a mask shop names its layers after the numbers
+    ///the mask shop uses, and that is an instruction rather than a label. Anything else is numbered in the
+    ///order the LAYER table declares it, so two runs of a file agree. Either way the name is carried onto
+    ///the layer so nothing is lost - see <see cref="NumberFromName"/> and <see cref="Layer.Name"/>.
     ///- **DXF has curves and GDSII does not.** Every one becomes a run of straight edges, flattened until
-    ///  the gap between the edge and the curve is under <see cref="CurveToleranceDatabaseUnits"/> - see
-    ///  <see cref="DxfCurves"/>, which is where all of that lives.
+    ///the gap between the edge and the curve is under <see cref="CurveToleranceDatabaseUnits"/> - see
+    ///<see cref="DxfCurves"/>, which is where all of that lives.
     ///- **A closed shape is a boundary and an open one is a path.** That is the only reading that keeps both:
-    ///  an open run has no area, and calling it a polygon would fill in a shape nobody drew.
+    ///an open run has no area, and calling it a polygon would fill in a shape nobody drew.
     ///
     ///**A hatch is its area.** The pattern is dropped - a run of parallel lines standing in for concrete has
     ///no reading on a photomask - and the islands inside one are subtracted rather than filled, so a washer
@@ -223,6 +223,11 @@ namespace GdsII
                 if (!int.TryParse(lines[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int code))
                     continue;
 
+                //A file cut off between a code and its value ends in a code and nothing. That is the cut, not a
+                //value of nothing: a whole file ends in EOF, so a last line with nothing on it is never a value.
+                if (i + 2 == lines.Length && lines[i + 1].Length == 0)
+                    break;
+
                 //The value is taken as it stands apart from the line ending: a text entity's string may have
                 //leading spaces that are part of what it says.
                 pairs.Add(new Pair(code, lines[i + 1].TrimEnd()));
@@ -234,13 +239,17 @@ namespace GdsII
         ///<summary>
         ///A coordinate or any other real. Invariant, because these are numbers in a data file rather than
         ///prose - the same reasoning as the record dump and the layermap.
+        ///
+        ///**Refused rather than read as zero.** A value that is not a number is a file that is wrong, and the
+        ///zero this answered with was the quiet kind of wrong: a drawing whose decimals were commas opened
+        ///with every shape collapsed onto the origin, and nothing said so.
         ///</summary>
         public static double Number(string value)
         {
             if (double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double read))
                 return read;
 
-            return 0;
+            throw new InvalidDataException($"\"{value.Trim()}\" is not a number. A DXF writes its numbers with a decimal point and no thousands separator, like 12.5.");
         }
 
         private static int Whole(string value)
@@ -248,7 +257,7 @@ namespace GdsII
             if (int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int read))
                 return read;
 
-            return 0;
+            throw new InvalidDataException($"\"{value.Trim()}\" is not a whole number, which is what that group code holds.");
         }
 
         ///
@@ -264,21 +273,21 @@ namespace GdsII
             //The format's own table. Only the lengths are here; the ones it leaves out are not units.
             switch (insUnits)
             {
-                case 1: return 25400;      //inches
-                case 2: return 304800;     //feet
-                case 3: return 1609344000; //miles
-                case 4: return 1000;       //millimeters
-                case 5: return 10000;      //centimeters
-                case 6: return 1000000;    //meters
-                case 7: return 1000000000; //kilometers
-                case 8: return 0.0254;     //microinches
-                case 9: return 25.4;       //mils
-                case 10: return 914400;    //yards
-                case 11: return 0.0001;    //angstroms
-                case 12: return 0.001;     //nanometers
-                case 13: return 1;         //microns
-                case 14: return 100000;    //decimeters
-                default: return 1;         //unitless, and everything this does not know
+                case 1: return 25400;//inches
+                case 2: return 304800;//feet
+                case 3: return 1609344000;//miles
+                case 4: return 1000;//millimeters
+                case 5: return 10000;//centimeters
+                case 6: return 1000000;//meters
+                case 7: return 1000000000;//kilometers
+                case 8: return 0.0254;//microinches
+                case 9: return 25.4;//mils
+                case 10: return 914400;//yards
+                case 11: return 0.0001;//angstroms
+                case 12: return 0.001;//nanometers
+                case 13: return 1;//microns
+                case 14: return 100000;//decimeters
+                default: return 1;//unitless, and everything this does not know
             }
         }
 
@@ -296,7 +305,7 @@ namespace GdsII
         ///- `68/20`, `68.20`, `68-20`, `68:20` - the pair, as a layermap writes it.
         ///- `L68D20` - KLayout's own, and case does not matter.
         ///- `METAL1 (68/20)` - a name with the pair after it in brackets, which is what a person writes when
-        ///  they want the layer list to still be readable.
+        ///they want the layer list to still be readable.
         ///
         ///**The whole name has to be one of those**, which is the part worth being strict about. Picking a
         ///number out of a name that merely contains one reads `METAL1` as layer 1, and `POLY_2024_01` as
@@ -346,9 +355,9 @@ namespace GdsII
         ///- both positive: nothing to do.
         ///- Y negative: reflection about the X axis, which is what the flag means. The angle is unchanged.
         ///- X negative: reflection about the Y axis, which GDSII has no flag for - but reflecting about X
-        ///  and then turning half a turn is the same transform, so that is what it becomes.
+        ///and then turning half a turn is the same transform, so that is what it becomes.
         ///- both negative: not a reflection at all. Turning something half a turn flips it twice, and twice
-        ///  is not at all.
+        ///is not at all.
         ///
         ///Worth writing out because the last one is the case a reader gets wrong: two minus signs look like
         ///more mirroring than one, and they are less.
@@ -897,19 +906,63 @@ namespace GdsII
                 if (says.Length == 0)
                     return;
 
-                var centered = new TextPresentation(HorizontalPresentation.Left, VerticalPresentation.Bottom, 0);
+                //
+                //**Which part of the string sits at its point is carried across.** Group 72 says it horizontally
+                //and 73 vertically, and when either is set the point is the second alignment point, 11/21, not
+                //the first - the first is then where the baseline starts, which for a right-justified label is off
+                //to the left of it. Read as left and bottom at 10/20 whatever the file said, a label put to the
+                //right of a pad sat in the middle of it. The writer puts the same two codes out, so a label
+                //survives the trip there and back.
+                //
+                int horizontal = entity.Whole(72);
+                int vertical = entity.Whole(73);
+
+                var presentation = new TextPresentation(HorizontalOf(horizontal), VerticalOf(vertical), 0);
+
+                double x = entity.Real(10);
+                double y = entity.Real(20);
+
+                if ((horizontal != 0 || vertical != 0) && entity.Has(11) && entity.Has(21))
+                {
+                    x = entity.Real(11);
+                    y = entity.Real(21);
+                }
 
                 records.Add(Hierarchy.Make(RecordType.TEXT, null));
                 LayerKey key = keyFor(entity.Layer);
 
                 records.Add(Hierarchy.Make(RecordType.LAYER, new Int2Data(key.Number)));
                 records.Add(Hierarchy.Make(RecordType.TEXTTYPE, new Int2Data(key.DataType)));
-                records.Add(Hierarchy.Make(RecordType.PRESENTATION, new BitArrayData(centered.Encode())));
-                var placed = At(entity, entity.Real(10), entity.Real(20));
+                records.Add(Hierarchy.Make(RecordType.PRESENTATION, new BitArrayData(presentation.Encode())));
+                var placed = At(entity, x, y);
 
                 records.Add(Hierarchy.Make(RecordType.XY, new Int4Data(new int[] { placed.X, placed.Y })));
                 records.Add(Hierarchy.Make(RecordType.STRING, new AsciiData(says)));
                 records.Add(Hierarchy.Make(RecordType.ENDEL, null));
+            }
+
+            ///<summary>Group 72 as the format's horizontal anchor: 0 left, 1 center, 2 right. 3 (aligned) and 5 (fit) run from the left, and 4 (middle) is centered.</summary>
+            private static HorizontalPresentation HorizontalOf(int justification)
+            {
+                if (justification == 1 || justification == 4)
+                    return HorizontalPresentation.Center;
+
+                if (justification == 2)
+                    return HorizontalPresentation.Right;
+
+                return HorizontalPresentation.Left;
+            }
+
+            ///<summary>Group 73: 0 is the baseline and 1 the bottom, both the bottom here; 2 the middle; 3 the top.</summary>
+            private static VerticalPresentation VerticalOf(int justification)
+            {
+                if (justification == 2)
+                    return VerticalPresentation.Middle;
+
+                if (justification == 3)
+                    return VerticalPresentation.Top;
+
+                return VerticalPresentation.Bottom;
             }
 
             ///

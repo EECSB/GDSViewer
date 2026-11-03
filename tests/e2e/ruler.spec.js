@@ -5,7 +5,7 @@
 //has to stop panning while it is measuring. None of that is visible to a unit test - the arithmetic in
 //viewGeometry is, and is covered under jstests/.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, MOSFET, snapToGrid } = require('./helpers');
+const { gotoExample, MOSFET, snapToGrid, viewSettled, saveImage } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, MOSFET);
@@ -127,6 +127,9 @@ test('measuring does not pan the view', async ({ page }) => {
     await page.mouse.move(to.x, to.y, { steps: 8 });
     await page.mouse.up();
 
+    //Waited for, or a pan that did happen would not have reached the viewBox yet - see viewSettled.
+    await viewSettled(page);
+
     expect(await page.locator('#gdsSVG').getAttribute('viewBox')).toBe(before);
 });
 
@@ -145,6 +148,8 @@ test('panning still works once the tool is switched back', async ({ page }) => {
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 8 });
     await page.mouse.up();
+
+    await viewSettled(page);
 
     expect(await page.locator('#gdsSVG').getAttribute('viewBox')).not.toBe(before);
 });
@@ -182,7 +187,7 @@ test('the measurement is left out of the downloaded SVG', async ({ page }) => {
 
     const started = page.waitForEvent('download');
 
-    await page.locator('#downloadImage').click();
+    await saveImage(page, 'svg');
 
     const stream = await (await started).createReadStream();
     const chunks = [];

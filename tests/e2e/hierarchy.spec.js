@@ -8,7 +8,7 @@
 //instance.spec: this file has the cell whose origin is nowhere near its shapes, which is the case that can
 //tell being carried by the middle from being carried by the origin.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn, uploadFile } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, allPoints, openedOnItsOwn, uploadFile, openShapeSettings } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -370,6 +370,52 @@ test.describe('placing one', () => {
 
         //Held by its middle, so the middle is where the pointer is.
         expect(offBy).toBeLessThan(40);
+    });
+
+    ///
+    ///**From the pencil as well as from the tree.** Placing a cell is drawing with a bigger brush, so the Draw
+    ///tool's menu offers the cells the tree's squares do - and not the one being edited, which cannot go
+    ///inside itself.
+    ///
+    test('the Draw menu offers the cells that can go in this one', async ({ page }) => {
+        await withACellToPlace(page);
+
+        const inside = (await page.locator('.contextCrumbOn').textContent()).trim();
+
+        await page.locator('#drawTool').click();
+        await openShapeSettings(page, '#cellShape');
+
+        await expect(page.locator('#cellPicker [data-place="CELL"]')).toHaveCount(1);
+        await expect(page.locator(`#cellPicker [data-place="${inside}"]`)).toHaveCount(0);
+    });
+
+    ///
+    ///Chosen there, it is picked up as from the tree: carried, and put down where the pointer is. And Escape
+    ///puts it back with the pencil still in hand - which is the case Escape used to lose to the drawing, since
+    ///the drawing's own keys were asked first and the Draw tool counts as drawing the whole time it is out.
+    ///
+    test('a cell chosen under the pencil is placed, and Escape puts it back', async ({ page }) => {
+        const drawn = await withACellToPlace(page);
+
+        await page.locator('#drawTool').click();
+        await openShapeSettings(page, '#cellShape');
+        await page.locator('#cellPicker [data-place="CELL"]').click();
+
+        await expect(page.locator('#carryingCell')).toBeVisible();
+
+        await dropIt(page);
+
+        await expect.poll(async () => shapeCount(page), { timeout: 15000 }).toBe(drawn * 2);
+        await expect(page.locator('#undoEdit')).toHaveAttribute('title', /Undo Place cell/);
+
+        //Still in hand for another, until Escape puts it back.
+        await expect(page.locator('#carryingCell')).toBeVisible();
+
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('#carryingCell')).toHaveCount(0);
+        await expect(page.locator('#drawTool')).toHaveClass(/toolButtonOn/);
+        expect(await shapeCount(page)).toBe(drawn * 2);
     });
 
     ///Escape puts it back, which is the way out of carrying something you did not mean to pick up.

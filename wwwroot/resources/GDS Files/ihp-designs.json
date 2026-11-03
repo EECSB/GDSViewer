@@ -1,0 +1,123 @@
+[
+  {
+    "file": "sg13g2_pr.gds",
+    "title": "SG13G2 primitive devices",
+    "author": "IHP",
+    "about": "Every device the PDK draws, a cell each: MOS, RF and high-voltage transistors, the npn13G2 SiGe HBTs, the three poly resistors, MIM capacitors, inductors, a varicap, a Schottky diode, ESD diodes and clamps, a bond pad and the seal ring.",
+    "project": "https://github.com/IHP-GmbH/IHP-Open-PDK/tree/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_pr",
+    "gds": "https://github.com/IHP-GmbH/IHP-Open-PDK/blob/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_pr/gds/sg13g2_pr.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/IHP-Open-PDK/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_pr/gds/sg13g2_pr.gds",
+    "size": 1295356
+  },
+  {
+    "file": "RM_IHPSG13_1P_256x8_c3_bm_bist.gds",
+    "title": "256×8 SRAM",
+    "author": "IHP",
+    "about": "A single-port SRAM macro of 256 words of 8 bits, from the PDK's own SRAM library.",
+    "project": "https://github.com/IHP-GmbH/IHP-Open-PDK/tree/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_sram",
+    "gds": "https://github.com/IHP-GmbH/IHP-Open-PDK/blob/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_sram/gds/RM_IHPSG13_1P_256x8_c3_bm_bist.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/IHP-Open-PDK/5e6d592e4002946a4616f798c357f0f3c06cf3b6/ihp-sg13g2/libs.ref/sg13g2_sram/gds/RM_IHPSG13_1P_256x8_c3_bm_bist.gds",
+    "size": 428630
+  },
+  {
+    "file": "tt_um_MichaelBell_tinyQV.gds",
+    "title": "TinyQV RISC-V SoC",
+    "author": "Michael Bell",
+    "about": "A small RISC-V microcontroller, its CPU and peripherals in one tile - on Tiny Tapeout IHP 0.2.",
+    "project": "https://github.com/MichaelBell/ttihp-tinyQV",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-ihp-0p2/blob/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_MichaelBell_tinyQV/tt_um_MichaelBell_tinyQV.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-ihp-0p2/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_MichaelBell_tinyQV/tt_um_MichaelBell_tinyQV.gds",
+    "size": 8866312
+  },
+  {
+    "file": "tt_um_calonso88_74181.gds",
+    "title": "8-bit ALU from two 74181s",
+    "author": "Caio Alonso da Costa",
+    "about": "An 8-bit arithmetic logic unit built from two of the classic 4-bit 74181 slices, driven over SPI - on Tiny Tapeout IHP 0.2.",
+    "project": "https://github.com/calonso88/tt_ihp0p2_ALU_74181",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-ihp-0p2/blob/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_calonso88_74181/tt_um_calonso88_74181.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-ihp-0p2/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_calonso88_74181/tt_um_calonso88_74181.gds",
+    "size": 2323598
+  },
+  {
+    "file": "tt_um_htfab_rotfpga2.gds",
+    "title": "ROTFPGA v2a",
+    "author": "htfab",
+    "about": "A reconfigurable logic circuit made of identical tiles, each configured by how it is rotated - on Tiny Tapeout IHP 0.2.",
+    "project": "https://github.com/htfab/ttihp0p2-rotfpga",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-ihp-0p2/blob/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_htfab_rotfpga2/tt_um_htfab_rotfpga2.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-ihp-0p2/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_htfab_rotfpga2/tt_um_htfab_rotfpga2.gds",
+    "size": 4138680
+  },
+  {
+    "file": "tt_um_a1k0n_nyancat.gds",
+    "title": "VGA Nyan Cat",
+    "author": "Andy Sloane",
+    "about": "The nyan.cat animation, drawn live to a VGA screen - on Tiny Tapeout IHP 0.2.",
+    "project": "https://github.com/a1k0n/ttihp-nyan",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-ihp-0p2/blob/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_a1k0n_nyancat/tt_um_a1k0n_nyancat.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-ihp-0p2/f64e0906737747bbb16014b76c10498d276e3892/projects/tt_um_a1k0n_nyancat/tt_um_a1k0n_nyancat.gds",
+    "size": 3647628
+  },
+  {
+    "file": "LDO.gds",
+    "title": "LDO regulator",
+    "author": "Daniel Arevalos, IHP",
+    "about": "IHP's design example of a low-dropout regulator and its OTA, made to show the open analog flow end to end, from the May 2024 open tapeout. Parts of it are drawn off the 5 nm grid, which a rules check reports.",
+    "project": "https://github.com/IHP-GmbH/TO_May2024/tree/a6b6e9e8afa2d7e333ee43ca79d4db81d3ac69dc/AnalogLDO_exampleDesign",
+    "gds": "https://github.com/IHP-GmbH/TO_May2024/blob/a6b6e9e8afa2d7e333ee43ca79d4db81d3ac69dc/AnalogLDO_exampleDesign/design_data/klayout/gds/LDO.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/TO_May2024/a6b6e9e8afa2d7e333ee43ca79d4db81d3ac69dc/AnalogLDO_exampleDesign/design_data/klayout/gds/LDO.gds",
+    "size": 1964424
+  },
+  {
+    "file": "FMD_QNC_15_WeakInvBGR.gds",
+    "title": "Bandgap reference",
+    "author": "Phillip Ferreira Baade-Pedersen",
+    "about": "A CMOS bandgap voltage reference with its transistors in weak inversion, from IHP's April 2025 open tapeout.",
+    "project": "https://github.com/IHP-GmbH/TO_Apr2025/tree/63e203a0eccfb6028a1a0a8364553e4e979b55b3/bandgap_ref_cmos",
+    "gds": "https://github.com/IHP-GmbH/TO_Apr2025/blob/63e203a0eccfb6028a1a0a8364553e4e979b55b3/bandgap_ref_cmos/design_data/gds/FMD_QNC_15_WeakInvBGR.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/TO_Apr2025/63e203a0eccfb6028a1a0a8364553e4e979b55b3/bandgap_ref_cmos/design_data/gds/FMD_QNC_15_WeakInvBGR.gds",
+    "size": 4683050
+  },
+  {
+    "file": "FMD_QNC_PLL_3BIT_DIV.gds",
+    "title": "30 MHz fractional-N PLL",
+    "author": "Avishka Herath, Kithmin Randula",
+    "about": "A fractional-N phase-locked loop at 30 MHz with a 3-bit divider, from IHP's July 2025 open tapeout.",
+    "project": "https://github.com/IHP-GmbH/TO_July2025/tree/b71d2682daecf6e06c23972a4dca91696153e7f0/30_MHz_Fractional_N_PLL",
+    "gds": "https://github.com/IHP-GmbH/TO_July2025/blob/b71d2682daecf6e06c23972a4dca91696153e7f0/30_MHz_Fractional_N_PLL/design_data/gds/FMD_QNC_PLL_3BIT_DIV.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/TO_July2025/b71d2682daecf6e06c23972a4dca91696153e7f0/30_MHz_Fractional_N_PLL/design_data/gds/FMD_QNC_PLL_3BIT_DIV.gds",
+    "size": 3949950
+  },
+  {
+    "file": "FMD_QNC_03a_DC_to_130_GHz_TIA_Design.gds",
+    "title": "DC to 130 GHz transimpedance amplifier",
+    "author": "Muhammad Ikram",
+    "about": "A two-stage transimpedance amplifier on the SiGe HBTs, its bandwidth past 130 GHz, from IHP's April 2025 open tapeout.",
+    "project": "https://github.com/IHP-GmbH/TO_Apr2025/tree/63e203a0eccfb6028a1a0a8364553e4e979b55b3/DC_to_130_GHz_TIA",
+    "gds": "https://github.com/IHP-GmbH/TO_Apr2025/blob/63e203a0eccfb6028a1a0a8364553e4e979b55b3/DC_to_130_GHz_TIA/design_1/design_data/gds/FMD_QNC_03a_DC_to_130_GHz_TIA_Design.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/TO_Apr2025/63e203a0eccfb6028a1a0a8364553e4e979b55b3/DC_to_130_GHz_TIA/design_1/design_data/gds/FMD_QNC_03a_DC_to_130_GHz_TIA_Design.gds",
+    "size": 4400566
+  },
+  {
+    "file": "50_ghz_mpa_core.gds",
+    "title": "60 GHz power amplifier core",
+    "author": "Phillip Ferreira Baade-Pedersen, Giovanni Di Pietrantonio",
+    "about": "The HBT core of a 60 GHz power amplifier, as laid out for its electromagnetic simulation, from IHP's July 2025 open tapeout and its Analog Academy.",
+    "project": "https://github.com/IHP-GmbH/TO_July2025/tree/b71d2682daecf6e06c23972a4dca91696153e7f0/60_GHZ_MPA",
+    "gds": "https://github.com/IHP-GmbH/TO_July2025/blob/b71d2682daecf6e06c23972a4dca91696153e7f0/60_GHZ_MPA/klayout/openems_gds/50_ghz_mpa_core.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/IHP-GmbH/TO_July2025/b71d2682daecf6e06c23972a4dca91696153e7f0/60_GHZ_MPA/klayout/openems_gds/50_ghz_mpa_core.gds",
+    "size": 255424
+  }
+]

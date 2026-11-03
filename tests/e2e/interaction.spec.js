@@ -5,7 +5,7 @@
 //opinion about Escape. Each of them looks like the app misbehaving rather than like the browser doing
 //something reasonable, which is why they are worth pinning.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, shapePoints, chooseShape } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, shapePoints, chooseShape, viewSettled } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg');
@@ -169,6 +169,9 @@ test.describe('the middle button', () => {
         await page.mouse.down({ button: 'middle' });
         await page.mouse.move(at.x + 120, at.y + 90, { steps: 5 });
         await page.mouse.up({ button: 'middle' });
+
+        //The drag moves the picture, and the viewBox follows once it has stopped.
+        await viewSettled(page);
     }
 
     test('pans while the Select tool is out, and leaves the selection alone', async ({ page }) => {
@@ -216,6 +219,9 @@ test.describe('the middle button', () => {
         await page.mouse.down();
         await page.mouse.move(view.x + (view.width / 2) + 120, view.y + (view.height / 2) + 90, { steps: 5 });
         await page.mouse.up();
+
+        //Waited for, or a pan that did happen would not have reached the viewBox yet.
+        await viewSettled(page);
 
         expect(await boxOf(page)).toBe(before);
     });

@@ -35,7 +35,8 @@ namespace GdsII.Cli
             if (!read(path, error, out GDS? gds))
                 return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             var result = Booleans.Combine(shapesOn(layout, a!.Value), shapesOn(layout, b!.Value), operation);
 
@@ -98,7 +99,8 @@ namespace GdsII.Cli
             if (!read(path, error, out GDS? gds))
                 return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             var result = Booleans.Grow(shapesOn(layout, a!.Value), by);
 
@@ -187,7 +189,7 @@ namespace GdsII.Cli
         private const string DerivedColor = "#808080";
 
         ///<summary>
-        ///A layer and data type, written the way `gds layers` prints it.
+        ///A layer and data type as numbers, the way `gds layers` prints it without a layermap.
         ///
         ///A bare number is not accepted here, unlike in --layers and --hide. Those narrow a drawing, where
         ///"65" sensibly means every purpose on it; an operation reads from exactly one pair and writes onto
@@ -205,13 +207,11 @@ namespace GdsII.Cli
                 return !required;
             }
 
-            string[] halves = given.Split('/');
-
-            if (halves.Length == 2
-                && short.TryParse(halves[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out short number)
-                && short.TryParse(halves[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out short dataType))
+            //By the one grammar for the pair - see LayerKey.TryParse - less the "65/?" the layer list prints for
+            //shapes whose data type could not be read, which is nothing to write onto.
+            if (LayerKey.TryParse(given, out LayerKey pair) && pair.DataType != LayerKey.UnknownDataType)
             {
-                key = new LayerKey(number, dataType);
+                key = pair;
 
                 return true;
             }

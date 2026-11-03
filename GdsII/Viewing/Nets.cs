@@ -8,8 +8,8 @@ namespace GdsII
     ///**The rule, and why it is the rule.** Two shapes on the same conductor layer that touch are one net.
     ///Two shapes on *different* conductor layers that touch are not - metal1 and metal2 cross each other all
     ///over a real chip without meeting, and a tool that joined them would report almost every layout as one
-    ///enormous net. What joins two conductors is a via, which is why a via connects whatever it overlaps
-    ///regardless of layer.
+    ///enormous net. What joins two conductors is a via, which connects the layers it overlaps - only the ones its
+    ///own height range touches, where a layermap has given the heights (see <see cref="Stacked"/>).
     ///
     ///That is the whole model, and it is why <see cref="LayerRole"/> exists. Working connectivity out from
     ///the file alone is not possible: a GDSII file is numbered shapes, and nothing in it says which numbers
@@ -49,33 +49,120 @@ namespace GdsII
         ///
         public static HashSet<int> Reaching(FlattenedLayout layout, int from)
         {
-            var found = new HashSet<int>();
+            var walk = Begin(layout, from);
 
-            if (from < 0 || from >= layout.Elements.Count)
-                return found;
+            walk.Step(int.MaxValue);
 
-            var parts = Parts.Of(layout);
+            return walk.Found;
+        }
 
-            if (!parts.Holds(from))
-                return found;
+        ///
+        ///The same walk, taken a number of shapes at a time - see <see cref="Walk.Step"/>.
+        ///
+        ///For a net too big to want all at once. A supply net on a real chip is tens of thousands of shapes,
+        ///and somebody clicking a wire usually wants to see where it goes next rather than every last one of
+        ///them; a walk that stops lets them ask for more.
+        ///
+        public static Walk Begin(FlattenedLayout layout, int from)
+        {
+            return new Walk(layout, from);
+        }
 
-            var toVisit = new Queue<int>();
+        ///
+        ///A net being traced out from one shape, as far as it has got.
+        ///
+        ///Breadth first, so what a step adds is the next ring out from the shape it started at: the first
+        ///hundred are the hundred nearest it in hops, which is where somebody following a wire is looking.
+        ///
+        public sealed class Walk
+        {
+            private readonly Parts parts;
 
-            found.Add(from);
-            toVisit.Enqueue(from);
+            private readonly Queue<int> toVisit = new Queue<int>();
 
-            while (toVisit.Count > 0)
+            ///<summary>What the shape being visited touches and the last step had no room for, taken first next time.</summary>
+            private readonly Queue<int> waiting = new Queue<int>();
+
+            internal Walk(FlattenedLayout layout, int from)
             {
-                int at = toVisit.Dequeue();
+                parts = new Parts(layout);
 
-                foreach (int next in parts.Touching(at))
-                {
-                    if (found.Add(next))
-                        toVisit.Enqueue(next);
-                }
+                if (!parts.Holds(from))
+                    return;
+
+                Found.Add(from);
+                toVisit.Enqueue(from);
             }
 
-            return found;
+            ///<summary>Every shape reached so far, the one it started at included. Empty for a shape that takes no part.</summary>
+            public HashSet<int> Found { get; } = new HashSet<int>();
+
+            ///<summary>Whether the whole net has been reached, so another step would add nothing.</summary>
+            public bool Done => toVisit.Count == 0 && waiting.Count == 0;
+
+            ///
+            ///Reaches at most this many more shapes, and says how many it did.
+            ///
+            ///**Exactly that many, unless the net runs out first.** A via can touch hundreds of shapes, so a
+            ///step that only stopped between shapes visited would overshoot by however many the last one held;
+            ///what it touched beyond the count waits for the next step instead.
+            ///
+            public int Step(int most)
+            {
+                int added = 0;
+
+                while (added < most && !Done)
+                {
+                    if (waiting.Count == 0)
+                    {
+                        foreach (int next in parts.Touching(toVisit.Dequeue()))
+                        {
+                            if (!Found.Contains(next))
+                                waiting.Enqueue(next);
+                        }
+                    }
+
+                    while (added < most && waiting.Count > 0)
+                    {
+                        int next = waiting.Dequeue();
+
+                        if (!Found.Add(next))
+                            continue;
+
+                        toVisit.Enqueue(next);
+                        added++;
+                    }
+                }
+
+                lookAhead();
+
+                return added;
+            }
+
+            ///
+            ///Visits on until something new is waiting, or there is nothing left to visit.
+            ///
+            ///**So that <see cref="Done"/> is true the moment it is.** Without this a net found to its last shape
+            ///still has that shape to visit, and the walk says there is more - a Next that then reaches nothing.
+            ///Usually one more shape visited; at the end of a net, the shapes on its edge, none of which lead on.
+            ///
+            private void lookAhead()
+            {
+                while (toVisit.Count > 0 && !waiting.Any(next => !Found.Contains(next)))
+                {
+                    waiting.Clear();
+
+                    foreach (int next in parts.Touching(toVisit.Dequeue()))
+                    {
+                        if (!Found.Contains(next))
+                            waiting.Enqueue(next);
+                    }
+                }
+
+                //What waits is only ever what is still to be found, so an empty net-edge leaves nothing behind.
+                if (!waiting.Any(next => !Found.Contains(next)))
+                    waiting.Clear();
+            }
         }
 
         ///
@@ -98,7 +185,7 @@ namespace GdsII
         {
             var nets = new List<HashSet<int>>();
 
-            var parts = Parts.Of(layout);
+            var parts = new Parts(layout);
 
             var placed = new HashSet<int>();
 
@@ -133,20 +220,21 @@ namespace GdsII
         }
 
         ///
-        ///The shapes that take part, with what is needed to ask whether two of them meet.
+        ///What is needed to ask whether two shapes meet.
         ///
         ///Built once per question rather than cached on the layout: the roles are settings somebody is
         ///changing while looking at the answer, and a cache that outlived a change to them would be a wrong
         ///answer that looked authoritative.
         ///
+        ///**What a shape might touch comes from the layout's index**, the one the view culls with, as whatever
+        ///lies under the shape's box grown by the slack. It was every shape that takes part, checked against
+        ///each shape reached, so a net of ten thousand shapes in a layout of two hundred thousand was two billion
+        ///box tests - and tracing the RGB mixer's supply froze the page. A shape is asked about its neighbors
+        ///now, and the work goes with the size of the net rather than with the size of the net times the file.
+        ///
         private sealed class Parts
         {
             private readonly FlattenedLayout layout;
-
-            ///<summary>Which elements take part at all, and their boxes - the cheap test, done first.</summary>
-            private readonly List<int> taking = new List<int>();
-
-            private readonly Dictionary<int, Bounds> boxes = new Dictionary<int, Bounds>();
 
             ///<summary>
             ///Each shape grown by <see cref="Touching"/>, worked out the first time it is needed.
@@ -157,55 +245,58 @@ namespace GdsII
             ///</summary>
             private readonly Dictionary<int, List<List<Element.Point>>> grown = new Dictionary<int, List<List<Element.Point>>>();
 
-            private Parts(FlattenedLayout layout)
+            public Parts(FlattenedLayout layout)
             {
                 this.layout = layout;
-            }
-
-            public static Parts Of(FlattenedLayout layout)
-            {
-                var parts = new Parts(layout);
-
-                for (int i = 0; i < layout.Elements.Count; i++)
-                {
-                    var element = layout.Elements[i];
-
-                    if (!Nets.TakesPart(element))
-                        continue;
-
-                    parts.taking.Add(i);
-                    parts.boxes[i] = element.Box;
-                }
-
-                return parts;
             }
 
             ///<summary>Whether this index is one of the shapes that take part; see Nets.TakesPart.</summary>
             public bool Holds(int index)
             {
-                return boxes.ContainsKey(index);
+                if (index < 0 || index >= layout.Elements.Count)
+                    return false;
+
+                return Nets.TakesPart(layout.Elements[index]);
             }
 
-            ///<summary>Everything directly attached to one shape - one step, not the whole net.</summary>
+            ///<summary>Everything directly attached to one shape - one step, not the whole net. In layout order.</summary>
             public IEnumerable<int> Touching(int index)
             {
-                var box = boxes[index];
                 var element = layout.Elements[index];
+                var box = element.Box;
 
-                foreach (int other in taking)
+                foreach (int other in layout.Index.Within(box.Grown(Nets.Touching)))
                 {
                     if (other == index)
                         continue;
 
-                    if (!CanMeet(element, layout.Elements[other]))
+                    var candidate = layout.Elements[other];
+
+                    if (!Nets.TakesPart(candidate) || !CanMeet(element, candidate))
                         continue;
 
-                    //The boxes first, grown by the same slack the shapes are, because it rejects almost
-                    //every pair for almost nothing and the geometry test is the expensive one.
-                    if (!Near(box, boxes[other]))
+                    //The boxes first, grown by the same slack the shapes are, because it rejects most of what is
+                    //left for almost nothing and the geometry test is the expensive one.
+                    if (!Near(box, candidate.Box))
                         continue;
 
-                    if (Meets(GrownOf(index), layout.Elements[other].Points))
+                    //
+                    //**Two rectangles meet exactly when their boxes do**, which is most of what a real layout
+                    //is made of and most of what a trace asks. The grow is mitered, so a rectangle grown by one
+                    //unit is its box grown by one, and that shares area with another rectangle when the two
+                    //boxes overlap or touch - corners included. Clipper gives the same answer at the cost of a
+                    //grow and an intersection per pair: tracing one of the RGB mixer's supplies was thirty
+                    //seconds of them.
+                    //
+                    if (IsRectangle(element) && IsRectangle(candidate))
+                    {
+                        if (BoxesMeet(box, candidate.Box))
+                            yield return other;
+
+                        continue;
+                    }
+
+                    if (Meets(GrownOf(index), candidate.Points))
                         yield return other;
                 }
             }
@@ -354,11 +445,35 @@ namespace GdsII
             if (first == LayerRole.None || second == LayerRole.None)
                 return false;
 
-            //A via joins whatever it overlaps, which is the only way two different conductors ever meet.
+            //A via is the only way two different conductors ever meet - but only the ones it reaches up and down.
             if (first == LayerRole.Via || second == LayerRole.Via)
-                return true;
+                return Stacked(one.Layer, other.Layer);
 
             return one.Layer.Number == other.Layer.Number;
+        }
+
+        ///
+        ///Whether two layers reach each other up and down the stack, so a via on one can join the other.
+        ///
+        ///**A via joins the two layers it sits between, not everything it overlaps.** Seen from above, an mcon
+        ///between li1 and met1 also lies under whatever met2, met3 and met4 run over it, and joining all of them
+        ///shorted every route on a chip to every other: on the RGB mixer, twelve shapes picked anywhere each traced
+        ///to more than seventy thousand, and a trace froze the page walking what was the whole chip. Where a
+        ///layermap has given the layers their heights, a via joins only what its own height range touches - li1 at
+        ///940 to 1,040 and met1 from 1,370 for an mcon at 1,040 to 1,370, and not met2 at 2,000.
+        ///
+        ///Where either has no height of its own, the stack says nothing, and the via joins whatever it overlaps
+        ///as it always did: a file with roles and no heights is still traceable, with that limitation.
+        ///
+        public static bool Stacked(Layer one, Layer other)
+        {
+            if (one.CustomHeight is not int oneBottom || other.CustomHeight is not int otherBottom)
+                return true;
+
+            long oneTop = (long)oneBottom + Math.Max(0, one.Depth);
+            long otherTop = (long)otherBottom + Math.Max(0, other.Depth);
+
+            return oneBottom <= otherTop && otherBottom <= oneTop;
         }
 
         ///<summary>Whether two boxes are within the slack that counts as touching.</summary>
@@ -374,6 +489,51 @@ namespace GdsII
                 return false;
 
             return true;
+        }
+
+        ///
+        ///Whether a shape is a rectangle squared to the axes and covering some area: four corners, each one a
+        ///corner of its box, with the first repeated at the end or not.
+        ///
+        private static bool IsRectangle(Element element)
+        {
+            var points = element.Points;
+            int count = points.Count;
+
+            if (count == 5 && points[0].Equals(points[4]))
+                count = 4;
+
+            if (count != 4)
+                return false;
+
+            var box = element.Box;
+
+            if (box.Width <= 0 || box.Height <= 0)
+                return false;
+
+            for (int i = 0; i < 4; i++)
+            {
+                if (points[i].X != box.Left && points[i].X != box.Right)
+                    return false;
+
+                if (points[i].Y != box.Bottom && points[i].Y != box.Top)
+                    return false;
+
+                //Four different corners: one written twice leaves a triangle with the same box.
+                for (int j = 0; j < i; j++)
+                {
+                    if (points[i].Equals(points[j]))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        ///<summary>Whether two boxes overlap or touch, edges and corners included.</summary>
+        private static bool BoxesMeet(Bounds one, Bounds other)
+        {
+            return one.Left <= other.Right && other.Left <= one.Right && one.Bottom <= other.Top && other.Bottom <= one.Top;
         }
 
         ///<summary>Whether a grown shape and another actually share any area.</summary>

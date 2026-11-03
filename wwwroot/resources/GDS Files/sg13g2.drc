@@ -1,0 +1,211 @@
+#sg13g2 - a starter design-rule deck for GDS Viewer.
+#
+#NOT A SIGNOFF DECK, AND NOT AFFILIATED WITH IHP. This is a hand-transcribed subset for catching obvious mistakes
+#while looking at a layout. A design is signed off against the PDK's own decks - KLayout's in
+#ihp-sg13g2/libs.tech/klayout/tech/drc - not against this.
+#
+#Layer numbers are from the layer table of the SG13G2 layout rules, and every id, value and description from their
+#rule tables - SG13G2_os_layout_rules.pdf Rev. 0.4, and the same tables as text in
+#ihp-sg13g2/libs.tech/klayout/tech/drc/docs, main_rules.md and extra_rules.md, in github.com/IHP-GmbH/IHP-Open-PDK at
+#5e6d592. Both rule tables are vendored at OtherResources/IHP, where DrcDeckTests holds every rule here to them.
+#
+#THREE THINGS TO KNOW BEFORE TRUSTING A RESULT HERE
+#
+#**The layers IHP allows at 45 degrees are measured as distance, as IHP's rules measure them.** SG13G2 draws Activ,
+#GatPoly, Metal1 to Metal5 and the two top metals at 135 degrees as well as 90 (rules 3.1) - its own standard cells
+#turn their poly with stairs of 5 nm steps. Measured as squares, which is what a rule naming no metric gets, a
+#45-degree line reads 1.41 times nearer its neighbor than it is: sg13g2_tielo's two poly pieces are 182 nm apart,
+#which Gat.b's 180 allows, and 129 as squares - and a Tiny Tapeout tile built of the same cells reported 587 such
+#faults. So the width and space of those nine layers name `euclidean`, which measures a diagonal line as what it is
+#and two corners approaching each other diagonally as well. Everything else - the wells, the implants, the contacts
+#and vias, which IHP keeps at 90 degrees, MIM and Passiv - is measured as squares, which is exact on a layer with no
+#diagonals.
+#
+#**The edge engine `euclidean` runs on matches KLayout over IHP's layouts.** It reported faults that were not there
+#until 2026-11-02 on layouts whose metal overlaps itself - one M3.a inside a 60 GHz amplifier core's 1950 nm wide
+#Metal3, M1.a in a TIA's and a bandgap's metal, tens of thousands more measured as distance - and these nine layers
+#were measured `parallel`, between facing edges only, until it was fixed. Over IHP's 84 cells and the amplifier,
+#TIA, bandgap and two SRAM macros it now reports what KLayout reports, which is nothing. A width or space fault on
+#these layers that the drawing does not show is still worth measuring with the ruler before believing.
+#
+#Values are DATABASE UNITS, which for SG13G2 is nanometers: the micron figure in the rules times 1000. Areas are
+#square nanometers, so 0.144 um2 is 144000. Nothing is scaled and nothing is rounded.
+
+#Drawn layers ***********************************************************************
+
+layer NWell        31/0
+layer ThickGateOx  44/0
+layer Activ         1/0
+layer GatPoly       5/0
+layer pSD          14/0
+layer SalBlock     28/0
+layer Cont          6/0
+layer Metal1        8/0
+layer Via1         19/0
+layer Metal2       10/0
+layer Via2         29/0
+layer Metal3       30/0
+layer Via3         49/0
+layer Metal4       50/0
+layer Via4         66/0
+layer Metal5       67/0
+layer MIM          36/0
+layer TopVia1     125/0
+layer TopMetal1   126/0
+layer TopVia2     133/0
+layer TopMetal2   134/0
+layer Passiv        9/0
+
+#Derived layers *********************************************************************
+#
+#A TopVia1 that lands on the MIM's top plate rather than on Metal5. MIM.d is the plate's enclosure of it, and holds
+#only for those: a TopVia1 elsewhere is not on a MIM at all.
+
+derive mimvia = TopVia1 and MIM
+
+#Rules ******************************************************************************
+#
+#id         check      operands               value   modifiers  description
+#
+#NWell. A space under the same-net limit is always wrong - the rules merge the two - so that is the limit checked;
+#two wells on different nets need 1.8, which only a netlist can say.
+rule NW.a       width      NWell                 620              "Min. NWell width"
+rule NW.b       space      NWell                 620              "Min. NWell space or notch (same net)"
+
+#The thick gate oxide
+rule TGO.e      space      ThickGateOx           860              "Min. ThickGateOx space"
+rule TGO.f      width      ThickGateOx           860              "Min. ThickGateOx width"
+
+#Activ. Act.e's "enclosed area" is the field Activ closes round, which is a hole in the merged layer.
+rule Act.a      width      Activ                 150   euclidean  "Min. Activ width"
+rule Act.b      space      Activ                 210   euclidean  "Min. Activ space or notch"
+rule Act.d      area       Activ              122000              "Min. Activ area"
+rule Act.e      holearea   Activ              150000              "Min. Activ enclosed area"
+
+#GatPoly
+rule Gat.a      width      GatPoly               130   euclidean  "Min. GatPoly width"
+rule Gat.b      space      GatPoly               180   euclidean  "Min. GatPoly space or notch"
+rule Gat.e      area       GatPoly             90000              "Min. GatPoly area"
+
+#The p+ implant and the salicide block
+rule pSD.a      width      pSD                   310              "Min. pSD width"
+rule pSD.b      space      pSD                   310              "Min. pSD space or notch"
+rule Sal.a      width      SalBlock              420              "Min. SalBlock width"
+rule Sal.b      space      SalBlock              420              "Min. SalBlock space or notch"
+
+#Cont. Cnt.a is a minimum and a maximum - every contact is 0.16 square - and only the minimum is checked here. Its
+#enclosures are in the list at the foot of this file.
+rule Cnt.a      width      Cont                  160              "Min. Cont width"
+rule Cnt.b      space      Cont                  180              "Min. Cont space"
+
+#Metal1 to Metal5. A metal's c rule is the least it covers the via below it by.
+rule M1.a       width      Metal1                160   euclidean  "Min. Metal1 width"
+rule M1.b       space      Metal1                180   euclidean  "Min. Metal1 space or notch"
+rule M1.d       area       Metal1              90000              "Min. Metal1 area"
+rule M2.a       width      Metal2                200   euclidean  "Min. Metal2 width"
+rule M2.b       space      Metal2                210   euclidean  "Min. Metal2 space or notch"
+rule M2.c       enclosure  Via1     Metal2         5              "Min. Metal2 enclosure of Via1"
+rule M2.d       area       Metal2             144000              "Min. Metal2 area"
+rule M3.a       width      Metal3                200   euclidean  "Min. Metal3 width"
+rule M3.b       space      Metal3                210   euclidean  "Min. Metal3 space or notch"
+rule M3.c       enclosure  Via2     Metal3         5              "Min. Metal3 enclosure of Via2"
+rule M3.d       area       Metal3             144000              "Min. Metal3 area"
+rule M4.a       width      Metal4                200   euclidean  "Min. Metal4 width"
+rule M4.b       space      Metal4                210   euclidean  "Min. Metal4 space or notch"
+rule M4.c       enclosure  Via3     Metal4         5              "Min. Metal4 enclosure of Via3"
+rule M4.d       area       Metal4             144000              "Min. Metal4 area"
+rule M5.a       width      Metal5                200   euclidean  "Min. Metal5 width"
+rule M5.b       space      Metal5                210   euclidean  "Min. Metal5 space or notch"
+rule M5.c       enclosure  Via4     Metal5         5              "Min. Metal5 enclosure of Via4"
+rule M5.d       area       Metal5             144000              "Min. Metal5 area"
+
+#Vias. Each a is a minimum and a maximum, as Cnt.a is, and only the minimum is checked. A via's c rule is the least
+#the metal under it covers it by.
+rule V1.a       width      Via1                  190              "Min. Via1 width"
+rule V1.b       space      Via1                  220              "Min. Via1 space"
+rule V1.c       enclosure  Via1     Metal1        10              "Min. Metal1 enclosure of Via1"
+rule V2.a       width      Via2                  190              "Min. Via2 width"
+rule V2.b       space      Via2                  220              "Min. Via2 space"
+rule V2.c       enclosure  Via2     Metal2         5              "Min. Metal2 enclosure of Via2"
+rule V3.a       width      Via3                  190              "Min. Via3 width"
+rule V3.b       space      Via3                  220              "Min. Via3 space"
+rule V3.c       enclosure  Via3     Metal3         5              "Min. Metal3 enclosure of Via3"
+rule V4.a       width      Via4                  190              "Min. Via4 width"
+rule V4.b       space      Via4                  220              "Min. Via4 space"
+rule V4.c       enclosure  Via4     Metal4         5              "Min. Metal4 enclosure of Via4"
+
+#The top vias and the two thick top metals
+rule TV1.a      width      TopVia1               420              "Min. TopVia1 width"
+rule TV1.b      space      TopVia1               420              "Min. TopVia1 space"
+rule TV1.c      enclosure  TopVia1  Metal5       100              "Min. Metal5 enclosure of TopVia1"
+rule TV1.d      enclosure  TopVia1  TopMetal1    420              "Min. TopMetal1 enclosure of TopVia1"
+rule TM1.a      width      TopMetal1            1640   euclidean  "Min. TopMetal1 width"
+rule TM1.b      space      TopMetal1            1640   euclidean  "Min. TopMetal1 space or notch"
+rule TV2.a      width      TopVia2               900              "Min. TopVia2 width"
+rule TV2.b      space      TopVia2              1060              "Min. TopVia2 space"
+rule TV2.c      enclosure  TopVia2  TopMetal1    500              "Min. TopMetal1 enclosure of TopVia2"
+rule TV2.d      enclosure  TopVia2  TopMetal2    500              "Min. TopMetal2 enclosure of TopVia2"
+rule TM2.a      width      TopMetal2            2000   euclidean  "Min. TopMetal2 width"
+rule TM2.b      space      TopMetal2            2000   euclidean  "Min. TopMetal2 space or notch"
+
+#The MIM capacitor, between Metal5 and TopMetal1
+rule MIM.a      width      MIM                  1140              "Min. MIM width"
+rule MIM.b      space      MIM                   600              "Min. MIM space"
+rule MIM.c      enclosure  MIM      Metal5       600              "Min. Metal5 enclosure of MIM"
+rule MIM.d      enclosure  mimvia   MIM          360              "Min. MIM enclosure of TopVia1"
+rule MIM.f      area       MIM               1300000              "Min. MIM area per MIM device"
+
+#The passivation openings
+rule Pas.a      width      Passiv               2100              "Min. Passiv width"
+rule Pas.b      space      Passiv               3500              "Min. Passiv space or notch"
+
+#Every coordinate against the manufacturing grid: "All features are on a drawing grid of 5 nm" (rules 3.1), and the
+#off-grid checks of the PDK's own KLayout deck. Stated rather than read back off the file, for the reason sky130A.drc
+#gives.
+rule grid.1     offgrid    *                       5              "Coordinate off the 5 nm grid"
+
+#Rules deliberately NOT here *********************************************************
+#
+#Real SG13G2 rules this checker cannot express, or that are not transcribed yet - listed so their absence is a
+#decision on the record rather than an oversight.
+#
+#Cnt.c    Activ over a contact, 0.07, and
+#Cnt.d    GatPoly over a contact, 0.07. Run over IHP's 84 standard cells and taken out for what they reported there:
+#         seventeen cells failing at inside corners of the Activ, and tielo at its poly. The geometry is fine -
+#         measured as distance, every one of those contacts is enclosed by 70 nm or more, most by exactly 70. An
+#         enclosure here is measured by growing the contact as a square, and the square's corner reaches into the
+#         notch; the edge engine measures as distance, but width and spacing only. The same two rules left
+#         gf180mcuD.drc for the same reason, as CO.3 and CO.4. IHP also relaxes Cnt.c to 0.05 inside DigiBnd and to
+#         0.006 inside SRAM.
+#Cnt.e    A contact on GatPoly to Activ, 0.14, and
+#Cnt.f    a contact on Activ to GatPoly, 0.11. Spacings between two layers, which this checker measures as squares
+#         only - the metric words are refused on a two-layer space - and so would report the diagonal approaches
+#         Cnt.c and Cnt.d did.
+#Gat.d    GatPoly to Activ, 0.07. The same two-layer square measure would report every transistor, at the corners
+#         where its gate crosses the Activ.
+#Gat.a1   Gate lengths - Gat.a1 to Gat.a4 - and Gat.c, GatPoly beyond Activ, 0.18. Each is along one direction only,
+#         and a width check of the gate would report every narrow transistor. DIRECTIONAL, like poly.7 and poly.8 in
+#         sky130A.drc.
+#M1.c     Metal1 over a contact. The least the rules allow is 0.00, which measures nothing, so the deck refuses it.
+#M1.c1    The 0.05 asked for at a line's end over a contact, and V1.c1 and Mn.c1 over a via - each depends on finding
+#         the end, which a region check cannot do.
+#NW.b1    Two NWells on different nets, 1.8 - nets are not known here. The same for every "different net" rule.
+#NW.c     NWell over P+Activ and NWell to N+Activ, NW.c to NW.f: each depends on which Activ is a tie and which is
+#         inside ThickGateOx.
+#NBL.a    nBuLay and PWell:block. Their rules are on the layers chapter 4.2 derives - nBuLay grown from every NWell
+#         3.0 um wide or more, PWell from what no NWell covers - which this checker does not derive.
+#M1.e     Wide-metal spacings, M1.e and M1.f and the same for Metal2 to TopMetal2: each holds only where a line is
+#         wider than a limit and runs alongside another for more than a length.
+#M1.g     The 45-degree rules, M1.g and M1.i and theirs above: they hold only on bent metal.
+#M1.j     The density rules, of each metal and of fill: global, over the whole chip, so a cell or a tile would fail
+#         them however it was drawn.
+#Pas.c    TopMetal2 over a passivation opening, 2.1 - except inside the seal ring, which this cannot tell.
+#MIM.e    TopMetal1 to MIM, 0.6, and MIM.g, the most a MIM may cover: a maximum is not a check here.
+#Ant.a    The antenna ratios: they need each layer's role, and this deck is read without them.
+#3.1      Acute angles under 87 degrees, and contacts and vias at anything but 90: angles are not a check here.
+#3.2      The forbidden layers - BiWind, BasPoly, EmPoly, NoDRC and the rest - whose layout IHP rejects at tape-in:
+#         that a layer is drawn on at all is not a check here either. The layer panel names none of them, which is
+#         where one shows.
+#
+#And chapter 6's device rules - the bipolar transistors, the resistors, isolated NMOS, the Schottky diode, ESD, the
+#pads, the seal ring and the inductors - which are each a device's own.

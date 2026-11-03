@@ -23,17 +23,22 @@ module.exports = defineConfig({
 
     reporter: [['list']],
     use: {
-        baseURL: 'http://localhost:5105',
-
-        //The size the pictures are taken at. Wide enough that the toolbar does not wrap and the sidebars sit
-        //beside the view rather than over it, which is how the app is meant to be seen.
-        viewport: { width: 1400, height: 900 },
-        deviceScaleFactor: 1
+        baseURL: 'http://localhost:5105'
     },
     projects: [
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] }
+
+            //
+            //The size the pictures are taken at: wide enough that the toolbar does not wrap and the sidebars sit
+            //beside the view rather than over it, which is how the app is meant to be seen.
+            //
+            //**1280 by 720, after the device, because that is what every full-window picture in docs/images
+            //is.** This asked for 1400 by 900 in the `use` above, where Desktop Chrome's own 1280 by 720
+            //overruled it - see playwright.config.js. Said here, it is the size the pictures have always come
+            //out at; changing it is a decision to retake all of them, not a correction.
+            //
+            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 }
         }
     ],
     webServer: {

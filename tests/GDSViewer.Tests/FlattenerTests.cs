@@ -7,9 +7,10 @@ namespace GDSViewer.Tests;
 ///<summary>
 ///Covers GdsFlattener, which resolves a library's hierarchy into placed geometry.
 ///
-///These carry more weight than most of the suite: only one bundled file uses SREF and none uses AREF,
-///and that one file references cells it does not contain, so the corpus cannot exercise placement at
-///all. Everything below is built by hand for that reason.
+///These carry more weight than most of the suite: among the bundled cells only one file uses SREF, and it
+///references cells it does not contain, so the cell corpus cannot exercise placement at all; the ten designs
+///bundled later do, with one AREF among them, but a hand-built case says which part went wrong. Everything
+///below is built by hand for that reason.
 ///</summary>
 public class FlattenerTests
 {

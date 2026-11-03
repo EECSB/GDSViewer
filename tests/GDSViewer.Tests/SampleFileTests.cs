@@ -6,8 +6,8 @@ namespace GDSViewer.Tests;
 
 ///<summary>
 ///Parses the real GDSII files bundled under wwwroot. These are the app's own example files - one
-///hand-made MOSFET plus the SkyWater sky130 standard-cell libraries - so they double as a regression
-///corpus: any change to the parser that breaks a real file shows up here.
+///hand-made MOSFET, the SkyWater sky130 standard-cell libraries, and ten complete sky130 designs - so they
+///double as a regression corpus: any change to the parser that breaks a real file shows up here.
 ///</summary>
 public class SampleFileTests
 {

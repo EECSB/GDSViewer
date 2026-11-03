@@ -1,0 +1,3068 @@
+@using GdsII
+@using GDSViewer.Models
+@using GDSViewer.Ai
+@implements IAsyncDisposable
+@inject IJSRuntime js
+@inject TextureStore textures
+@inject HttpClient http
+
+@*
+    The PDK manager: the PDKs kept - each a name, its layers and its rules - and which one is in use. Asked for
+    2026-10-18.
+
+    A window like the AI ones, but opened in the middle of the page and larger, since it is the thing being worked in
+    while it is up (asked for the same day). The layers are a table, each row styled through the layer panel's own
+    settings popup; the rules are a table and a form, or the deck's own text in the code editor. The layer and rule
+    panels edit the PDK in use as well - see Viewer.razor's rememberLayer and rememberRules - so the two are one PDK.
+
+    **What this changes, it changes on the list it is handed, and says so**: the shell keeps the list, and lays the PDK
+    in use over the open file again. See Viewer.razor's pdkEdited and pdksChanged.
+*@
+<FloatingWindow Id="pdkManagerWindow" Visible="Visible" OnClose="OnClose" Title="PDK manager" StorageKey="pdk-manager"
+                Width="min(1160px, 94vw)" Height="min(840px, 90vh)" Below="">
+    <div class="pdkManager">
+        @*
+            The list, and a drop target for a whole PDK - a zip of its layermap, its deck and its pictures, or those files
+            dropped together. See fileDrop.js, which hands a drop on anything marked data-drop-into to that input.
+        *@
+        <div class="pdkSide" data-drop-into="pdkPackageImport">
+            @*
+                The PDKs, and under the one shown its two lists, its layers and its rules - a tree, asked for 2026-10-19 in
+                place of the tabs and their own Import and Export over the table. What is picked in it is what the squares
+                under it act on: a PDK as a whole, or one of its lists.
+            *@
+            <div id="pdkList" class="pdkList" role="tree" aria-label="PDKs">
+                @foreach (var pdk in Pdks.Pdks)
+                {
+                    var each = pdk;
+                    bool open = each == shown;
+
+                    <div class="pdkRow @(open && !branchPicked ? "pdkRowShown" : "") @(open ? "pdkRowOpen" : "")" role="treeitem"
+                         aria-selected="@(open && !branchPicked ? "true" : "false")" aria-expanded="@(open ? "true" : "false")"
+                         data-pdk="@each.Id" @onclick="() => pickPdkAsync(each)">
+                        <svg class="pdkRowChevron" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="@(open ? "M4 6l4 4 4-4" : "M6 4l4 4-4 4")" fill="none" stroke="currentColor" stroke-width="1.6"
+                                  stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+
+                        @*
+                            Renamed where it is named, by a double-click - the box over the list that did it went 2026-10-19,
+                            asked what it was for: on the built-in, which keeps its name, it did nothing at all.
+                        *@
+                        @if (open && renaming)
+                        {
+                            <input id="pdkName" class="aiField pdkRowRename" aria-label="Name" @ref="renameBox"
+                                   @bind="renameText" @bind:event="oninput" @onkeydown="renameKeyAsync" @onkeydown:stopPropagation="true"
+                                   @onblur="finishRenamingAsync" @onclick:stopPropagation="true" />
+                        }
+                        else
+                        {
+                            <span class="pdkRowName" title="@rowNameTitle(each)" @ondblclick="() => startRenaming(each)">@each.Name</span>
+                        }
+
+                        @*
+                            The PDK in use, or the way to put the one shown in use - where the "Use this PDK" over the list
+                            went. While picking for a new layout's layers the one in use offers it as well, since using it
+                            is what lays them on - see Picking.
+                        *@
+                        @if (open && (Picking || each.Id != Pdks.Selected))
+                        {
+                            @*Pressed without taking the name's box out first - see useAsync, which keeps what was typed.*@
+                            <button id="pdkUse" type="button" class="pdkInUse pdkUseButton" @onclick="useAsync" @onclick:stopPropagation="true"
+                                    @onmousedown:preventDefault="true" title="@useTitle()">use</button>
+                        }
+                        else if (each.Id == Pdks.Selected)
+                        {
+                            <span class="pdkInUse" title="The PDK in use">in use</span>
+                        }
+                    </div>
+
+                    @if (open)
+                    {
+                        <div id="pdkLayersTab" class="pdkBranch @(branchPicked && tab == Tab.Layers ? "pdkBranchOn" : "")" role="treeitem"
+                             aria-selected="@(branchPicked && tab == Tab.Layers ? "true" : "false")" data-branch="layers"
+                             @onclick="() => pickBranch(Tab.Layers)">Layers (@rows.Count)</div>
+
+                        <div id="pdkRulesTab" class="pdkBranch @(branchPicked && tab == Tab.Rules ? "pdkBranchOn" : "")" role="treeitem"
+                             aria-selected="@(branchPicked && tab == Tab.Rules ? "true" : "false")" data-branch="rules"
+                             @onclick="() => pickBranch(Tab.Rules)">Rules (@deck.Rules.Count)</div>
+                    }
+                }
+
+                <div class="pdkDropHint">Drop a PDK's zip here to add it</div>
+            </div>
+
+            @*
+                What is picked - made, copied, brought in, written out, deleted - as pictures, the way the selection panel's
+                own row is: a plus, the copy mark, the two arrows and the bin. New and Duplicate are about PDKs; Import,
+                Export and the bin act on a PDK as a whole, as one zip, or on the list picked under it - a layermap or a
+                deck. The words are in the tooltips and the labels.
+            *@
+            <div class="pdkSideButtons">
+                <button id="pdkNew" class="buttonStyle2 smallButton actionIcon" @onclick="addNewAsync" aria-label="New PDK"
+                        title="New: a PDK of your own, with no layers or rules yet - import them, or add them one at a time">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 2.6v10.8M2.6 8h10.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                    </svg>
+                </button>
+
+                <button id="pdkDuplicate" class="buttonStyle2 smallButton actionIcon aiQuiet" @onclick="duplicateAsync" aria-label="Duplicate"
+                        title="Duplicate: a copy of the PDK shown, its layers and rules with it, to change without touching this one">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">@((MarkupString)SvgWriter.IconFor(SvgWriter.ShapeIcon.Copy))</svg>
+                </button>
+
+                <InputFile id="pdkPackageImport" style="display: none;" multiple accept="@PackageFiles" OnChange="packageChosenAsync" />
+                <InputFile id="pdkLayersImport" style="display: none;" accept=".csv,.txt,.lyp,text/csv" OnChange="layersChosenAsync" />
+                <InputFile id="pdkRulesImport" style="display: none;" accept=".drc,.txt,text/plain" OnChange="rulesChosenAsync" />
+                <label for="@importInput()" id="pdkImport" class="buttonStyle2 smallButton actionIcon aiQuiet" role="button"
+                       aria-label="@importLabel()" title="@importTitle()">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 10.6V2.4M4.8 5.4 8 2.2l3.2 3.2M2.4 10.4v2.4a1 1 0 0 0 1 1h9.2a1 1 0 0 0 1-1v-2.4" fill="none" stroke="currentColor"
+                              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </label>
+
+                <button id="pdkExport" class="buttonStyle2 smallButton actionIcon aiQuiet" @onclick="exportPickedAsync" aria-label="@exportLabel()"
+                        title="@exportTitle()">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 2.2v8.2M4.8 7.4 8 10.6l3.2-3.2M2.4 10.4v2.4a1 1 0 0 0 1 1h9.2a1 1 0 0 0 1-1v-2.4" fill="none" stroke="currentColor"
+                              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+
+                @*
+                    The built-in picked has Reset in the bin's place, since it cannot be deleted - back to the layers and rules
+                    the app ships, offered once either has been changed. Its lists picked, the bin empties them as for any PDK.
+                *@
+                @if (!branchPicked && shown.BuiltIn)
+                {
+                    <button id="pdkReset" class="buttonStyle2 smallButton actionIcon aiQuiet" disabled="@(!shown.Changed)" @onclick="resetAsync"
+                            aria-label="Reset" title="@resetTitle()">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M2.6 8.4a5.4 5.4 0 1 0 1.6-3.8L2.6 6.2M2.6 2.8v3.4H6" fill="none" stroke="currentColor" stroke-width="1.5"
+                                  stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                }
+                else
+                {
+                    <button id="pdkDelete" class="buttonStyle2 smallButton actionIcon selectionDelete" disabled="@(!canDelete())" @onclick="() => deleting = true"
+                            aria-label="Delete" title="@deleteTitle()">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">@((MarkupString)SvgWriter.IconFor(SvgWriter.ShapeIcon.Delete))</svg>
+                    </button>
+                }
+
+                @*
+                    Help on PDKs, their layers and their rules, with the guides to writing their files - in the place of the
+                    list, see pdkAbout. A square at the end of the row since 2026-10-19, set apart from the ones that change
+                    something; it was an (i) over the list.
+                *@
+                <button id="pdkHelp" class="buttonStyle2 smallButton actionIcon aiQuiet pdkHelp @(aboutOpen ? "pdkHelpOn" : "")"
+                        @onclick="() => aboutOpen = !aboutOpen" aria-pressed="@(aboutOpen ? "true" : "false")"
+                        aria-label="About PDKs" title="What a PDK is, its layers and its rules, and how to write a layermap or a deck">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M5.6 6a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1.1.9-1.1 1.6v.6" fill="none" stroke="currentColor" stroke-width="1.6"
+                              stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="8" cy="12.9" r="1" fill="currentColor" />
+                    </svg>
+                </button>
+            </div>
+
+            @if (deleting && canDelete())
+            {
+                <div class="pdkDeleteAsk">
+                    <span>@deleteAsked()</span>
+
+                    <span class="pdkDeleteAnswers">
+                        <button id="pdkDeleteSure" class="buttonStyle2 smallButton rulesButton aiDanger" @onclick="deletePickedAsync">Delete</button>
+                        <button id="pdkDeleteKeep" class="buttonStyle2 smallButton rulesButton aiQuiet" @onclick="() => deleting = false">Keep</button>
+                    </span>
+                </div>
+            }
+
+            @if (importSays.Length > 0)
+            {
+                <div id="pdkImportSays" class="pdkImportSays" role="status">@importSays</div>
+            }
+        </div>
+
+        @*
+            The picked list and nothing over it: the PDK's name, its being in use, Use and Reset, which had a row here, are
+            the tree's and the squares' since 2026-10-19.
+        *@
+        <div class="pdkDetail">
+            @*
+                What layers and design rules are, and how to write a layermap or a deck - since 2026-10-19 here, beside the
+                tabs they are about, where the layer panel's info icon said it before. A layermap and a rule deck are both
+                files somebody has to supply, nothing on screen says why, and this is where they are supplied.
+
+                **In the place of the picked list while it is open**, rather than a box over the middle of the page: it is a
+                few sections, read beside the tree they explain. The help square under the tree puts it away again, and so
+                does its cross.
+            *@
+            @if (aboutOpen)
+            {
+                <div id="pdkAbout" class="pdkAbout">
+                    <div class="pdkAboutHead">
+                        <b>About PDKs</b>
+
+                        <button id="pdkAboutClose" class="buttonStyle2 closeButton" @onclick="() => aboutOpen = false"
+                                aria-label="Close" title="Close">&times;</button>
+                    </div>
+
+                    @*
+                        **All three, one after another, whatever is picked** (2026-11-01, asked for): it was the PDK's, the
+                        layers' or the rules' alone, by what the tree had picked, so finding the other two meant picking
+                        something else.
+                    *@
+                    <section id="pdkAboutPdk" class="pdkAboutSection">
+                        <h3 class="pdkAboutTitle">A PDK</h3>
+
+                        <p>
+                            A <b>process design kit</b> is what a foundry gives a designer for one of its processes: which
+                            layers there are and what each one is, the rules a layout has to keep to be made, the devices and
+                            their models, and the documents that explain them.
+                        </p>
+
+                        <p>
+                            <b>A PDK here is the part of that a layout viewer needs</b>: its <b>layers</b>, a layermap naming,
+                            coloring and stacking them, and its <b>rules</b>, a deck a layout is checked against - each under it
+                            in the tree on the left - and a <b>README</b> saying what the PDK is, shown here when it is picked.
+                        </p>
+
+                        <p>
+                            <b>It travels as one zip</b>, which Import brings in and Export writes out: a folder named for the
+                            PDK, holding
+                        </p>
+
+                        <ul>
+                            <li><code>name layers.csv</code> - the layermap (or a KLayout <code>.lyp</code>);</li>
+                            <li><code>name rules.drc</code> - the rule deck;</li>
+                            <li>the pictures its layermap's texture column names, for the 3D view;</li>
+                            <li>
+                                <code>README.md</code> - what the process is, its layers and devices, and where its own
+                                documents are. Markdown is drawn here as a page; a README.html, README.pdf or README.txt
+                                is shown as it is.
+                            </li>
+                        </ul>
+
+                        <p>
+                            Only the layermap or the deck has to be there. The guide to writing each is in its section below.
+                        </p>
+                    </section>
+
+                    <section id="pdkAboutLayers" class="pdkAboutSection">
+                        <h3 class="pdkAboutTitle">Layers</h3>
+
+                        <p>
+                            A GDSII file carries only numbers. <b>Nothing in the format records that 65/20 is diffusion</b>,
+                            what color it should be drawn in, what it is for, or where it sits in the wafer.
+                        </p>
+
+                        <p>
+                            So all of that comes from a <b>layermap</b> — a CSV of layer, datatype, name, color, height,
+                            thickness and role — and a PDK holds one. The PDK in use names every file drawn in it; a file
+                            from another process keeps bare numbers in palette colors, which is readable but says nothing
+                            about it.
+                        </p>
+
+                        <p>
+                            The <b>role</b> column is the one worth filling in: net tracing follows conductors through vias,
+                            so a via with no role stops a net dead, and antenna rules are refused outright rather than
+                            guessed at without it.
+                        </p>
+
+                        <p>
+                            <b>A PDK's layers are kept here</b>, under it in the tree on the left: a PDK brought in whole as a zip, or made
+                            new with its layermap imported or its layers added a row at a time, and put in use. To build a
+                            layermap for a whole PDK, take the guide below and hand it to an AI with your PDK's layer table.
+                        </p>
+
+                        <button id="downloadLayermapGuide" class="buttonStyle2 smallButton rulesButton"
+                                @onclick='() => downloadGuideAsync("WRITING-A-LAYERMAP.md")'>
+                            Download the layermap-writing guide (.md)
+                        </button>
+                    </section>
+
+                    <section id="pdkAboutRules" class="pdkAboutSection">
+                        <h3 class="pdkAboutTitle">Design rules</h3>
+
+                        <p>
+                            A <b>design rule</b> is the foundry's answer to "how thin may this wire be, and how close may two
+                            of them get". A deck of them, checked against your layout, is what catches a shape that could
+                            not be manufactured.
+                        </p>
+
+                        <p>
+                            <b>There is no standard file to download.</b> Design rules have no interchange format: a foundry
+                            supporting three tools ships three separately maintained decks that are meant to agree, and
+                            nothing converts between them. KLayout's is a Ruby program, Magic's is fused into its technology
+                            file, and Calibre's SVRF is proprietary and usually under NDA. So a deck here is a small text
+                            file you supply — the same arrangement as the layermap, and for the same licensing reason: one
+                            PDK's tables are somebody else's work and do not belong compiled into a viewer that opens any
+                            file.
+                        </p>
+
+                        <p>
+                            The format is deliberately a fixed vocabulary rather than an expression language. <b>A rule this
+                            build cannot measure is refused by name</b> — listed, and every result from that deck says "not
+                            fully checked" — because a count of faults is only an answer when every rule actually ran.
+                        </p>
+
+                        <p class="infoPopupWarn">
+                            This is not a signoff tool. It catches the obvious against the rules you give it; it is not a
+                            tapeout.
+                        </p>
+
+                        <p>
+                            <b>A PDK's rules are kept here</b>, under it in the tree on the left — sky130's working 30-rule deck to begin
+                            with — read, made in a form, written as text, imported and exported; the PDK in use checks every
+                            file drawn in it. To write a deck for your own PDK, take the guide below: it is the whole
+                            grammar, written so you can hand it to an AI along with your PDK's rule document and get one
+                            back.
+                        </p>
+
+                        <p>
+                            <b>Ran KLayout's own DRC?</b> Open its report (.lyrdb), or drop it on the drawing, and what it
+                            found is laid over the layout in blue, a category to a row. Clicking a row steps through its
+                            markers.
+                        </p>
+
+                        <p>
+                            <b>Nothing failing?</b> That is the expected answer — the bundled cells are signed-off sky130
+                            layout, so a correct deck finds nothing in them. To see what a violation actually looks like,
+                            check with a deck whose limits the layout cannot meet:
+                        </p>
+
+                        <div class="infoPopupActions">
+                            <button id="downloadDeckGuide" class="buttonStyle2 smallButton rulesButton"
+                                    @onclick='() => downloadGuideAsync("WRITING-A-DECK.md")'>
+                                Download the deck-writing guide (.md)
+                            </button>
+
+                            <button id="loadStrictDeck" class="buttonStyle2 smallButton rulesButton infoPopupDemo"
+                                    @onclick="() => OnDemoDeck.InvokeAsync()">
+                                Load a deck that fails (demo)
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            }
+
+            @*
+                The PDK itself picked: what it says about itself - its README, rendered, or a note of what one would hold -
+                rather than one of its lists, which show when they are picked under it (asked for 2026-11-01). The README
+                comes in its zip and goes out with it; see PdkReadme.
+            *@
+            @if (!aboutOpen && !branchPicked)
+            {
+                <div id="pdkInfo" class="pdkInfo">
+                    <InputFile id="pdkReadmeImport" style="display: none;" accept="@ReadmeFiles" multiple OnChange="readmeChosenAsync" />
+
+                    @if (readmeOf(shown) is PdkReadme readme)
+                    {
+                        @if (readme.Kind == PdkReadmeKind.Markdown)
+                        {
+                            <div id="pdkReadme" class="pdkReadme">@((MarkupString)readmeAsHtml(readme))</div>
+                        }
+                        else if (readme.Kind == PdkReadmeKind.Html)
+                        {
+                            @*Sandboxed with nothing allowed: a page from somebody's zip shows, and runs nothing.*@
+                            <iframe id="pdkReadme" class="pdkReadmeFrame" sandbox="" srcdoc="@readme.Text" title="@readme.Name"></iframe>
+                        }
+                        else if (readme.Kind == PdkReadmeKind.Pdf)
+                        {
+                            @if (pdfUrl.Length > 0)
+                            {
+                                <iframe id="pdkReadme" class="pdkReadmeFrame" src="@pdfUrl" title="@readme.Name"></iframe>
+                            }
+                        }
+                        else
+                        {
+                            <pre id="pdkReadme" class="pdkReadmeText">@readme.Text</pre>
+                        }
+
+                        @*Under the README rather than over it, so the README's top lines up with the tree's (asked for 2026-11-01).*@
+                        <div class="pdkInfoBar">
+                            <span id="pdkReadmeName" class="pdkInfoFile" title="The file this PDK's information came in">@readme.Name</span>
+
+                            <label for="pdkReadmeImport" id="pdkReadmeReplace" class="buttonStyle2 smallButton rulesButton aiQuiet pdkAiButton" role="button"
+                                   title="Put another file in this one's place: Markdown, HTML, a PDF or text">
+                                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                    <path d="M13 6.5A5.2 5.2 0 0 0 3.4 4.6M3 9.5a5.2 5.2 0 0 0 9.6 1.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                                    <path d="M13.4 2.4v4.3H9.1M2.6 13.6V9.3h4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                Replace
+                            </label>
+
+                            @if (shown.Readme is not null)
+                            {
+                                <button id="pdkReadmeRemove" class="buttonStyle2 smallButton rulesButton aiQuiet" @onclick="removeReadmeAsync"
+                                        title="@removeReadmeTitle()">Remove</button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div id="pdkNoReadme" class="pdkInfoEmpty">
+                            <b>No README for this PDK.</b>
+
+                            <p>
+                                A PDK's zip can say what the PDK is: put a <code>README.md</code> beside its layers CSV and its
+                                rules <code>.drc</code> - or a README.html, README.pdf or README.txt - with the process, its layers
+                                and devices, and where its own documents are. It shows here when the PDK is picked, and goes out
+                                with it on Export.
+                            </p>
+
+                            <label for="pdkReadmeImport" id="pdkReadmeAdd" class="buttonStyle2 smallButton rulesButton" role="button"
+                                   title="Give this PDK a README: Markdown, HTML, a PDF or text">Add a README</label>
+                        </div>
+                    }
+                </div>
+            }
+
+            @*Both always drawn and one hidden, so the code editor in the rules is made once and keeps its place.*@
+            <div class="pdkLayers" style="@(tab == Tab.Layers && branchPicked && !aboutOpen ? "" : "display: none;")">
+                @*
+                    The layers' bar, the rules' own (asked for 2026-11-01): the table or the layermap's text, Write with AI,
+                    and how the last layermap imported or applied read.
+                *@
+                <div class="pdkRulesBar">
+                    <div class="pdkViewSwitch" role="group" aria-label="How the layers are shown">
+                        <button id="pdkLayersAsTable" class="pdkViewChoice @(layersAsText ? "" : "pdkViewChoiceOn")" aria-pressed="@(layersAsText ? "false" : "true")"
+                                title="The layers as a table, each changed in its row" @onclick="() => showLayersAsText(false)">Table</button>
+                        <button id="pdkLayersAsText" class="pdkViewChoice @(layersAsText ? "pdkViewChoiceOn" : "")" aria-pressed="@(layersAsText ? "true" : "false")"
+                                title="The layermap's own text: a CSV row per layer" @onclick="() => showLayersAsText(true)">Text</button>
+                    </div>
+
+                    @*Layers written in the AI assistant, on this PDK - see LayerTools, and Viewer.razor's writeLayersWithAi.*@
+                    <button id="pdkLayersAi" class="buttonStyle2 smallButton rulesButton pdkAiButton" @onclick="() => OnWriteLayers.InvokeAsync(shown)"
+                            title="Open the AI assistant to write layers into this PDK: describe them, or attach the PDK's layer table, and it adds them to the layermap">
+                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                            <path fill="currentColor" d="M6.4 1.6c.3 2.6 1.6 4 4.2 4.3-2.6.3-3.9 1.7-4.2 4.3-.3-2.6-1.6-4-4.2-4.3 2.6-.3 3.9-1.7 4.2-4.3z" />
+                            <path fill="currentColor" d="M11.6 8.6c.2 1.6 1 2.4 2.6 2.6-1.6.2-2.4 1-2.6 2.6-.2-1.6-1-2.4-2.6-2.6 1.6-.2 2.4-1 2.6-2.6z" />
+                        </svg>
+                        Write with AI
+                    </button>
+
+                    <span id="pdkLayersSays" class="pdkRulesSays" role="status">@layersSays</span>
+                </div>
+
+                <div class="pdkLayerText" style="@(layersAsText ? "" : "display: none;")">
+                    <div id="pdkLayersEditor" class="pdkRulesEditor" @ref="layersEditorHost"></div>
+
+                    <div class="pdkRulesFoot">
+                        <button id="pdkLayersApply" class="buttonStyle2 smallButton rulesButton" @onclick="applyLayersAsync"
+                                title="Make this text the PDK's layermap - every file drawn in it is named and drawn by it">Apply</button>
+                        <button id="pdkLayersRevert" class="buttonStyle2 smallButton rulesButton aiQuiet" @onclick="revertLayersAsync"
+                                title="Back to the layermap as it was last applied">Revert</button>
+                    </div>
+                </div>
+
+                <div class="pdkLayerScroll" style="@(layersAsText ? "display: none;" : "")">
+                    <table id="pdkLayerTable" class="pdkLayerTable">
+                        <thead>
+                            <tr>
+                                <th title="In a new layout's layer list from the start - see Set PDK, under an empty list">Start</th>
+                                <th title="How the layer is drawn - its color, its pattern and its texture in 3D. Press one to change it">Style</th>
+                                <th>Layer</th>
+                                <th>Name</th>
+                                <th title="What tracing a net needs: a conductor carries one, a via joins the conductors it overlaps">Role</th>
+                                <th title="How high the layer sits, in database units - nanometers, for sky130, gf180mcu and ihp-sg13g2">Height</th>
+                                <th title="How thick the layer is, in the same units">Thickness</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var key in rows)
+                            {
+                                var pair = key;
+
+                                <tr data-pair="@pair">
+                                    <td>
+                                        <input type="checkbox" class="pdkStart" checked="@starts.Contains(pair)" aria-label="@($"Start a layout with {pair}")"
+                                               @onchange="e => startToggledAsync(pair, e)" />
+                                    </td>
+                                    @*
+                                        The layer panel's own settings popup, opened on this row - its color, its pattern, its
+                                        texture and the rest, as the gear on a layer in the sidebar opens them. It was a bare
+                                        color picker, which left out everything else about how a layer is drawn. The popup is
+                                        the shell's; see Viewer.razor's openPdkLayerSettings.
+                                    *@
+                                    <td class="pdkColorCell">
+                                        <button class="pdkLook" aria-label="@($"How {pair} is drawn")" title="@lookTitle(pair)"
+                                                @onclick="e => styleAsked(pair, e)">
+                                            @if (swatchOf(pair) is string swatch)
+                                            {
+                                                <svg class="pdkLookSwatch" viewBox="0 0 24 24" preserveAspectRatio="xMidYMid slice" aria-hidden="true">@((MarkupString)swatch)</svg>
+                                            }
+                                            else
+                                            {
+                                                <span class="pdkColorNone">auto</span>
+                                            }
+                                        </button>
+                                    </td>
+                                    <td class="pdkPair">@pair</td>
+                                    <td>
+                                        <input class="aiField pdkCellName" value="@nameOf(pair)" aria-label="@($"Name of {pair}")"
+                                               @onchange="e => nameTypedAsync(pair, e)" />
+                                    </td>
+                                    <td>
+                                        <select class="aiField pdkRole" value="@roleOf(pair)" aria-label="@($"Role of {pair}")" @onchange="e => roleChosenAsync(pair, e)">
+                                            <option value="None">none</option>
+                                            <option value="Conductor">conductor</option>
+                                            <option value="Via">via</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input class="aiField pdkNumber" type="number" value="@heightOf(pair)" aria-label="@($"Height of {pair}")"
+                                               @onchange="e => stackTypedAsync(pair, e, height: true)" />
+                                    </td>
+                                    <td>
+                                        <input class="aiField pdkNumber" type="number" min="0" value="@thicknessOf(pair)" aria-label="@($"Thickness of {pair}")"
+                                               @onchange="e => stackTypedAsync(pair, e, height: false)" />
+                                    </td>
+                                    <td>
+                                        <button class="iconButton pdkRemove" aria-label="@($"Remove {pair}")" title="Take this layer out of the PDK"
+                                                @onclick="() => removeRowAsync(pair)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg></button>
+                                    </td>
+                                </tr>
+                            }
+
+                            @if (rows.Count == 0)
+                            {
+                                <tr>
+                                    <td id="pdkNoLayers" class="pdkEmpty" colspan="8">No layers yet. Add one below, import a layermap, or write one as text.</td>
+                                </tr>
+                            }
+                        </tbody>
+
+                        @*
+                            A layer added from the table's own last row, held to the bottom of the list as it scrolls, so it is
+                            always in reach (asked for 2026-10-19; it was a row of its own under the table). Folded to Add new
+                            layer, a gray row with a plus as the rules' is, until it is pressed (2026-11-01, asked for): then its
+                            pair under the pairs and its name under the names. Enter in any of its fields adds it, and it stays
+                            open for the next until its X.
+                        *@
+                        <tfoot>
+                            @if (!layerAdding)
+                            {
+                                <tr class="pdkRuleAddRow">
+                                    <td colspan="8">
+                                        <button id="pdkLayerAdd" type="button" class="pdkRuleAddButton" @onclick="startAddingLayer"
+                                                title="A layer added by its number, its datatype and a name">
+                                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                                                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                                            </svg>
+                                            Add new layer
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr class="pdkAddRow">
+                                    <td colspan="2" class="pdkAddLabel">New layer</td>
+                                    <td class="pdkAddPair">
+                                        <input id="pdkAddLayer" class="aiField pdkNumber pdkAddNumber" type="number" min="0" max="32767" placeholder="layer"
+                                               aria-label="Layer number of the layer to add" @bind="addLayer" @bind:event="oninput" @onkeydown="addKeyAsync"
+                                               @ref="addLayerBox" />
+                                        <span class="pdkAddSlash">/</span>
+                                        <input id="pdkAddDataType" class="aiField pdkNumber pdkAddNumber" type="number" min="0" max="32767" placeholder="type"
+                                               aria-label="Datatype of the layer to add" @bind="addDataType" @bind:event="oninput" @onkeydown="addKeyAsync" />
+                                    </td>
+                                    <td>
+                                        <input id="pdkAddName" class="aiField pdkCellName" placeholder="name" aria-label="Name of the layer to add"
+                                               @bind="addName" @bind:event="oninput" @onkeydown="addKeyAsync" />
+                                    </td>
+                                    <td colspan="3">
+                                        <button id="pdkAdd" class="buttonStyle2 smallButton rulesButton" disabled="@(!canAdd())" @onclick="addRowAsync"
+                                                title="@addTitle()">Add layer</button>
+                                    </td>
+                                    <td>
+                                        <button id="pdkAddClose" class="iconButton pdkRemove" aria-label="Stop adding layers" title="Stop adding layers"
+                                                @onclick="stopAddingLayer"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <div class="pdkRules" style="@(tab == Tab.Rules && branchPicked && !aboutOpen ? "" : "display: none;")">
+                @*
+                    Two ways to the same deck: a table with a form, so a rule is made by choosing rather than by writing its
+                    line (asked for 2026-10-18), and the deck's own text, for its comments, its derived layers and anything
+                    the form does not offer. Either writes the text, which is what a deck is.
+                *@
+                <div class="pdkRulesBar">
+                    <div class="pdkViewSwitch" role="group" aria-label="How the rules are shown">
+                        <button id="pdkRulesAsTable" class="pdkViewChoice @(rulesAsText ? "" : "pdkViewChoiceOn")" aria-pressed="@(rulesAsText ? "false" : "true")"
+                                title="The rules as a table, each changed in a form" @onclick="() => showRulesAsText(false)">Table</button>
+                        <button id="pdkRulesAsText" class="pdkViewChoice @(rulesAsText ? "pdkViewChoiceOn" : "")" aria-pressed="@(rulesAsText ? "true" : "false")"
+                                title="The deck's own text, with its layers, derived layers and comments" @onclick="() => showRulesAsText(true)">Text</button>
+                    </div>
+
+                    @*
+                        Rules written in the AI assistant, on this PDK - asked for 2026-10-19 as a box here that asked a model for deck
+                        lines from a sentence, and since 2026-10-31 the assistant's own window, asked for that day: it reads
+                        the deck and its grammar and adds lines to it, a card for each - see RuleTools, and Viewer.razor's
+                        writeRulesWithAi.
+                    *@
+                    <button id="pdkRulesAi" class="buttonStyle2 smallButton rulesButton pdkAiButton" @onclick="() => OnWriteRules.InvokeAsync(shown)"
+                            title="Open the AI assistant to write rules into this PDK: describe them, or attach a rule manual, and it adds them as deck lines">
+                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                            <path fill="currentColor" d="M6.4 1.6c.3 2.6 1.6 4 4.2 4.3-2.6.3-3.9 1.7-4.2 4.3-.3-2.6-1.6-4-4.2-4.3 2.6-.3 3.9-1.7 4.2-4.3z" />
+                            <path fill="currentColor" d="M11.6 8.6c.2 1.6 1 2.4 2.6 2.6-1.6.2-2.4 1-2.6 2.6-.2-1.6-1-2.4-2.6-2.6 1.6-.2 2.4-1 2.6-2.6z" />
+                        </svg>
+                        Write with AI
+                    </button>
+
+                    <span id="pdkRulesSays" class="pdkRulesSays" role="status">@rulesSays</span>
+                </div>
+
+                <div class="pdkRuleScroll" style="@(rulesAsText ? "display: none;" : "")">
+                    <table id="pdkRuleList" class="pdkLayerTable pdkRuleTable">
+                        <thead>
+                            <tr>
+                                @if (rulesSwitch())
+                                {
+                                    <th title="Checked when the rules run on a file drawn in this PDK">On</th>
+                                }
+                                <th>Rule</th>
+                                <th>Check</th>
+                                <th>Layers</th>
+                                <th>Limit</th>
+                                <th>Description</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rule in deck.Rules)
+                            {
+                                var each = rule;
+
+                                @if (ruleEditing == each.Line)
+                                {
+                                    @RuleForm
+                                }
+                                else
+                                {
+                                    <tr class="pdkRule" data-rule="@each.Id" title="@each.Description">
+                                        @if (rulesSwitch())
+                                        {
+                                            <td>
+                                                <input type="checkbox" checked="@(!RulesOff.Contains(each.Id))" aria-label="@($"Check {each.Id}")"
+                                                       @onchange="() => OnRuleToggled.InvokeAsync(each.Id)" />
+                                            </td>
+                                        }
+                                        <td class="pdkRuleId">@each.Id</td>
+                                        <td>@checkSaid(each)</td>
+                                        <td>@layersSaid(each)</td>
+                                        <td class="pdkRuleLimit">@limitSaid(each)</td>
+                                        <td class="pdkRuleSays">@each.Description</td>
+                                        <td class="pdkRuleActions">
+                                            <button class="iconButton pdkRuleEdit" aria-label="@($"Change {each.Id}")" title="Change this rule"
+                                                    @onclick="() => startEditingRule(each)">
+                                                <svg viewBox="0 0 16 16" aria-hidden="true">@((MarkupString)SvgWriter.IconFor(SvgWriter.ShapeIcon.Rename))</svg>
+                                            </button>
+
+                                            @if (ruleRemoving == each.Line)
+                                            {
+                                                <button class="buttonStyle2 smallButton rulesButton aiDanger pdkRuleRemoveSure" @onclick="() => removeRuleAsync(each)"
+                                                        title="Take this rule out of the PDK">Remove</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="iconButton pdkRemove" aria-label="@($"Remove {each.Id}")" title="Take this rule out of the PDK - press again to be sure"
+                                                        @onclick="() => ruleRemoving = each.Line"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg></button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+
+                            @if (ruleEditing == 0)
+                            {
+                                @RuleForm
+                            }
+                            else if (deck.Rules.Count == 0)
+                            {
+                                <tr>
+                                    <td id="pdkNoRules" class="pdkEmpty" colspan="@ruleColumns()">No rules yet. Add one below, import a deck, or write one as text.</td>
+                                </tr>
+                            }
+                        </tbody>
+
+                        @*
+                            Add new rule, a gray row with a plus as the table's last, held to the bottom of the list as it scrolls
+                            the way the layers' New layer row is (asked for 2026-11-01; it was the first row, and an Add rule
+                            button in the bar over the table before that). Its form opens under the last rule, where the rule lands.
+                        *@
+                        @if (ruleEditing != 0)
+                        {
+                            <tfoot>
+                                <tr class="pdkRuleAddRow">
+                                    <td colspan="@ruleColumns()">
+                                        <button id="pdkRuleAdd" type="button" class="pdkRuleAddButton" @onclick="startAddingRule"
+                                                title="A rule made by choosing its check, its layers and its limit">
+                                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                                                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                                            </svg>
+                                            Add new rule
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        }
+                    </table>
+                </div>
+
+                <div class="pdkRuleText" style="@(rulesAsText ? "" : "display: none;")">
+                    <div id="pdkRulesEditor" class="pdkRulesEditor" @ref="editorHost"></div>
+
+                    <div class="pdkRulesFoot">
+                        <button id="pdkRulesApply" class="buttonStyle2 smallButton rulesButton" @onclick="applyRulesAsync"
+                                title="Make this text the PDK's rules - every file drawn in it is checked against them">Apply</button>
+                        <button id="pdkRulesRevert" class="buttonStyle2 smallButton rulesButton aiQuiet" @onclick="revertRulesAsync"
+                                title="Back to the rules as they were last applied">Revert</button>
+                    </div>
+                </div>
+
+                @if (deck.Problems.Count > 0 || deck.Refused.Count > 0)
+                {
+                    <ul id="pdkRulesProblems" class="pdkRulesProblems">
+                        @foreach (string problem in deck.Problems.Concat(deck.Refused).Take(MostProblems))
+                        {
+                            <li>@problem</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</FloatingWindow>
+
+@code {
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    ///<summary>Opened to pick a PDK for a new layout's layers, so the one in use offers its use pill too - see Viewer.razor's setPdk.</summary>
+    [Parameter]
+    public bool Picking { get; set; }
+
+    ///<summary>The PDKs kept, which this changes in place - see the note at the top.</summary>
+    [Parameter]
+    public PdkList Pdks { get; set; } = PdkList.Fresh();
+
+    ///<summary>The built-ins' layermaps and decks as they ship, by PDK id, which each reads until it is changed.</summary>
+    [Parameter]
+    public Dictionary<string, string> ShippedLayers { get; set; } = new Dictionary<string, string>();
+
+    [Parameter]
+    public Dictionary<string, string> ShippedRules { get; set; } = new Dictionary<string, string>();
+
+    ///<summary>Whether the deck checking the open file is the PDK in use's, so its rules can be switched on and off here.</summary>
+    [Parameter]
+    public bool RulesLive { get; set; }
+
+    [Parameter]
+    public IReadOnlySet<string> RulesOff { get; set; } = new HashSet<string>();
+
+    [Parameter]
+    public EventCallback<string> OnRuleToggled { get; set; }
+
+    ///<summary>Asked to put a PDK in use, by its id.</summary>
+    [Parameter]
+    public EventCallback<string> OnUse { get; set; }
+
+    ///<summary>Told a PDK's layers, rules, start or name changed.</summary>
+    [Parameter]
+    public EventCallback<Pdk> OnEdited { get; set; }
+
+    ///<summary>Told a PDK was made or deleted.</summary>
+    [Parameter]
+    public EventCallback OnListChanged { get; set; }
+
+    ///<summary>Asked to open the layer settings on a row of a PDK, from where it was pressed - see <see cref="LayerStyleAsked"/>.</summary>
+    [Parameter]
+    public EventCallback<LayerStyleAsked> OnStyleLayer { get; set; }
+
+    ///<summary>The deck that fails on purpose asked for, from the rules' information - the shell's to load, over the open file.</summary>
+    [Parameter]
+    public EventCallback OnDemoDeck { get; set; }
+
+    ///<summary>Write with AI pressed on a PDK: the shell opens the AI assistant to write rules into it - see Viewer.razor's writeRulesWithAi.</summary>
+    [Parameter]
+    public EventCallback<Pdk> OnWriteRules { get; set; }
+
+    ///<summary>Write with AI pressed over a PDK's layers: the same, to write layers into it - see Viewer.razor's writeLayersWithAi.</summary>
+    [Parameter]
+    public EventCallback<Pdk> OnWriteLayers { get; set; }
+
+    ///<summary>Whether the help on PDKs, layers and rules is up, in the place of the list - see pdkAbout. Put away each time the window opens.</summary>
+    private bool aboutOpen;
+
+    ///
+    ///Hands over one of the two writing guides, fetched from where it is served - there is one copy of each, linked into
+    ///the static files from docs/ by the csproj, so editing the documentation is editing what the app gives out.
+    ///
+    private async Task downloadGuideAsync(string name)
+    {
+        try
+        {
+            byte[] guide = await http.GetByteArrayAsync($"resources/{name}");
+
+            await js.InvokeVoidAsync("BlazorDownloadFile", name, "text/markdown", guide);
+        }
+        catch (Exception ex)
+        {
+            await js.InvokeVoidAsync("alert", $"Could not fetch {name}: {ex.Message}");
+        }
+    }
+
+    ///
+    ///A row's look asked for: which PDK, which of its layers, and where on the page the press was, for the popup to open
+    ///beside it. The shell opens its own layer settings on it - the popup a layer in the sidebar opens - and writes what
+    ///is chosen there into the PDK's layermap.
+    ///
+    public sealed record LayerStyleAsked(Pdk Pdk, LayerKey Pair, double X, double Y);
+
+    private enum Tab
+    {
+        Layers,
+        Rules
+    }
+
+    ///<summary>How many of a deck's problems are listed before the rest are left to the rules panel.</summary>
+    private const int MostProblems = 8;
+
+    private Tab tab = Tab.Layers;
+
+    ///<summary>The PDK shown, which the window opens on the one in use.</summary>
+    private Pdk shown = new Pdk();
+
+    ///<summary>The shown PDK's layers, parsed, and the pairs they hold in order - the table's rows.</summary>
+    private LayerNames layers = new LayerNames();
+    private List<LayerKey> rows = new List<LayerKey>();
+
+    ///<summary>The shown PDK's rules, parsed from what was last applied.</summary>
+    private DrcDeck deck = DrcDeck.Parse("");
+
+    ///<summary>The layers a new layout starts with in the shown PDK - see Pdk.StartingLayers.</summary>
+    private HashSet<LayerKey> starts = new HashSet<LayerKey>();
+
+    private bool deleting;
+    private bool wasVisible;
+
+    private string addLayer = "";
+    private string addDataType = "";
+    private string addName = "";
+
+    private string rulesSays = "";
+
+    ///<summary>What the last layermap imported into the PDK shown said - see layersSaid.</summary>
+    private string layersSays = "";
+
+    ///<summary>What the last import said: what it added, and what it could not bring.</summary>
+    private string importSays = "";
+
+    private ElementReference editorHost;
+
+    ///<summary>The code editor's id in MonacoInterop.js, or 0 before it is made.</summary>
+    private int editorId;
+
+    ///<summary>Whether the editor is being made, so a second render does not make another.</summary>
+    private bool makingEditor;
+
+    protected override void OnParametersSet()
+    {
+        //Nothing to read while it is put away, and the page renders far more often than this is looked at.
+        if (!Visible)
+        {
+            wasVisible = false;
+
+            return;
+        }
+
+        //Opened on the PDK in use, every time it opens: that is the one the panels were just showing.
+        if (!wasVisible || !Pdks.Pdks.Contains(shown))
+        {
+            shown = Pdks.InUse;
+            deleting = false;
+            rulesSays = "";
+            layersSays = "";
+            importSays = "";
+            aboutOpen = false;
+            branchPicked = false;
+            renaming = false;
+            layerAdding = false;
+            closeRuleForm();
+        }
+
+        wasVisible = true;
+
+        //Read again when what it shows has changed - edited from the panels while it was open, say.
+        read();
+
+        _ = loadShippedReadmesAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Visible)
+            await showPdfAsync();
+
+        //The name's box just put in the tree, with the name selected so typing replaces it.
+        if (focusRename)
+        {
+            focusRename = false;
+
+            try
+            {
+                await js.InvokeVoidAsync("selectAllIn", renameBox);
+            }
+            catch { }
+        }
+
+        //The form just opened, or the rule it just added, brought into view in a table taller than the window.
+        if (scrollTo is string selector)
+        {
+            scrollTo = null;
+
+            try
+            {
+                await js.InvokeVoidAsync("scrollToElement", selector);
+            }
+            catch { }
+        }
+
+        //The add row's fields just put out, the caret in the first.
+        if (focusAddLayer)
+        {
+            focusAddLayer = false;
+
+            try
+            {
+                await addLayerBox.FocusAsync();
+            }
+            catch { }
+        }
+
+        await layersEditorAsync();
+
+        //The editor is made the first time the text is shown on screen: a hidden window gives it no size to start from.
+        if (!Visible || tab != Tab.Rules || !rulesAsText || editorId != 0 || makingEditor)
+            return;
+
+        makingEditor = true;
+
+        try
+        {
+            editorId = await js.InvokeAsync<int>("createTextEditor", editorHost, rulesText(shown), "gdsdeck");
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            //Said in the panel: with no editor, Apply has nothing to read, and a button that does nothing with no
+            //word about why is the worse of the two.
+            rulesSays = $"The rules editor could not be made, so the text cannot be edited here: {ex.Message}";
+        }
+
+        makingEditor = false;
+    }
+
+    ///
+    ///The layermap's editor, made the first time its text is shown, as the rules' is - and given the layermap again
+    ///whenever it changed underneath it: from the table, an import, the AI assistant or another PDK picked.
+    ///
+    private async Task layersEditorAsync()
+    {
+        if (layersEditorId != 0)
+        {
+            if (!layersEditorStale)
+                return;
+
+            layersEditorStale = false;
+
+            await layersEditorShows(layersText(shown));
+
+            return;
+        }
+
+        if (!Visible || tab != Tab.Layers || !branchPicked || !layersAsText || makingLayersEditor)
+            return;
+
+        makingLayersEditor = true;
+        layersEditorStale = false;
+
+        try
+        {
+            layersEditorId = await js.InvokeAsync<int>("createTextEditor", layersEditorHost, layersText(shown), "gdslayermap");
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            layersSays = $"The layermap editor could not be made, so the text cannot be edited here: {ex.Message}";
+        }
+
+        makingLayersEditor = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (int id in new[] { editorId, layersEditorId })
+        {
+            if (id == 0)
+                continue;
+
+            try
+            {
+                await js.InvokeVoidAsync("disposeTextEditor", id);
+            }
+            catch { }
+        }
+    }
+
+    ///<summary>The shown PDK's layermap: its own, or for a built-in the one it ships with until it is changed.</summary>
+    private string layersText(Pdk pdk)
+    {
+        return pdk.Layers ?? ShippedLayers.GetValueOrDefault(pdk.Id, "");
+    }
+
+    private string rulesText(Pdk pdk)
+    {
+        return pdk.Rules ?? ShippedRules.GetValueOrDefault(pdk.Id, "");
+    }
+
+    ///<summary>Reads the shown PDK's layers and rules again, and what a layout starts with - unless none of it has changed.</summary>
+    private void read()
+    {
+        string layersNow = layersText(shown);
+        string rulesNow = rulesText(shown);
+        string startNow = string.Join(",", shown.Start ?? new List<string>()) + (shown.Start is null);
+
+        if (shown == readFor && layersNow == readLayers && rulesNow == readRules && startNow == readStart)
+            return;
+
+        //A rule being changed in the form is found by its line, which a deck changed underneath it no longer means.
+        if (shown != readFor || rulesNow != readRules)
+            closeRuleForm();
+
+        if (shown != readFor || layersNow != readLayers)
+            layersEditorStale = true;
+
+        readFor = shown;
+        readLayers = layersNow;
+        readRules = rulesNow;
+        readStart = startNow;
+
+        layers = LayerNames.Parse(layersNow);
+        rows = layers.Pairs.ToList();
+        deck = DrcDeck.Parse(rulesNow);
+        starts = new HashSet<LayerKey>(shown.StartingLayers(layers, deck));
+    }
+
+    ///<summary>What was last read, so a render that changed none of it reads nothing - see read.</summary>
+    private Pdk? readFor;
+    private string readLayers = "";
+    private string readRules = "";
+    private string readStart = "";
+
+    private async Task showAsync(Pdk pdk)
+    {
+        if (pdk == shown)
+            return;
+
+        shown = pdk;
+        deleting = false;
+        renaming = false;
+        rulesSays = "";
+        layersSays = "";
+
+        //Another PDK picked is that PDK picked, not a list of it.
+        branchPicked = false;
+        layerAdding = false;
+
+        read();
+
+        await editorShows(rulesText(shown));
+    }
+
+    private void showTab(Tab chosen)
+    {
+        tab = chosen;
+
+        closeRuleForm();
+    }
+
+    ///
+    ///Whether one of the shown PDK's lists is picked in the tree, rather than the PDK itself - what Import, Export and the
+    ///bin under the tree act on. The list shown on the right is the one last picked either way. Asked for 2026-10-19, in
+    ///place of the tabs over the table and their own Import and Export.
+    ///
+    private bool branchPicked;
+
+    ///<summary>A PDK picked in the tree: shown, and the squares under the tree acting on it as a whole.</summary>
+    private async Task pickPdkAsync(Pdk pdk)
+    {
+        await showAsync(pdk);
+
+        branchPicked = false;
+        deleting = false;
+    }
+
+    ///<summary>One of the shown PDK's lists picked in the tree: shown, and the squares acting on it alone.</summary>
+    private void pickBranch(Tab which)
+    {
+        showTab(which);
+
+        branchPicked = true;
+        deleting = false;
+    }
+
+    ///<summary>The input Import opens: a whole PDK's, or the picked list's.</summary>
+    private string importInput()
+    {
+        if (!branchPicked)
+            return "pdkPackageImport";
+
+        if (tab == Tab.Layers)
+            return "pdkLayersImport";
+
+        return "pdkRulesImport";
+    }
+
+    private string importLabel()
+    {
+        if (!branchPicked)
+            return "Import a PDK";
+
+        if (tab == Tab.Layers)
+            return $"Import layers into {shown.Name}";
+
+        return $"Import rules into {shown.Name}";
+    }
+
+    private string importTitle()
+    {
+        if (!branchPicked)
+            return "Import: a whole PDK from a zip - its layermap (a CSV or a KLayout .lyp), its rule deck (.drc) and the pictures its textures name - or those files chosen together. Dropping them on this list does the same";
+
+        if (tab == Tab.Layers)
+            return $"Import: a layermap into {shown.Name} - a CSV of layer,datatype,name and optionally a color, a height, a thickness and a role, or a KLayout .lyp. What it says replaces what {shown.Name} said about those layers, and the rest stays";
+
+        return $"Import: a rule deck into {shown.Name}, in place of its rules - see docs/DRC.md for the format";
+    }
+
+    private string exportLabel()
+    {
+        if (!branchPicked)
+            return "Export this PDK";
+
+        if (tab == Tab.Layers)
+            return $"Export {shown.Name}'s layers";
+
+        return $"Export {shown.Name}'s rules";
+    }
+
+    private string exportTitle()
+    {
+        if (!branchPicked)
+            return "Export: the PDK shown as one zip - its layers, its rules and its textures' pictures - which Import brings back, here or in another browser";
+
+        if (tab == Tab.Layers)
+            return $"Export: {shown.Name}'s layers as a CSV";
+
+        return $"Export: {shown.Name}'s rules as a deck";
+    }
+
+    private async Task exportPickedAsync()
+    {
+        if (!branchPicked)
+            await exportPackageAsync();
+        else if (tab == Tab.Layers)
+            await exportLayersAsync();
+        else
+            await exportRulesAsync();
+    }
+
+    ///<summary>Whether the bin has anything to take: a PDK of one's own, or a list with something in it.</summary>
+    private bool canDelete()
+    {
+        if (!branchPicked)
+            return !shown.BuiltIn;
+
+        if (tab == Tab.Layers)
+            return rows.Count > 0;
+
+        return rulesText(shown).Trim().Length > 0;
+    }
+
+    private string deleteAsked()
+    {
+        if (!branchPicked)
+            return $"Delete {shown.Name}, its layers and rules with it?";
+
+        if (tab == Tab.Layers)
+            return $"Delete {shown.Name}'s {counted(rows.Count, "layer")}?";
+
+        return $"Delete {shown.Name}'s rules - {counted(deck.Rules.Count, "rule")}, with the layers the deck declares?";
+    }
+
+    ///
+    ///The bin, said yes to: the PDK, or the picked list emptied - its layermap or its whole deck, which on the built-in
+    ///Reset puts back.
+    ///
+    private async Task deletePickedAsync()
+    {
+        if (!branchPicked)
+        {
+            await deleteAsync();
+
+            return;
+        }
+
+        deleting = false;
+
+        if (tab == Tab.Layers)
+        {
+            shown.Layers = "";
+            layersSays = "";
+
+            read();
+
+            await OnEdited.InvokeAsync(shown);
+
+            return;
+        }
+
+        await editorShows("");
+        await rulesBecomeAsync("");
+
+        rulesSays = $"Deleted {shown.Name}'s rules.";
+    }
+
+    ///<summary>Puts a text in the editor, if it has been made.</summary>
+    private async Task editorShows(string text)
+    {
+        if (editorId == 0)
+            return;
+
+        try
+        {
+            await js.InvokeVoidAsync("setTextEditorValue", editorId, text);
+        }
+        catch { }
+    }
+
+    private string useTitle()
+    {
+        if (Picking)
+            return "Use this PDK, and start the new layout with its layers";
+
+        return "Name and check the files drawn in this PDK with it, from now on";
+    }
+
+    private async Task useAsync()
+    {
+        //A PDK just made is still being named when its use pill is pressed: the name typed goes with it.
+        await finishRenamingAsync();
+
+        await OnUse.InvokeAsync(shown.Id);
+    }
+
+    private async Task addNewAsync()
+    {
+        var pdk = Pdks.Add("New PDK", "", "");
+
+        await OnListChanged.InvokeAsync();
+
+        await showAsync(pdk);
+
+        //Named next, since "New PDK" is nobody's name for it.
+        startRenaming(pdk);
+    }
+
+    private async Task duplicateAsync()
+    {
+        var pdk = Pdks.Add(shown.Name + " copy", layersText(shown), rulesText(shown));
+
+        pdk.Readme = readmeOf(shown)?.Copy();
+
+        if (shown.Start is not null)
+            pdk.Start = new List<string>(shown.Start);
+
+        //A copy of the built-in starts as the built-in does - its rules' layers with their pins and labels - written out.
+        else if (shown.BuiltIn)
+            pdk.Start = starts.OrderBy(key => key).Select(key => key.ToString()).ToList();
+
+        await OnListChanged.InvokeAsync();
+
+        await showAsync(pdk);
+
+        startRenaming(pdk);
+    }
+
+    private async Task deleteAsync()
+    {
+        if (shown.BuiltIn)
+            return;
+
+        Pdks.Pdks.Remove(shown);
+
+        deleting = false;
+
+        await OnListChanged.InvokeAsync();
+
+        shown = Pdks.InUse;
+
+        read();
+
+        await editorShows(rulesText(shown));
+    }
+
+    private string deleteTitle()
+    {
+        if (branchPicked && tab == Tab.Layers)
+            return $"Delete: every layer of {shown.Name}, leaving it none";
+
+        if (branchPicked)
+            return $"Delete: {shown.Name}'s whole deck, leaving it no rules";
+
+        if (shown.BuiltIn)
+            return $"The built-in {shown.Name} cannot be deleted - Reset puts back what ships with the app, and Duplicate makes one of your own";
+
+        return $"Delete {shown.Name}, its layers and rules with it - a PDK you made or imported";
+    }
+
+    private async Task resetAsync()
+    {
+        if (!shown.BuiltIn)
+            return;
+
+        shown.Layers = null;
+        shown.Rules = null;
+        shown.Start = null;
+        shown.Readme = null;
+
+        read();
+
+        await editorShows(rulesText(shown));
+
+        rulesSays = "";
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private string resetTitle()
+    {
+        if (shown.Changed)
+            return "Reset: back to the layers, rules and README that ship with the app";
+
+        return "Reset: nothing to put back - the layers, rules and README are still the ones that ship with the app";
+    }
+
+    ///<summary>Whether the shown PDK's name is a box in the tree, being typed over - see startRenaming.</summary>
+    private bool renaming;
+    private string renameText = "";
+    private ElementReference renameBox;
+    private bool focusRename;
+
+    private string rowNameTitle(Pdk pdk)
+    {
+        if (pdk.BuiltIn)
+            return "The built-in PDK keeps its name. Duplicate it for one of your own under another";
+
+        return "Double-click to rename";
+    }
+
+    ///<summary>A double-click on the shown PDK's name: a box in its place, Enter or leaving it keeping what is typed and Esc not.</summary>
+    private void startRenaming(Pdk pdk)
+    {
+        if (pdk.BuiltIn || pdk != shown)
+            return;
+
+        renameText = pdk.Name;
+        renaming = true;
+        focusRename = true;
+    }
+
+    private async Task renameKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await finishRenamingAsync();
+        else if (e.Key == "Escape")
+            renaming = false;
+    }
+
+    private async Task finishRenamingAsync()
+    {
+        if (!renaming)
+            return;
+
+        renaming = false;
+
+        string typed = renameText.Trim();
+
+        if (shown.BuiltIn || typed.Length == 0 || typed == shown.Name)
+            return;
+
+        string was = shown.Name;
+
+        //Under a name no other PDK has - its own taken out of the reckoning first.
+        shown.Name = "";
+        shown.Name = Pdks.FreeName(typed);
+
+        if (shown.Name != was)
+            await OnEdited.InvokeAsync(shown);
+    }
+
+    #region A whole PDK, brought in and written out
+
+    ///<summary>What Import offers to choose: a zip, or the files one would hold - a layermap, a deck and pictures.</summary>
+    private const string PackageFiles = ".zip,.csv,.lyp,.drc,.txt,.md,.markdown,.html,.htm,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,application/zip,text/csv,image/*";
+
+    ///<summary>The most files one import takes: a layermap, a deck and their pictures, a few dozen at the very most.</summary>
+    private const int MostPackageFiles = 256;
+
+    ///
+    ///A PDK chosen or dropped - a zip, or its files together - added to the list under its own name and shown. See
+    ///PdkPackage for how its files are told apart, and keepTextures for its pictures.
+    ///
+    private async Task packageChosenAsync(InputFileChangeEventArgs e)
+    {
+        if (e.FileCount > MostPackageFiles)
+        {
+            await forgetPackageInput();
+
+            await js.InvokeVoidAsync("alert", $"That is {e.FileCount} files. A PDK is a layermap, a deck and their pictures - choose those, or a zip of them.");
+
+            return;
+        }
+
+        var chosen = new List<(string Name, byte[] Bytes)>();
+
+        foreach (var file in e.GetMultipleFiles(MostPackageFiles))
+        {
+            try
+            {
+                await using var stream = file.OpenReadStream(LayermapPackage.LargestUnpacked);
+                using var memory = new MemoryStream();
+
+                await stream.CopyToAsync(memory);
+
+                chosen.Add((file.Name, memory.ToArray()));
+            }
+            catch (Exception ex)
+            {
+                await forgetPackageInput();
+
+                await js.InvokeVoidAsync("alert", $"Could not read {file.Name}: {ex.Message}");
+
+                return;
+            }
+        }
+
+        //Read or not, so choosing or dropping the same files again is a change the input reports.
+        await forgetPackageInput();
+
+        var contents = PdkPackage.FromFiles(chosen);
+
+        if (contents is null)
+        {
+            await js.InvokeVoidAsync("alert", "Choose a PDK: a zip holding its layermap - a CSV or a KLayout .lyp - and its rule deck (.drc), with the pictures its textures name beside them, or those files together.");
+
+            return;
+        }
+
+        await addPackageAsync(contents, packageName(contents, chosen));
+    }
+
+    ///
+    ///What an imported PDK is called: the folder its files were in, or else the zip's name - or the layermap's or the deck's
+    ///without the " layers" or " rules" Export puts after the name. Made free of the names already taken when it is added.
+    ///
+    private static string packageName(PdkPackage.Contents contents, List<(string Name, byte[] Bytes)> chosen)
+    {
+        if (contents.Name is string folder && folder.Trim().Length > 0)
+            return folder;
+
+        var zip = chosen.FirstOrDefault(file => LayermapPackage.IsZip(file.Bytes));
+        string name = "";
+
+        if (zip.Name is not null)
+            name = Path.GetFileNameWithoutExtension(zip.Name);
+        else if (chosen.Count > 0)
+            name = Path.GetFileNameWithoutExtension(chosen[0].Name);
+
+        foreach (string suffix in new[] { " layers", " rules" })
+        {
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - suffix.Length);
+        }
+
+        if (name.Trim().Length == 0)
+            return "Imported PDK";
+
+        return name;
+    }
+
+    private async Task addPackageAsync(PdkPackage.Contents contents, string name)
+    {
+        string layermap = "";
+        int layerCount = 0;
+        var missing = new List<string>();
+
+        if (contents.Layers is not null)
+        {
+            var parsed = LayerNames.Parse(contents.Layers);
+
+            layerCount = parsed.Count;
+
+            //Written out again, so a .lyp is kept as the CSV every other PDK is kept as.
+            if (layerCount > 0)
+                layermap = parsed.Write();
+
+            missing = await keepTextures(parsed, contents.Files);
+        }
+
+        string rules = contents.Rules ?? "";
+        var read = DrcDeck.Parse(rules);
+
+        if (layerCount == 0 && read.Count == 0)
+        {
+            await js.InvokeVoidAsync("alert", $"{name} names no layers and holds no rules, so there is no PDK in it to add.");
+
+            return;
+        }
+
+        var pdk = Pdks.Add(name, layermap, rules);
+
+        pdk.Readme = contents.Readme;
+
+        await OnListChanged.InvokeAsync();
+
+        await showAsync(pdk);
+
+        var said = new System.Text.StringBuilder($"Added {pdk.Name}: {counted(layerCount, "layer")} and {counted(read.Rules.Count, "rule")}.");
+
+        if (read.Problems.Count + read.Refused.Count > 0)
+            said.Append($" {counted(read.Problems.Count + read.Refused.Count, "line")} of its deck could not be used - see Rules.");
+
+        if (missing.Count > 0)
+            said.Append($" Not in it: {string.Join(", ", missing)}, so those layers have no texture in 3D.");
+
+        importSays = said.ToString();
+    }
+
+    ///
+    ///Keeps the pictures a layermap's texture column names, from the files that came with it, in this browser - the store
+    ///the layer settings and the 3D view read them from - and hands back the names neither brought nor kept already.
+    ///
+    private async Task<List<string>> keepTextures(LayerNames names, IReadOnlyDictionary<string, byte[]> brought)
+    {
+        var missing = new List<string>();
+
+        foreach (string name in names.Textures.Values.Distinct(StringComparer.Ordinal))
+        {
+            if (brought.TryGetValue(name, out byte[]? picture))
+            {
+                await textures.SetAsync(name, picture);
+
+                continue;
+            }
+
+            if (await textures.GetAsync(name) is null)
+                missing.Add(name);
+        }
+
+        return missing;
+    }
+
+    private async Task forgetPackageInput()
+    {
+        await forgetChosen("pdkPackageImport");
+    }
+
+    ///<summary>Lets the same file be chosen again through this input - see forgetChosenFile in JavaScriptInterOp.js.</summary>
+    private async Task forgetChosen(string input)
+    {
+        try
+        {
+            await js.InvokeVoidAsync("forgetChosenFile", input);
+        }
+        catch { }
+    }
+
+    #region The README
+
+    ///<summary>What a README can be, for its own input: Markdown, HTML, a PDF or text.</summary>
+    private const string ReadmeFiles = ".md,.markdown,.html,.htm,.pdf,.txt,.png,.jpg,.jpeg,.gif,.webp,.svg,text/markdown,text/html,application/pdf,text/plain,image/*";
+
+    ///<summary>The largest README taken, which is kept with the PDK in this browser: a manual's PDF, not a library's.</summary>
+    private const long LargestReadme = 20 * 1024 * 1024;
+
+    ///
+    ///The built-ins' READMEs as they ship, by PDK id - sky130-README.md and the others, beside their layermaps
+    ///and decks - each with the pictures it names fetched from beside it. One object each, so a render does not make it
+    ///again. Read the first time the manager is shown.
+    ///
+    private readonly Dictionary<string, PdkReadme> shippedReadmes = new Dictionary<string, PdkReadme>();
+    private bool shippedReadmesAsked;
+
+    ///<summary>The README last drawn as a page, and the page - its pictures inline, so it is not made again each render.</summary>
+    private PdkReadme? readmeHtmlFor;
+    private string readmeHtmlText = "";
+    private string readmeHtml = "";
+
+    private string readmeAsHtml(PdkReadme readme)
+    {
+        if (readme != readmeHtmlFor || readme.Text != readmeHtmlText)
+        {
+            readmeHtmlFor = readme;
+            readmeHtmlText = readme.Text ?? "";
+            readmeHtml = MarkdownHtml.ToHtml(readmeHtmlText, readme.PictureUrl);
+        }
+
+        return readmeHtml;
+    }
+
+    ///<summary>A blob address the shown PDF README is drawn from, and the README it was made for - made after a render, let go of with the next.</summary>
+    private string pdfUrl = "";
+    private PdkReadme? pdfFor;
+
+    ///<summary>What a PDK says about itself: its own README, or a built-in's shipped one, or null for none.</summary>
+    private PdkReadme? readmeOf(Pdk pdk)
+    {
+        if (pdk.Readme is not null)
+            return pdk.Readme;
+
+        if (pdk.BuiltIn && shippedReadmes.TryGetValue(pdk.Id, out var shipped))
+            return shipped;
+
+        return null;
+    }
+
+    ///<summary>Every built-in's README, read once and all at once, since none waits on another.</summary>
+    private async Task loadShippedReadmesAsync()
+    {
+        if (shippedReadmesAsked)
+            return;
+
+        shippedReadmesAsked = true;
+
+        await Task.WhenAll(Pdk.BuiltIns.Select(loadShippedReadmeAsync));
+    }
+
+    private async Task loadShippedReadmeAsync(ShippedPdk shipped)
+    {
+        try
+        {
+            var readme = new PdkReadme { Name = "README.md", Text = await http.GetStringAsync(shipped.ReadmePath) };
+            var pictures = new Dictionary<string, string>(StringComparer.Ordinal);
+            string folder = shipped.ReadmePath.Substring(0, shipped.ReadmePath.LastIndexOf('/') + 1);
+
+            //Its pictures, from beside it, as a README brought in a zip carries them - so Export writes them too.
+            foreach (string path in MarkdownHtml.PicturesIn(readme.Text))
+            {
+                if (!PdkReadme.IsPicturePath(path))
+                    continue;
+
+                try
+                {
+                    pictures[path] = Convert.ToBase64String(await http.GetByteArrayAsync(folder + path));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not read {path}, a picture the bundled README names: {ex.Message}");
+                }
+            }
+
+            if (pictures.Count > 0)
+                readme.Pictures = pictures;
+
+            shippedReadmes[shipped.Id] = readme;
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not read the bundled README from {shipped.ReadmePath}: {ex.Message}");
+        }
+    }
+
+    ///<summary>The most files one README choice takes: the README and the pictures it shows.</summary>
+    private const int MostReadmeFiles = 40;
+
+    ///
+    ///A README chosen for the PDK shown, in place of the one it has - with the pictures a Markdown one names chosen
+    ///beside it, matched by their file names.
+    ///
+    private async Task readmeChosenAsync(InputFileChangeEventArgs e)
+    {
+        await forgetChosen("pdkReadmeImport");
+
+        var chosen = e.GetMultipleFiles(MostReadmeFiles);
+        var file = chosen.Where(each => PdkReadme.KindOf(each.Name) is not null).OrderByDescending(each => PdkReadme.IsNamedReadme(each.Name)).FirstOrDefault();
+
+        if (file is null)
+        {
+            await js.InvokeVoidAsync("alert", "Choose a README: a Markdown, HTML, PDF or text file - and the pictures it shows, if it is Markdown that has any.");
+
+            return;
+        }
+
+        if (file.Size > LargestReadme)
+        {
+            await js.InvokeVoidAsync("alert", $"{file.Name} is larger than the {LargestReadme / (1024 * 1024)} MB a README is kept at.");
+
+            return;
+        }
+
+        var readme = PdkReadme.From(file.Name, await bytesOf(file, LargestReadme));
+
+        if (readme is null)
+            return;
+
+        if (readme.Kind == PdkReadmeKind.Markdown)
+        {
+            var pictures = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (string path in MarkdownHtml.PicturesIn(readme.Text ?? ""))
+            {
+                string name = Path.GetFileName(path.Replace('\\', '/'));
+                var picture = chosen.FirstOrDefault(each => each != file && each.Name == name);
+
+                if (!PdkReadme.IsPicturePath(path) || picture is null || picture.Size > LargestReadme)
+                    continue;
+
+                pictures[path] = Convert.ToBase64String(await bytesOf(picture, LargestReadme));
+            }
+
+            if (pictures.Count > 0)
+                readme.Pictures = pictures;
+        }
+
+        shown.Readme = readme;
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private static async Task<byte[]> bytesOf(IBrowserFile file, long largest)
+    {
+        using var stream = file.OpenReadStream(largest);
+        using var memory = new MemoryStream();
+
+        await stream.CopyToAsync(memory);
+
+        return memory.ToArray();
+    }
+
+    private async Task removeReadmeAsync()
+    {
+        shown.Readme = null;
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private string removeReadmeTitle()
+    {
+        if (shown.BuiltIn)
+            return $"Take this README out, and show the one {shown.Name} ships with";
+
+        return "Take this README out of the PDK";
+    }
+
+    ///<summary>The shown PDF README's blob address made, or let go of when no PDF is shown - after a render, which is when the frame is there.</summary>
+    private async Task showPdfAsync()
+    {
+        PdkReadme? wanted = null;
+
+        if (!aboutOpen && !branchPicked && readmeOf(shown) is PdkReadme readme && readme.Kind == PdkReadmeKind.Pdf)
+            wanted = readme;
+
+        if (wanted == pdfFor)
+            return;
+
+        if (pdfUrl.Length > 0)
+        {
+            try
+            {
+                await js.InvokeVoidAsync("revokeObjectUrl", pdfUrl);
+            }
+            catch { }
+        }
+
+        pdfFor = wanted;
+        pdfUrl = "";
+
+        if (wanted?.Pdf is not null)
+        {
+            try
+            {
+                pdfUrl = await js.InvokeAsync<string>("objectUrlOf", wanted.Pdf, "application/pdf");
+            }
+            catch { }
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion
+
+    ///<summary>The PDK shown as one zip - see PdkPackage - with the pictures its textures name that this browser keeps.</summary>
+    private async Task exportPackageAsync()
+    {
+        var pictures = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+        foreach (string name in layers.Textures.Values.Distinct(StringComparer.Ordinal))
+        {
+            byte[]? picture = await textures.GetAsync(name);
+
+            if (picture is not null)
+                pictures[name] = picture;
+        }
+
+        byte[] zip = PdkPackage.Write(shown.Name, layers.Write(), rulesText(shown), pictures, readmeOf(shown));
+
+        await js.InvokeVoidAsync("BlazorDownloadFile", PdkPackage.FileNameOf(shown.Name) + ".zip", "application/zip", zip);
+    }
+
+    #endregion
+
+    #region The layers
+
+    private string nameOf(LayerKey pair)
+    {
+        if (layers.Names.TryGetValue(pair, out string? name))
+            return name;
+
+        return "";
+    }
+
+    private string roleOf(LayerKey pair)
+    {
+        if (layers.Roles.TryGetValue(pair, out var role))
+            return role.ToString();
+
+        return LayerRole.None.ToString();
+    }
+
+    private string heightOf(LayerKey pair)
+    {
+        if (layers.Stack.TryGetValue(pair, out var stack))
+            return stack.Height.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        return "";
+    }
+
+    private string thicknessOf(LayerKey pair)
+    {
+        if (layers.Stack.TryGetValue(pair, out var stack))
+            return stack.Thickness.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        return "";
+    }
+
+    ///
+    ///A row's look as a swatch: its color with its pattern over it, drawn by the writer that fills the layer - or null for a
+    ///row that says neither, which the palette colors and the table calls "auto".
+    ///
+    private string? swatchOf(LayerKey pair)
+    {
+        layers.Fills.TryGetValue(pair, out var fill);
+
+        if (!layers.Colors.TryGetValue(pair, out string? color))
+        {
+            if (fill == LayerFill.None)
+                return null;
+
+            color = "#9e9e9e";
+        }
+
+        layers.PatternColors.TryGetValue(pair, out string? marks);
+
+        int? pixels = null;
+
+        if (layers.PatternSizes.TryGetValue(pair, out int size))
+            pixels = size;
+
+        return SvgWriter.SwatchFor(fill, color, $"pdkLook_{pair.Number}_{pair.DataType}", 24, marks, pixels);
+    }
+
+    private string lookTitle(LayerKey pair)
+    {
+        string look = "colored from the palette";
+
+        if (layers.Colors.TryGetValue(pair, out string? color))
+            look = color;
+
+        if (layers.Fills.TryGetValue(pair, out var fill) && fill != LayerFill.None)
+            look += $", {fill.ToString().ToLowerInvariant()}";
+
+        if (layers.Textures.TryGetValue(pair, out string? texture))
+            look += $", {texture} in 3D";
+
+        return $"{pair}: {look}. Press to change its color, pattern and texture";
+    }
+
+    private async Task styleAsked(LayerKey pair, MouseEventArgs e)
+    {
+        await OnStyleLayer.InvokeAsync(new LayerStyleAsked(shown, pair, e.ClientX, e.ClientY));
+    }
+
+    ///<summary>Writes the table back into the shown PDK and says so.</summary>
+    private async Task commitLayersAsync()
+    {
+        shown.Layers = layers.Write();
+
+        read();
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private async Task nameTypedAsync(LayerKey pair, ChangeEventArgs e)
+    {
+        string typed = (e.Value?.ToString() ?? "").Trim();
+
+        if (typed.Length == 0)
+            layers.Names.Remove(pair);
+        else
+            layers.Names[pair] = typed;
+
+        await commitLayersAsync();
+    }
+
+    private async Task roleChosenAsync(LayerKey pair, ChangeEventArgs e)
+    {
+        if (!Enum.TryParse(e.Value?.ToString(), out LayerRole role))
+            return;
+
+        if (role == LayerRole.None)
+            layers.Roles.Remove(pair);
+        else
+            layers.Roles[pair] = role;
+
+        await commitLayersAsync();
+    }
+
+    ///
+    ///A height or a thickness typed. The two go together in a layermap, so the first given starts the other at what it
+    ///would be without one - the height at nothing, the thickness at a layer's usual depth - and either left blank takes
+    ///the row's stack away, back to where the 3D view stacks a layer nobody placed.
+    ///
+    private async Task stackTypedAsync(LayerKey pair, ChangeEventArgs e, bool height)
+    {
+        string typed = (e.Value?.ToString() ?? "").Trim();
+
+        if (typed.Length == 0)
+        {
+            layers.Stack.Remove(pair);
+
+            await commitLayersAsync();
+
+            return;
+        }
+
+        if (!layers.Stack.TryGetValue(pair, out var stack))
+            stack = (0, AdditionalGDSInformation.DefaultLayerDepth);
+
+        if (!int.TryParse(typed, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int value))
+            return;
+
+        if (height)
+            stack = (value, stack.Thickness);
+        else
+            stack = (stack.Height, Math.Max(0, value));
+
+        layers.Stack[pair] = stack;
+
+        await commitLayersAsync();
+    }
+
+    private async Task removeRowAsync(LayerKey pair)
+    {
+        layers.Remove(pair);
+
+        if (shown.Start is not null)
+            shown.Start.Remove(pair.ToString());
+
+        await commitLayersAsync();
+    }
+
+    private async Task startToggledAsync(LayerKey pair, ChangeEventArgs e)
+    {
+        var chosen = new HashSet<LayerKey>(starts);
+
+        if (e.Value is true)
+            chosen.Add(pair);
+        else
+            chosen.Remove(pair);
+
+        shown.Start = chosen.OrderBy(key => key).Select(key => key.ToString()).ToList();
+
+        read();
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    ///<summary>The pair the add row describes, or null while it does not describe one.</summary>
+    private LayerKey? pairToAdd()
+    {
+        if (!short.TryParse(addLayer, out short number) || number < 0)
+            return null;
+
+        if (!short.TryParse(addDataType, out short dataType) || dataType < 0)
+            return null;
+
+        return new LayerKey(number, dataType);
+    }
+
+    private bool canAdd()
+    {
+        return pairToAdd() is LayerKey pair && !rows.Contains(pair) && addName.Trim().Length > 0;
+    }
+
+    private string addTitle()
+    {
+        if (pairToAdd() is LayerKey pair && rows.Contains(pair))
+            return $"{pair} is in the PDK already - change it in its row";
+
+        return "Add a layer to this PDK: its layer number, its datatype and a name";
+    }
+
+    private async Task addRowAsync()
+    {
+        if (!canAdd() || pairToAdd() is not LayerKey pair)
+            return;
+
+        layers.Names[pair] = addName.Trim();
+
+        //Started with, if this PDK says which layers a layout starts with: one added is one meant to be drawn on.
+        if (shown.Start is not null && !shown.Start.Contains(pair.ToString()))
+            shown.Start.Add(pair.ToString());
+
+        addLayer = "";
+        addDataType = "";
+        addName = "";
+
+        await commitLayersAsync();
+
+        //Where it landed among the pairs, which is rarely next to the row it was added from.
+        scrollTo = $"#pdkLayerTable tr[data-pair=\"{pair}\"]";
+    }
+
+    private async Task addKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await addRowAsync();
+    }
+
+    private async Task layersChosenAsync(InputFileChangeEventArgs e)
+    {
+        string text;
+
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(MaximumLayermap));
+
+            text = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            await js.InvokeVoidAsync("alert", $"Could not read {e.File.Name}: {ex.Message}");
+
+            return;
+        }
+        finally
+        {
+            //Read or not, so choosing the same file again - edited since, say - is a change the input reports.
+            await forgetChosen("pdkLayersImport");
+        }
+
+        var imported = LayerNames.Parse(text);
+
+        if (imported.Count == 0)
+        {
+            await js.InvokeVoidAsync("alert", $"{e.File.Name} names no layers.\n\n{string.Join("\n", imported.Problems.Take(MostProblems))}");
+
+            return;
+        }
+
+        layers.MergeFrom(imported);
+
+        layersSays = layersSaid(imported);
+
+        await commitLayersAsync();
+    }
+
+    ///
+    ///How a layermap imported here read: how many layers it brought, and the first line it could not use, if any - said
+    ///beside its Import, the way the rules say how a deck read. The layer panel's Import said it in a dialog until it
+    ///came here (2026-10-19); a row that does not read names nothing, and nothing on the table would show it.
+    ///
+    private static string layersSaid(LayerNames imported)
+    {
+        string said = $"Imported: {counted(imported.Count, "layer")}.";
+
+        if (imported.Problems.Count == 0)
+            return said;
+
+        return $"{said} {counted(imported.Problems.Count, "line")} it could not use - {imported.Problems[0]}";
+    }
+
+    private async Task exportLayersAsync()
+    {
+        await js.InvokeVoidAsync("BlazorDownloadFile", shown.Name + " layers.csv", "text/csv", layers.Write());
+    }
+
+    ///<summary>Whether the layers are shown as the layermap's text rather than as a table - the table, to begin with.</summary>
+    private bool layersAsText;
+
+    ///<summary>Whether the add row's fields are out, rather than folded to Add new layer.</summary>
+    private bool layerAdding;
+
+    ///<summary>The add row's layer number, given the caret when the row opens - see OnAfterRenderAsync.</summary>
+    private ElementReference addLayerBox;
+    private bool focusAddLayer;
+
+    private ElementReference layersEditorHost;
+
+    ///<summary>The layermap's editor's id in MonacoInterop.js, or 0 before it is made - the rules' has its own.</summary>
+    private int layersEditorId;
+    private bool makingLayersEditor;
+
+    ///<summary>Whether the layermap changed since the editor was last given it - see read, and OnAfterRenderAsync.</summary>
+    private bool layersEditorStale;
+
+    private void showLayersAsText(bool asText)
+    {
+        layersAsText = asText;
+        layerAdding = false;
+    }
+
+    private void startAddingLayer()
+    {
+        layerAdding = true;
+        focusAddLayer = true;
+    }
+
+    private void stopAddingLayer()
+    {
+        layerAdding = false;
+        addLayer = "";
+        addDataType = "";
+        addName = "";
+    }
+
+    private async Task applyLayersAsync()
+    {
+        string? text = null;
+
+        try
+        {
+            text = await js.InvokeAsync<string?>("getTextEditorValue", layersEditorId);
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            layersSays = $"The layermap could not be read out of the editor: {ex.Message}";
+
+            return;
+        }
+
+        //No editor to read: a panel that never got one says so above, and nothing was typed anywhere to apply.
+        if (text is null)
+        {
+            layersSays = "There is no layermap text to apply yet.";
+
+            return;
+        }
+
+        var parsed = LayerNames.Parse(text);
+
+        //A built-in reads the layermap it ships with until it is changed, so that one is no change of its own.
+        if (shown.BuiltIn && text == ShippedLayers.GetValueOrDefault(shown.Id, ""))
+            shown.Layers = null;
+        else
+            shown.Layers = text;
+
+        read();
+
+        layersSays = layersApplied(parsed);
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private static string layersApplied(LayerNames parsed)
+    {
+        string said = $"Applied: {counted(parsed.Count, "layer")}.";
+
+        if (parsed.Problems.Count == 0)
+            return said;
+
+        return $"{said} {counted(parsed.Problems.Count, "line")} it could not use - {parsed.Problems[0]}";
+    }
+
+    private async Task revertLayersAsync()
+    {
+        layersSays = "";
+
+        await layersEditorShows(layersText(shown));
+    }
+
+    ///<summary>Puts a text in the layermap's editor, if it has been made.</summary>
+    private async Task layersEditorShows(string text)
+    {
+        if (layersEditorId == 0)
+            return;
+
+        try
+        {
+            await js.InvokeVoidAsync("setTextEditorValue", layersEditorId, text);
+        }
+        catch { }
+    }
+
+    ///<summary>A ceiling on a layermap read here - the layer panel's, for the same reason.</summary>
+    private const long MaximumLayermap = 4 * 1024 * 1024;
+
+    #endregion
+
+    #region The rules
+
+    private async Task applyRulesAsync()
+    {
+        string? text = null;
+
+        try
+        {
+            text = await js.InvokeAsync<string?>("getTextEditorValue", editorId);
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            rulesSays = $"The rules could not be read out of the editor: {ex.Message}";
+
+            return;
+        }
+
+        if (text is null)
+        {
+            rulesSays = "There is no rules text to apply yet.";
+
+            return;
+        }
+
+        await rulesBecomeAsync(text);
+    }
+
+    ///<summary>Makes a text the shown PDK's rules, saying how it read.</summary>
+    private async Task rulesBecomeAsync(string text)
+    {
+        var parsed = DrcDeck.Parse(text);
+
+        if (shown.BuiltIn && text == ShippedRules.GetValueOrDefault(shown.Id, ""))
+            shown.Rules = null;
+        else
+            shown.Rules = text;
+
+        read();
+
+        rulesSays = rulesSaid(parsed);
+
+        await OnEdited.InvokeAsync(shown);
+    }
+
+    private static string rulesSaid(DrcDeck parsed)
+    {
+        int troubles = parsed.Problems.Count + parsed.Refused.Count;
+        string rules = counted(parsed.Rules.Count, "rule");
+
+        if (troubles == 0)
+            return $"Applied: {rules}.";
+
+        return $"Applied: {rules}, and {counted(troubles, "line")} it could not use - listed below.";
+    }
+
+    private static string counted(int count, string thing)
+    {
+        if (count == 1)
+            return $"1 {thing}";
+
+        return $"{count} {thing}s";
+    }
+
+    private async Task revertRulesAsync()
+    {
+        rulesSays = "";
+
+        await editorShows(rulesText(shown));
+    }
+
+    private async Task rulesChosenAsync(InputFileChangeEventArgs e)
+    {
+        string text;
+
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(MaximumLayermap));
+
+            text = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            await js.InvokeVoidAsync("alert", $"Could not read {e.File.Name}: {ex.Message}");
+
+            return;
+        }
+        finally
+        {
+            //The same, for a deck chosen again.
+            await forgetChosen("pdkRulesImport");
+        }
+
+        var parsed = DrcDeck.Parse(text);
+
+        if (parsed.Rules.Count == 0 && parsed.Refused.Count == 0)
+        {
+            await js.InvokeVoidAsync("alert", $"{e.File.Name} holds no rules.\n\n{string.Join("\n", parsed.Problems.Take(MostProblems))}");
+
+            return;
+        }
+
+        await editorShows(text);
+
+        await rulesBecomeAsync(text);
+    }
+
+    private async Task exportRulesAsync()
+    {
+        await js.InvokeVoidAsync("BlazorDownloadFile", shown.Name + " rules.drc", "text/plain", rulesText(shown));
+    }
+
+    #endregion
+
+    #region The rules as a table and a form
+
+    ///<summary>Whether the rules are shown as the deck's text rather than as a table - the table, to begin with.</summary>
+    private bool rulesAsText;
+
+    ///<summary>The line of the rule open in the form, 0 for a rule being added, or null while the form is shut.</summary>
+    private int? ruleEditing;
+
+    ///<summary>The line of the rule whose × was pressed once, which a second press takes out - 0 for none.</summary>
+    private int ruleRemoving;
+
+    ///<summary>What to bring into view once the table has drawn it - see OnAfterRenderAsync - or null for nothing.</summary>
+    private string? scrollTo;
+
+    private string formId = "";
+    private DrcCheck formCheck = DrcCheck.Width;
+    private string formFirst = "";
+    private string formSecond = "";
+    private string formValue = "";
+    private string formDescription = "";
+    private string formExcept = "";
+    private string formWindow = "";
+    private string formStep = "";
+    private string formMetric = "";
+    private string formProblem = "";
+
+    ///<summary>The checks the form offers - every one the engine measures - in the order a rule manual tends to go.</summary>
+    private static readonly DrcCheck[] Checks =
+    {
+        DrcCheck.Width,
+        DrcCheck.Space,
+        DrcCheck.Notch,
+        DrcCheck.Enclosure,
+        DrcCheck.Area,
+        DrcCheck.HoleArea,
+        DrcCheck.Density,
+        DrcCheck.Antenna,
+        DrcCheck.OffGrid
+    };
+
+    ///<summary>
+    ///Words the reader takes for something else when they stand in a rule - a qualifier, or a metric - so a layer called
+    ///one of them could not be named in a rule line at all.
+    ///</summary>
+    private static readonly HashSet<string> Reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "except", "window", "step", "euclidean", "euclidian", "square", "projection", "parallel"
+    };
+
+    ///<summary>Whether each rule gets a switch: the deck checking the open file is this PDK's, so a switch does something.</summary>
+    private bool rulesSwitch()
+    {
+        return RulesLive && shown.Id == Pdks.Selected;
+    }
+
+    private void showRulesAsText(bool asText)
+    {
+        rulesAsText = asText;
+
+        closeRuleForm();
+    }
+
+    private void closeRuleForm()
+    {
+        ruleEditing = null;
+        ruleRemoving = 0;
+        formProblem = "";
+    }
+
+    private static string checkName(DrcCheck check)
+    {
+        if (check == DrcCheck.Space)
+            return "spacing";
+
+        if (check == DrcCheck.HoleArea)
+            return "hole area";
+
+        if (check == DrcCheck.OffGrid)
+            return "off grid";
+
+        return check.ToString().ToLowerInvariant();
+    }
+
+    private static string checkSaid(DrcRule rule)
+    {
+        if (rule.Metric is DrcMetric metric)
+            return $"{checkName(rule.Check)}, {DrcDeck.MetricWord(metric)}";
+
+        return checkName(rule.Check);
+    }
+
+    private static string operandSaid(string operand)
+    {
+        if (operand == DrcDeck.EveryLayer)
+            return "every layer";
+
+        return operand;
+    }
+
+    private static string layersSaid(DrcRule rule)
+    {
+        string said = operandSaid(rule.Operands[0]);
+
+        if (rule.Operands.Count > 1)
+        {
+            if (rule.Check == DrcCheck.Enclosure)
+                said += $" inside {rule.Operands[1]}";
+            else if (rule.Check == DrcCheck.Antenna)
+                said += $" to gate {rule.Operands[1]}";
+            else
+                said += $" to {rule.Operands[1]}";
+        }
+
+        if (rule.Except is string except)
+            said += $", except inside {except}";
+
+        return said;
+    }
+
+    ///<summary>What a limit is counted in: database units, square ones, tenths of a percent, or a ratio.</summary>
+    private static string unitOf(DrcCheck check)
+    {
+        if (check == DrcCheck.Area || check == DrcCheck.HoleArea)
+            return "dbu²";
+
+        if (check == DrcCheck.Density)
+            return "‰";
+
+        if (check == DrcCheck.Antenna)
+            return ": 1";
+
+        return "dbu";
+    }
+
+    private static string limitSaid(DrcRule rule)
+    {
+        string said = $"{rule.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {unitOf(rule.Check)}";
+
+        if (rule.Window > 0)
+            said += $", window {rule.Window.ToString(System.Globalization.CultureInfo.InvariantCulture)} step {rule.Step.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+        return said;
+    }
+
+    ///<summary>Whether a check names a second layer: spacing may, an enclosure and an antenna must.</summary>
+    private static bool takesSecond(DrcCheck check)
+    {
+        return check == DrcCheck.Space || check == DrcCheck.Enclosure || check == DrcCheck.Antenna;
+    }
+
+    private static bool needsSecond(DrcCheck check)
+    {
+        return check == DrcCheck.Enclosure || check == DrcCheck.Antenna;
+    }
+
+    private string firstLabel()
+    {
+        if (formCheck == DrcCheck.Antenna)
+            return "Metal";
+
+        return "Layer";
+    }
+
+    private string secondLabel()
+    {
+        if (formCheck == DrcCheck.Enclosure)
+            return "Inside";
+
+        if (formCheck == DrcCheck.Antenna)
+            return "Gate";
+
+        return "To";
+    }
+
+    private string valueLabel()
+    {
+        if (formCheck == DrcCheck.Density)
+            return "Least (‰)";
+
+        if (formCheck == DrcCheck.Antenna)
+            return "Ratio (: 1)";
+
+        if (formCheck == DrcCheck.OffGrid)
+            return "Grid (dbu)";
+
+        return $"Limit ({unitOf(formCheck)})";
+    }
+
+    private string valueTitle()
+    {
+        if (formCheck == DrcCheck.Area || formCheck == DrcCheck.HoleArea)
+            return "The least area allowed, in square database units - square nanometers, for sky130, gf180mcu and ihp-sg13g2";
+
+        if (formCheck == DrcCheck.Density)
+            return "The least share of each window the layer must cover, in tenths of a percent: 300 is 30%";
+
+        if (formCheck == DrcCheck.Antenna)
+            return "The most metal allowed for each unit of gate it reaches: 400 is four hundred to one";
+
+        if (formCheck == DrcCheck.OffGrid)
+            return "The manufacturing grid every corner must sit on, in database units - 5 for sky130, gf180mcu and ihp-sg13g2";
+
+        return "The limit, in database units - nanometers, for sky130, gf180mcu and ihp-sg13g2";
+    }
+
+    ///<summary>The deck's own names, in the order it gave them - its layers, then its derived layers.</summary>
+    private List<string> deckNames()
+    {
+        return deck.Layers.Keys.Concat(deck.Derivations.Select(derivation => derivation.Name)).Distinct().ToList();
+    }
+
+    ///
+    ///The PDK's layers the deck does not name yet, by their names in the layer table - offered under the deck's own, and
+    ///declared as `layer name pair` when a rule naming one is saved, so nobody types a layer line to write a rule.
+    ///
+    ///A pair the deck has under another name is left out, being that layer already; so is a name a rule line could not
+    ///hold - two words, a quote, a number, or a word the reader takes for a qualifier.
+    ///
+    private List<(string Name, LayerKey Pair)> undeclared()
+    {
+        var named = new HashSet<string>(deckNames(), StringComparer.Ordinal);
+        var pairs = new HashSet<LayerKey>(deck.Layers.Values);
+        var offered = new List<(string Name, LayerKey Pair)>();
+
+        foreach (var pair in rows)
+        {
+            if (!layers.Names.TryGetValue(pair, out string? name) || !isRuleWord(name) || named.Contains(name) || pairs.Contains(pair))
+                continue;
+
+            named.Add(name);
+            offered.Add((name, pair));
+        }
+
+        return offered;
+    }
+
+    private static bool isRuleWord(string word)
+    {
+        if (word.Length == 0 || word.StartsWith('#') || word == DrcDeck.EveryLayer || Reserved.Contains(word))
+            return false;
+
+        if (word.Any(character => char.IsWhiteSpace(character) || character == '"'))
+            return false;
+
+        return !long.TryParse(word, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _);
+    }
+
+    private void startAddingRule()
+    {
+        ruleEditing = 0;
+        ruleRemoving = 0;
+        formProblem = "";
+        scrollTo = "#pdkRuleForm";
+
+        formId = "";
+        formCheck = DrcCheck.Width;
+        formFirst = "";
+        formSecond = "";
+        formValue = "";
+        formDescription = "";
+        formExcept = "";
+        formWindow = "";
+        formStep = "";
+        formMetric = "";
+    }
+
+    private void startEditingRule(DrcRule rule)
+    {
+        ruleEditing = rule.Line;
+        ruleRemoving = 0;
+        formProblem = "";
+
+        formId = rule.Id;
+        formCheck = rule.Check;
+        formFirst = rule.Operands[0];
+        formSecond = "";
+
+        if (rule.Operands.Count > 1)
+            formSecond = rule.Operands[1];
+
+        formValue = rule.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        formDescription = rule.Description;
+        formExcept = rule.Except ?? "";
+        formWindow = "";
+        formStep = "";
+
+        if (rule.Window > 0)
+            formWindow = rule.Window.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        if (rule.Step > 0)
+            formStep = rule.Step.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        formMetric = rule.Metric?.ToString() ?? "";
+    }
+
+    ///<summary>Another check chosen: what the old one took and this one does not is let go, so the line never carries it.</summary>
+    private void checkChosen(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse(e.Value?.ToString(), out DrcCheck check))
+            return;
+
+        formCheck = check;
+
+        if (!takesSecond(check))
+            formSecond = "";
+
+        if (check != DrcCheck.OffGrid && formFirst == DrcDeck.EveryLayer)
+            formFirst = "";
+
+        if (check != DrcCheck.Density)
+        {
+            formWindow = "";
+            formStep = "";
+        }
+
+        if (!measuredBy())
+            formMetric = "";
+    }
+
+    ///<summary>Whether the rule as the form has it can name a metric - see Drc.HasEdgeForm.</summary>
+    private bool measuredBy()
+    {
+        int operands = 1;
+
+        if (formSecond.Length > 0)
+            operands = 2;
+
+        return Drc.HasEdgeForm(formCheck, operands);
+    }
+
+    ///<summary>The rule the form describes, or null with <paramref name="problem"/> saying what is still wanted.</summary>
+    private DrcRule? ruleFromForm(out string problem)
+    {
+        string id = formId.Trim();
+
+        if (id.Length == 0)
+        {
+            problem = "Name the rule - met1.1, say.";
+
+            return null;
+        }
+
+        if (!isRuleWord(id))
+        {
+            problem = "A rule's name is one word, with no quotes in it.";
+
+            return null;
+        }
+
+        if (formFirst.Length == 0)
+        {
+            problem = $"Choose the layer the {checkName(formCheck)} is measured on.";
+
+            return null;
+        }
+
+        var operands = new List<string> { formFirst };
+
+        if (needsSecond(formCheck) && formSecond.Length == 0)
+        {
+            problem = $"Choose the layer it is {secondLabel().ToLowerInvariant()}.";
+
+            return null;
+        }
+
+        if (takesSecond(formCheck) && formSecond.Length > 0)
+            operands.Add(formSecond);
+
+        if (!long.TryParse(formValue.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long value) || value <= 0)
+        {
+            problem = "The limit is a whole number above zero.";
+
+            return null;
+        }
+
+        int window = 0;
+        int step = 0;
+
+        if (formCheck == DrcCheck.Density)
+        {
+            if (!int.TryParse(formWindow.Trim(), out window) || window <= 0 || !int.TryParse(formStep.Trim(), out step) || step <= 0)
+            {
+                problem = "A density is measured over a window moved by a step - both whole numbers of database units, the step less than the window.";
+
+                return null;
+            }
+        }
+
+        DrcMetric? metric = null;
+
+        if (formMetric.Length > 0 && Drc.HasEdgeForm(formCheck, operands.Count) && Enum.TryParse(formMetric, out DrcMetric chosen))
+            metric = chosen;
+
+        string? except = null;
+
+        if (formExcept.Length > 0)
+            except = formExcept;
+
+        problem = "";
+
+        return new DrcRule
+        {
+            Id = id,
+            Check = formCheck,
+            Operands = operands,
+            Value = value,
+            Description = formDescription.Trim(),
+            Except = except,
+            Window = window,
+            Step = step,
+            Metric = metric
+        };
+    }
+
+    ///<summary>The line the form would write, for the reader to see what a rule is - or empty while it is not yet a rule.</summary>
+    private string formLine()
+    {
+        var rule = ruleFromForm(out _);
+
+        if (rule is null)
+            return "";
+
+        return DrcDeck.WriteRule(rule);
+    }
+
+    ///
+    ///Writes the form's rule into the deck - in place of the rule it was opened on, or under the last rule - with a layer
+    ///line for each of the PDK's layers it names that the deck did not, and makes that the PDK's rules.
+    ///
+    ///**Judged on its own first**, under the deck's layers and derived layers: whatever the reader says about that one
+    ///line is about this rule, where the whole deck may already carry problems of its own that are nobody's fault here.
+    ///Refused rather than half-applied, as the rules panel's own line box is.
+    ///
+    private async Task saveRuleAsync()
+    {
+        if (ruleEditing is not int editing)
+            return;
+
+        var rule = ruleFromForm(out string problem);
+
+        if (rule is null)
+        {
+            formProblem = problem;
+
+            return;
+        }
+
+        if (editing > 0 && !deck.Rules.Any(each => each.Line == editing))
+        {
+            formProblem = "That rule is no longer where the deck had it. Close this and try again.";
+
+            return;
+        }
+
+        string line = DrcDeck.WriteRule(rule);
+        string proposed;
+
+        if (editing == 0)
+            proposed = DrcDeck.WithRuleAdded(rulesText(shown), line);
+        else
+            proposed = DrcDeck.WithLine(rulesText(shown), editing, line);
+
+        //After the rule went in, so the line it was found by still holds while it is replaced.
+        var offered = undeclared();
+
+        foreach (string name in rule.Operands.Append(rule.Except ?? "").Distinct())
+        {
+            foreach (var layer in offered)
+            {
+                if (layer.Name == name)
+                    proposed = DrcDeck.WithLayerDeclared(proposed, layer.Name, layer.Pair);
+            }
+        }
+
+        string declared = DrcDeck.WithoutRules(proposed);
+        var before = DrcDeck.Parse(declared);
+        var alone = DrcDeck.Parse(declared + "\n" + line);
+
+        string? complaint = alone.Problems.FirstOrDefault(each => !before.Problems.Contains(each));
+
+        if (complaint is null && alone.Rules.Count == 0)
+            complaint = alone.Refused.FirstOrDefault() ?? "That reads as no rule.";
+
+        if (complaint is not null)
+        {
+            formProblem = complaint;
+
+            return;
+        }
+
+        closeRuleForm();
+
+        await editorShows(proposed);
+
+        await rulesBecomeAsync(proposed);
+
+        if (editing == 0)
+            rulesSays = $"Added {rule.Id}.";
+        else
+            rulesSays = $"Changed {rule.Id}.";
+
+        //Where it landed, which for a rule added is under the last - out of sight of the form at the top.
+        scrollTo = $"#pdkRuleList tr[data-rule=\"{rule.Id.Replace("\\", "\\\\")}\"]";
+    }
+
+    private async Task removeRuleAsync(DrcRule rule)
+    {
+        ruleRemoving = 0;
+
+        if (rule.Line <= 0)
+            return;
+
+        string proposed = DrcDeck.WithLine(rulesText(shown), rule.Line, null);
+
+        closeRuleForm();
+
+        await editorShows(proposed);
+
+        await rulesBecomeAsync(proposed);
+
+        rulesSays = $"Removed {rule.Id}.";
+    }
+
+    ///
+    ///The form, as a row of the table: in place of the rule it changes, or under the last rule for a rule being added -
+    ///where the rule lands, the Add new rule row at the foot put away meanwhile. A row rather than a dialog, so the rules
+    ///around it stay in view: a limit is often set against the rule beside it.
+    ///
+    ///Laid out since 2026-11-01 (asked for): everything the check measures on the first line, its exceptions and how
+    ///it measures included, since they are part of the check; the description under it, a box no longer than a
+    ///description is, that takes a second line only when the words run past the first; and a cross in the corner in
+    ///place of a Cancel button beside Add.
+    ///
+    private RenderFragment RuleForm => @<tr class="pdkRuleFormRow">
+        <td colspan="@ruleColumns()">
+            <div id="pdkRuleForm" class="pdkRuleForm">
+                <button id="pdkRuleClose" type="button" class="iconButton pdkRuleClose" aria-label="Close the form" title="Close the form, changing nothing"
+                        @onclick="closeRuleForm"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg></button>
+
+                <div class="pdkRuleFields pdkRuleCheckFields">
+                    <label class="pdkRuleField" title="What the rule is called where it is written down - met1.2, difftap.8. A label: it names what a check finds">
+                        <span>Rule</span>
+                        <input id="pdkRuleId" class="aiField" placeholder="met1.1" value="@formId" @oninput="e => formId = e.Value?.ToString() ?? string.Empty" />
+                    </label>
+
+                    <label class="pdkRuleField" title="What the rule measures">
+                        <span>Check</span>
+                        <select id="pdkRuleCheck" class="aiField" value="@formCheck.ToString()" @onchange="checkChosen">
+                            @foreach (var check in Checks)
+                            {
+                                <option value="@check.ToString()">@checkName(check)</option>
+                            }
+                        </select>
+                    </label>
+
+                    <label class="pdkRuleField" title="The layer it is measured on - the deck's own, or one of this PDK's layers, which saving declares in the deck">
+                        <span>@firstLabel()</span>
+                        <select id="pdkRuleLayer" class="aiField" value="@formFirst" @onchange="e => formFirst = e.Value?.ToString() ?? string.Empty">
+                            <option value="">choose…</option>
+
+                            @if (formCheck == DrcCheck.OffGrid)
+                            {
+                                <option value="@DrcDeck.EveryLayer">every layer</option>
+                            }
+
+                            @LayerOptions
+                        </select>
+                    </label>
+
+                    @if (takesSecond(formCheck))
+                    {
+                        <label class="pdkRuleField" title="@secondTitle()">
+                            <span>@secondLabel()</span>
+                            <select id="pdkRuleSecond" class="aiField" value="@formSecond" @onchange="secondChosen">
+                                @if (needsSecond(formCheck))
+                                {
+                                    <option value="">choose…</option>
+                                }
+                                else
+                                {
+                                    <option value="">itself</option>
+                                }
+
+                                @LayerOptions
+                            </select>
+                        </label>
+                    }
+
+                    <label class="pdkRuleField" title="@valueTitle()">
+                        <span>@valueLabel()</span>
+                        <input id="pdkRuleValue" class="aiField pdkNumber" type="number" min="1" step="1" value="@formValue"
+                               @oninput="e => formValue = e.Value?.ToString() ?? string.Empty" />
+                    </label>
+
+                    @if (formCheck == DrcCheck.Density)
+                    {
+                        <label class="pdkRuleField" title="The square the density is measured over, in database units">
+                            <span>Window</span>
+                            <input id="pdkRuleWindow" class="aiField pdkNumber" type="number" min="1" step="1" value="@formWindow"
+                                   @oninput="e => formWindow = e.Value?.ToString() ?? string.Empty" />
+                        </label>
+
+                        <label class="pdkRuleField" title="How far the window moves between measurements - less than the window, so a sparse patch is not split between two">
+                            <span>Step</span>
+                            <input id="pdkRuleStep" class="aiField pdkNumber" type="number" min="1" step="1" value="@formStep"
+                                   @oninput="e => formStep = e.Value?.ToString() ?? string.Empty" />
+                        </label>
+                    }
+
+                    <label class="pdkRuleField" title="A layer inside which this rule does not apply - a marker region, say">
+                        <span>Except inside</span>
+                        <select id="pdkRuleExcept" class="aiField" value="@formExcept" @onchange="e => formExcept = e.Value?.ToString() ?? string.Empty">
+                            <option value="">nowhere</option>
+                            @LayerOptions
+                        </select>
+                    </label>
+
+                    @if (measuredBy())
+                    {
+                        <label class="pdkRuleField" title="How the distance is measured. Sizing counts a corner as its two axes; euclidean is the true distance; parallel measures only edges running alongside each other">
+                            <span>Measured</span>
+                            <select id="pdkRuleMetric" class="aiField" value="@formMetric" @onchange="e => formMetric = e.Value?.ToString() ?? string.Empty">
+                                <option value="">by sizing</option>
+                                <option value="@DrcMetric.Euclidean.ToString()">euclidean</option>
+                                <option value="@DrcMetric.Square.ToString()">square</option>
+                                <option value="@DrcMetric.Projection.ToString()">parallel edges</option>
+                            </select>
+                        </label>
+                    }
+                </div>
+
+                <div class="pdkRuleFoot">
+                    @*One line, and a second only when the words need it - the deck writes a description on one line, so a line break typed is a space.*@
+                    <label class="pdkRuleField pdkRuleFieldDescription" title="What a fault of this rule is called in the results">
+                        <span>Description</span>
+                        <textarea id="pdkRuleDescription" class="aiField pdkRuleDescription" rows="1" placeholder="Met1 width" value="@formDescription"
+                                  @oninput="descriptionTyped"></textarea>
+                    </label>
+
+                    <code id="pdkRuleLine" class="pdkRuleLine" title="The rule as the deck writes it - what the Text view shows">@formLine()</code>
+
+                    <button id="pdkRuleSave" class="buttonStyle2 smallButton rulesButton" @onclick="saveRuleAsync">@saveLabel()</button>
+                </div>
+
+                @if (formProblem.Length > 0)
+                {
+                    <div id="pdkRuleProblem" class="pdkRuleProblem" role="alert">@formProblem</div>
+                }
+            </div>
+        </td>
+    </tr>;
+
+    ///<summary>The names a rule's layer can be, as options: the deck's own, then the PDK's layers the deck would declare.</summary>
+    private RenderFragment LayerOptions => @<text>
+        @{
+            var own = deckNames();
+            var offered = undeclared();
+        }
+
+        @if (own.Count > 0)
+        {
+            <optgroup label="In the rules">
+                @foreach (string name in own)
+                {
+                    <option value="@name">@name</option>
+                }
+            </optgroup>
+        }
+
+        @if (offered.Count > 0)
+        {
+            <optgroup label="From the layers">
+                @foreach (var layer in offered)
+                {
+                    <option value="@layer.Name">@layer.Name (@layer.Pair)</option>
+                }
+            </optgroup>
+        }
+    </text>;
+
+    private void descriptionTyped(ChangeEventArgs e)
+    {
+        formDescription = (e.Value?.ToString() ?? "").Replace("\r\n", " ").Replace('\n', ' ');
+    }
+
+    private void secondChosen(ChangeEventArgs e)
+    {
+        formSecond = e.Value?.ToString() ?? "";
+
+        if (!measuredBy())
+            formMetric = "";
+    }
+
+    private string secondTitle()
+    {
+        if (formCheck == DrcCheck.Enclosure)
+            return "The layer that has to surround the first by the limit";
+
+        if (formCheck == DrcCheck.Antenna)
+            return "The gate the metal's net reaches";
+
+        return "The other layer, for spacing between two - or itself, for spacing within one";
+    }
+
+    private string saveLabel()
+    {
+        if (ruleEditing == 0)
+            return "Add";
+
+        return "Save";
+    }
+
+    private int ruleColumns()
+    {
+        if (rulesSwitch())
+            return 7;
+
+        return 6;
+    }
+
+    #endregion
+}

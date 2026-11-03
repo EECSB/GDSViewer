@@ -419,6 +419,28 @@ public class LayerDiscoveryTests
         Assert.All(colors, color => Assert.Matches("^#[0-9a-f]{6}$", color));
     }
 
+    ///
+    ///**More pairs than the palette's 255 colors** use every one of them and go round again, rather than all taking the
+    ///first - which they did from 256 up, when the step came out at zero (the 2026-10-21 audit). KLayout's sky130 .lyp has
+    ///413 entries.
+    ///
+    [Theory]
+    [InlineData(255)]
+    [InlineData(256)]
+    [InlineData(413)]
+    public void More_pairs_than_colors_use_every_color_and_neighbors_differ(int layerCount)
+    {
+        short[] layerNumbers = Enumerable.Range(1, layerCount).Select(n => (short)n).ToArray();
+
+        var information = LibraryWithLayers(layerNumbers).AdditionalInformation;
+        var colors = information.OrderedLayers().Select(layer => layer.Value.Color).ToList();
+
+        Assert.Equal(Math.Min(layerCount, 255), colors.Distinct().Count());
+
+        for (int i = 1; i < colors.Count; i++)
+            Assert.NotEqual(colors[i - 1], colors[i]);
+    }
+
     #endregion ***********************************************************************
 
 

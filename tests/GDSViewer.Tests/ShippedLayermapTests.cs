@@ -11,8 +11,9 @@ namespace GDSViewer.Tests;
 ///**Because four of its rows were wrong and nothing noticed.** It said 69/20 was a via called "via" when
 ///69/20 is met2 - which would have made every met2 shape join whatever it happened to overlap, the exact
 ///opposite of what a via role is for - and it said 70/20 was met2 when 70/20 is met3. Two more rows named
-///the wrong implant. None of it showed, because every bundled example is a standard cell that stops at met1,
-///so the wrong half of the file is the half nothing exercises.
+///the wrong implant. None of it showed, because every bundled example was a standard cell that stops at
+///met1, so the wrong half of the file was the half nothing exercised. The designs bundled since go above
+///met1, so that half is in use now; this is still what says it is right.
 ///
 ///That is precisely the shape of thing a test is for: a claim about a PDK, in a file nobody compiles, which
 ///only fails on a layout none of the examples is. The authority is
@@ -163,8 +164,12 @@ public class ShippedLayermapTests
         {
             read.Roles.TryGetValue(named.Key, out var role);
 
-            if (Regex.IsMatch(named.Value, @"^met\d$") || named.Value == "li1" || named.Value == "poly" || named.Value == "diff")
+            if (Regex.IsMatch(named.Value, @"^met\d$") || named.Value == "li1" || named.Value == "poly")
                 Assert.Equal(LayerRole.Conductor, role);
+
+            //Not diffusion, which joins a transistor's source to its drain through the channel - see the map.
+            if (named.Value == "diff")
+                Assert.Equal(LayerRole.None, role);
 
             if (Regex.IsMatch(named.Value, @"^via\d?$") || named.Value == "licon1" || named.Value == "mcon")
                 Assert.Equal(LayerRole.Via, role);
@@ -189,6 +194,47 @@ public class ShippedLayermapTests
 
         foreach (string name in new[] { below, through, above })
             Assert.Contains(name, read.Names.Values);
+    }
+
+    ///
+    ///**A via reaches the conductor under it and the one over it, and nothing further.**
+    ///
+    ///Seen from above, an mcon also lies under whatever met2, met3 and met4 run over it, and a via that joined
+    ///everything it overlaps shorted every route on a chip to every other - on the RGB mixer a trace from anywhere
+    ///reached most of the design. Tracing joins a via only to what its height range touches (Nets.Stacked), so
+    ///the heights here are what decide it, and this holds each via to exactly its two neighbors.
+    ///
+    [Theory]
+    [InlineData("licon1", "poly", "li1")]
+    [InlineData("mcon", "li1", "met1")]
+    [InlineData("via", "met1", "met2")]
+    [InlineData("via2", "met2", "met3")]
+    [InlineData("via3", "met3", "met4")]
+    [InlineData("via4", "met4", "met5")]
+    public void Each_via_reaches_only_the_conductors_either_side_of_it(string via, string below, string above)
+    {
+        var read = Shipped();
+
+        Layer layerOf(string name)
+        {
+            var key = read.Names.Single(entry => entry.Value == name).Key;
+            var (height, thickness) = read.Stack[key];
+
+            return new Layer(key, "#ffffff") { CustomHeight = height, Depth = thickness };
+        }
+
+        var through = layerOf(via);
+
+        Assert.True(Nets.Stacked(through, layerOf(below)), $"{via} does not reach {below}");
+        Assert.True(Nets.Stacked(through, layerOf(above)), $"{via} does not reach {above}");
+
+        foreach (string other in new[] { "poly", "li1", "met1", "met2", "met3", "met4", "met5" })
+        {
+            if (other == below || other == above)
+                continue;
+
+            Assert.False(Nets.Stacked(through, layerOf(other)), $"{via} reaches {other}");
+        }
     }
 
     ///
@@ -286,13 +332,13 @@ public class ShippedLayermapTests
         }
 
         //And it found some, or the loop above passes by never running.
-        Assert.Equal(12, counted);
+        Assert.Equal(16, counted);
     }
 
     ///
     ///And each of them takes the height and thickness of the layer it annotates.
     ///
-    ///A pin is drawn on the metal it names, not a step off it - which is the judgement the map's own header
+    ///A pin is drawn on the metal it names, not a step off it - which is the judgment the map's own header
     ///records, stated here so a row that drifts from it fails. It is also what keeps a pin out of the set
     ///the 3D view leaves out: see HasProcessStack.
     ///
@@ -328,38 +374,62 @@ public class ShippedLayermapTests
             counted++;
         }
 
-        Assert.Equal(12, counted);
+        Assert.Equal(16, counted);
     }
 
     ///
     ///Layers the bundled corpus carries that the map deliberately says nothing about.
     ///
-    ///**None of them is on a wafer.** Six are area or extraction markers - `areaid.standardc` and
-    ///`areaid.diode` mark what a region is for, and `poly.short`, `met5.short`, `diff.res` and `diff.cut`
-    ///mark shapes for LVS and extraction rather than describing a film. `text` is where a name goes when it
-    ///belongs to the drawing rather than to a layer. `236/0` is the cell outline the standard cell library
-    ///draws around each cell, and `63/20` and `251/0` appear nowhere in sky130's own tables at all - not in
-    ///layers.py, layers.lyp or layers.yaml - so they are somebody's tooling rather than the process.
+    ///**None of them is on a wafer.** Most are area or extraction markers. The `areaid` purposes on 81 -
+    ///`standardc`, `diode`, `sigPadDiff`, `sigPadMetNtr`, `esd`, `lvNative`, and `padCenter` beside them -
+    ///mark what a region is for. Every `.short`, `.res` and `.cut`, and `poly.gate`, mark shapes for LVS and
+    ///extraction rather than describing a film. `text` is where a name goes when it belongs to the drawing
+    ///rather than to a layer. `236/0` is the cell outline the standard cell library draws around each cell,
+    ///and `235/4`, `prBoundary`, is the one place-and-route draws around a whole design. The five
+    ///`waffleDrop` purposes - 62/24, 105/52, 107/24, 112/4 and 117/4 - tell the fill generator where to leave
+    ///out the metal fill it would otherwise add, which is an instruction to a tool rather than a film. `63/20`
+    ///and `251/0` appear nowhere in sky130's own tables at all - not in layers.py, layers.lyp or layers.yaml -
+    ///so they are somebody's tooling rather than the process.
     ///
     ///There is no height to give any of them, which is why the 3D view leaves them out rather than placing
     ///them somewhere. Being listed here is the decision having been made, not the question being skipped.
     ///
     private static readonly LayerKey[] NotOnTheWafer =
     {
+        new LayerKey(62, 24),
         new LayerKey(63, 20),
         new LayerKey(65, 13),
         new LayerKey(65, 14),
+        new LayerKey(66, 9),
+        new LayerKey(66, 13),
+        new LayerKey(66, 14),
         new LayerKey(66, 15),
+        new LayerKey(67, 15),
+        new LayerKey(68, 15),
+        new LayerKey(69, 15),
+        new LayerKey(70, 15),
+        new LayerKey(71, 13),
+        new LayerKey(71, 15),
         new LayerKey(72, 15),
         new LayerKey(81, 4),
+        new LayerKey(81, 6),
+        new LayerKey(81, 8),
+        new LayerKey(81, 19),
+        new LayerKey(81, 20),
         new LayerKey(81, 23),
+        new LayerKey(81, 60),
         new LayerKey(83, 44),
+        new LayerKey(105, 52),
+        new LayerKey(107, 24),
+        new LayerKey(112, 4),
+        new LayerKey(117, 4),
+        new LayerKey(235, 4),
         new LayerKey(236, 0),
         new LayerKey(251, 0)
     };
 
     ///
-    ///Every layer the bundled examples actually draw on has a height, or is one of the three above.
+    ///Every layer the bundled examples actually draw on has a height, or is one of those listed above.
     ///
     ///**This is the regression guard, and it is stated over the corpus rather than over one cell.** A row
     ///missing from this map is not a cosmetic gap: a layer with no height is one the 3D view leaves out
@@ -369,13 +439,16 @@ public class ShippedLayermapTests
     ///A new pair appearing here fails this test, which is the point - somebody then decides whether it is a
     ///film with a height or a marker with none, rather than it defaulting quietly into either.
     ///
+    ///**Over the sky130 files alone**, since gf180mcu's were bundled beside them (2026-11-02): a GF180 layout is named by
+    ///its own map, which Gf180LayermapTests holds to the same standard.
+    ///
     [Fact]
     public void Every_layer_the_bundled_cells_draw_on_is_mapped_or_listed_as_not_on_the_wafer()
     {
         var read = Shipped();
         var carried = new HashSet<LayerKey>();
 
-        foreach (string path in GdsTestData.AllSampleFiles())
+        foreach (string path in GdsTestData.Sky130SampleFiles())
         {
             var gds = new GDS(File.ReadAllBytes(path));
 

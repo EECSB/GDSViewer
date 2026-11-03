@@ -14,7 +14,7 @@ namespace GdsII
         }
 
         ///<summary>
-        ///Reads a library from the text dump <see cref="AsText"/> writes.
+        ///Reads a library from the text dump <see cref="AsText()"/> writes.
         ///
         ///Deserialize(string) replaces the contents of a library that is already open, which is what the
         ///editor's save needs. This is the other case - there is nothing open yet - and without it the only
@@ -75,8 +75,8 @@ namespace GdsII
             double metersPerDatabaseUnit = 1e-9,
             DateTime? stamp = null)
         {
-            if (metersPerDatabaseUnit <= 0)
-                throw new ArgumentOutOfRangeException(nameof(metersPerDatabaseUnit), "A database unit has to be bigger than nothing.");
+            if (metersPerDatabaseUnit <= 0 || !double.IsFinite(metersPerDatabaseUnit))
+                throw new ArgumentOutOfRangeException(nameof(metersPerDatabaseUnit), "A database unit has to be a size: bigger than nothing, and finite.");
 
             //A micron per user unit, which is the convention every tool reads UNITS by.
             double micronsPerDatabaseUnit = metersPerDatabaseUnit * 1e6;
@@ -168,14 +168,63 @@ namespace GdsII
             return gds;
         }
 
+        ///
+        ///A library read out of its bytes, as the array constructor reads one, offering to stop as it goes:
+        ///<paramref name="pause"/> is awaited every so many records, so a caller on a single thread can let its page
+        ///answer while a big file is read - and throw from it to give the read up. See <see cref="Pauses"/>.
+        ///
+        ///**The records are paced, and so is the model built out of them.** That walk, and the layer table's after it,
+        ///were one stretch each with no pause in them: 55 and 23 ms of gpiov2's, back to back, which was its 106 ms
+        ///pause on a first hover over Examples. Both stop between runs of elements now - see constructGDSAsync and
+        ///AdditionalGDSInformation.OfAsync. Paced 2026-10-18.
+        ///
+        ///**Not a stream with a pause in its reads**, which was tried: the stream reader goes through a
+        ///BufferedStream, whose every read takes a lock, and in the browser's interpreter that made a file eight
+        ///times slower to read than this loop over the array.
+        ///
+        ///**The same loop the constructor runs**, a run of records at a time - see <see cref="parseRecords(byte[], int, int)"/> -
+        ///so the two cannot read a file differently, and the loop itself stays a plain one: in the browser's
+        ///interpreter a loop inside an async method is a third slower, its locals kept on the heap.
+        ///
+        public static async ValueTask<GDS> FromBytesAsync(byte[] gdsData, Func<ValueTask> pause)
+        {
+            var gds = new GDS();
+
+            gds.Records = new List<Record>();
+
+            for (int at = 0; at < gdsData.Length; )
+            {
+                at = gds.parseRecords(gdsData, at, Pauses.Every);
+
+                await pause();
+            }
+
+            await gds.constructGDSAsync(pause);
+
+            gds.AdditionalInformation = await AdditionalGDSInformation.OfAsync(gds, pause);
+
+            return gds;
+        }
+
+        ///<summary>Splits the whole array into records. See the overload below, which does the work.</summary>
+        private void parseRecords(byte[] gdsData)
+        {
+            parseRecords(gdsData, 0, int.MaxValue);
+        }
+
         ///<summary>
         ///Splits the stream into records. Every length here comes out of the file itself, so each one is
         ///checked before it is trusted - otherwise a malformed file walks the cursor off the end of the
         ///array, allocates a negative-sized buffer, or stalls on a zero-length record.
+        ///
+        ///At most <paramref name="most"/> of them from <paramref name="from"/>, handing back where the next one
+        ///starts - so a read that pauses can take them a run at a time. See <see cref="FromBytesAsync"/>.
         ///</summary>
-        private void parseRecords(byte[] gdsData)
+        private int parseRecords(byte[] gdsData, int from, int most)
         {
-            for (int i = 0; i < gdsData.Length; )
+            int i = from;
+
+            for (int read = 0; i < gdsData.Length && read < most; read++)
             {
                 if (gdsData.Length - i < 4)
                     throw new InvalidDataException($"Truncated GDSII stream: {gdsData.Length - i} byte(s) left at offset {i}, too few for a record header.");
@@ -194,6 +243,8 @@ namespace GdsII
 
                 i += recordLength;
             }
+
+            return i;
         }
 
         ///<summary>
@@ -337,11 +388,7 @@ namespace GdsII
 
         private void constructGDS()
         {
-            if (Records.Count == 0)
-                throw new InvalidDataException("This file contains no GDSII records.");
-
-            if (Records[0].Type != RecordType.HEADER)
-                throw new InvalidDataException($"This does not look like a GDSII library: it starts with {Records[0].Type} rather than HEADER.");
+            checkFirstRecord();
 
             int i = 0;
 
@@ -354,8 +401,38 @@ namespace GdsII
                 //The model constructors walk forward through the record list without looking behind them,
                 //so running off the end means the library was cut short - a structure or the library
                 //itself is never closed.
-                throw new InvalidDataException("Incomplete GDSII library: the stream ends before its structure is closed.");
+                throw new InvalidDataException(CutShort);
             }
+        }
+
+        ///
+        ///The same model built with a pause between runs of elements, for <see cref="FromBytesAsync"/>. The heads and
+        ///the ends of the library and its structures are read by the constructors' own code, and the elements by the
+        ///loop the constructor runs - see StructureModel.ReadElements - so the two cannot build a file differently.
+        ///
+        private async ValueTask constructGDSAsync(Func<ValueTask> pause)
+        {
+            checkFirstRecord();
+
+            try
+            {
+                StreamFormat = await StreamFormatModel.ReadAsync(Records, pause);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                throw new InvalidDataException(CutShort);
+            }
+        }
+
+        private const string CutShort = "Incomplete GDSII library: the stream ends before its structure is closed.";
+
+        private void checkFirstRecord()
+        {
+            if (Records.Count == 0)
+                throw new InvalidDataException("This file contains no GDSII records.");
+
+            if (Records[0].Type != RecordType.HEADER)
+                throw new InvalidDataException($"This does not look like a GDSII library: it starts with {Records[0].Type} rather than HEADER.");
         }
 
         #endregion **************************************************************************
@@ -479,6 +556,16 @@ namespace GdsII
                 constructGDS();
 
                 AdditionalInformation = new AdditionalGDSInformation(this);
+
+                //
+                //**And what was known about each layer kept**, for every layer the text still draws on. Every record is
+                //new, but the layers are the ones they were: built from the records alone, a save from the text view
+                //dropped the names a layermap gave them - diff (65/20) came back 65/20 - and their heights and roles
+                //with them. See AdditionalGDSInformation.KeepLayersFrom. A library made from text alone - the CLI's
+                //build, a test's - had no layers before this, and keeps nothing.
+                //
+                if (previousInformation is not null)
+                    AdditionalInformation.KeepLayersFrom(previousInformation);
             }
             catch
             {
@@ -492,10 +579,22 @@ namespace GdsII
 
         public string AsText()
         {
-            var builder = new StringBuilder();
+            return AsText(0, Records.Count);
+        }
 
-            foreach (var record in Records)
+        ///
+        ///<paramref name="count"/> records from <paramref name="first"/> written the way <see cref="AsText()"/> writes
+        ///them all, a line each - so the lines of one cell are the lines the whole file's text has for it.
+        ///
+        public string AsText(int first, int count)
+        {
+            var builder = new StringBuilder();
+            int stop = (int)Math.Min(Records.Count, (long)first + count);
+
+            for (int i = Math.Max(0, first); i < stop; i++)
             {
+                var record = Records[i];
+
                 builder.Append(record.Type.ToString());
                 builder.Append(": ");
 
@@ -527,6 +626,58 @@ namespace GdsII
         ///</summary>
         public StreamFormatModel StreamFormat { get; set; } = null!;
         public AdditionalGDSInformation AdditionalInformation { get; set; } = null!;
+
+        ///
+        ///Where a layer arriving after the file was read takes its row from - its name, height and role - or null for
+        ///none: the host's to say, since which PDK a file is drawn in is the app's knowledge and not the file's. Asked by
+        ///<see cref="AddLayer"/>, which every way a layer arrives goes through - the panel's Add layer, a shape drawn, Ask
+        ///AI, the MCP link - so none of them brings one in bare; the 2026-10-21 audit found the AI assistant's did. Kept on the
+        ///library rather than on its layer table, which a save from the text view builds again.
+        ///
+        public Func<LayerNames?>? RowsForNewLayers { get; set; }
+
+        ///
+        ///Puts a layer in the table that nothing is drawn on yet - see AdditionalGDSInformation.AddLayer - named by
+        ///<see cref="RowsForNewLayers"/> where the host gives a table: 69/20 drawn by the AI assistant on a sky130 file is met2, with
+        ///met2's height and role, as it is when the file is read with the PDK on. False where it was there already.
+        ///
+        public bool AddLayer(LayerKey key)
+        {
+            if (!AdditionalInformation.AddLayer(key))
+                return false;
+
+            if (RowsForNewLayers?.Invoke() is LayerNames rows)
+                rows.ApplyTo(new Dictionary<LayerKey, Layer> { [key] = AdditionalInformation.Layers[key] });
+
+            return true;
+        }
+
+        ///
+        ///How many microns one database unit is, off the library's own UNITS - or null when the file does not say.
+        ///
+        ///The second value in that record is meters per database unit, which is the one that means anything
+        ///absolute: the first is a ratio between two units the file names and nothing else. Null rather than a
+        ///guess for a UNITS that is missing, short, zero, negative, infinite or not a number, because a file that
+        ///does not say is a real thing to be handed and each caller has its own right answer for it - the DXF
+        ///writer and the DRC report take the nanometer nearly every real file uses, the views and the assistant
+        ///take a micron so the numbers on screen stay the file's own. The one reading of the record; the seven
+        ///that each read it by hand had four different ideas of what was usable.
+        ///
+        public double? MicronsPerDatabaseUnit
+        {
+            get
+            {
+                if (StreamFormat?.UNITS?.Data is not Real8Data units || units.Values.Length < 2)
+                    return null;
+
+                double metersPerUnit = units.Values[1];
+
+                if (metersPerUnit <= 0 || !double.IsFinite(metersPerUnit))
+                    return null;
+
+                return metersPerUnit * 1e6;
+            }
+        }
 
 
         #endregion **************************************************************************
@@ -612,7 +763,47 @@ namespace GdsII
                 throw new InvalidDataException($"Record {position} is the XY of a {element}, which needs at least {shape.MinimumPairs} coordinate pairs, but it holds {pairs}.");
 
             if (shape.MustBeClosed && !isClosed(coordinates))
-                throw new InvalidDataException($"Record {position} is the XY of a {element}, which has to close on the point it starts from - it runs ({coordinates[0]}, {coordinates[1]}) to ({coordinates[coordinates.Length - 2]}, {coordinates[coordinates.Length - 1]}).");
+            {
+                //A BOX is still held to it: no file has ever been seen to need otherwise.
+                if (element != RecordType.BOUNDARY)
+                    throw new InvalidDataException($"Record {position} is the XY of a {element}, which has to close on the point it starts from - it runs ({coordinates[0]}, {coordinates[1]}) to ({coordinates[coordinates.Length - 2]}, {coordinates[coordinates.Length - 1]}).");
+
+                record = closedInPlace(i, records, coordinates);
+            }
+
+            return record;
+        }
+
+        ///
+        ///A boundary that stops short of its first point, closed by repeating that point - in place, replacing
+        ///the XY in the record list.
+        ///
+        ///**This used to refuse the whole file, and a real one was refused.** Efabless's SPM example, the demo
+        ///design of the OpenLane flow, carries one copy of `sky130_ef_sc_hd__decap_12` from an early release of
+        ///the cell, and one of its li1 rectangles runs (0, -85) round to (0, 0) without coming back to where it
+        ///began. One shape out of 63,069, and the reader turned the file away; KLayout takes the list as the
+        ///polygon it plainly is. Anything built with that release of the cell carries the same ring. Relaxing
+        ///the one rule a real file trips is the fix that was always meant to follow, rather than checking less
+        ///- see ToleranceTests.
+        ///
+        ///**Closed rather than drawn open**, for the reason the split XY above is joined rather than read in
+        ///pieces: the models are built over this same list, so the text view, the edit path and the writer all
+        ///see one closed ring, and what is saved is a boundary the format allows. A file that opens is a file
+        ///that saves. The three-point rule is untouched - this runs after the minimum, so a triangle given as
+        ///three loose points is still refused rather than closed into one.
+        ///
+        private static Record closedInPlace(int i, List<Record> records, int[] coordinates)
+        {
+            var closed = new int[coordinates.Length + 2];
+
+            coordinates.CopyTo(closed, 0);
+            closed[coordinates.Length] = coordinates[0];
+            closed[coordinates.Length + 1] = coordinates[1];
+
+            var record = new Record((short)RecordType.XY, new Int4Data(closed).Encode());
+
+            //The cursor is past the XY, which take and the join both leave it.
+            records[i - 1] = record;
 
             return record;
         }
@@ -676,7 +867,9 @@ namespace GdsII
         ///Checked against the corpus before being written down: of 112544 boundaries not one is unclosed
         ///and the smallest holds 5 pairs, paths run 2 to 4, and SREF and TEXT carry exactly 1. BOX, NODE
         ///and AREF appear in no bundled file, so those three are the format's word alone - which is why
-        ///they are given the loosest reading that still means anything.
+        ///they are given the loosest reading that still means anything. That was the standard cells. The
+        ///bundled designs have since brought five AREFs, which the rule reads; and a real design has turned
+        ///up with an unclosed boundary, and a boundary is closed now rather than refused - see closedInPlace.
         ///</summary>
         private static (int MinimumPairs, bool MustBeClosed) geometryOf(RecordType element)
         {
@@ -719,7 +912,49 @@ namespace GdsII
 
         public class StreamFormatModel
         {
-            public StreamFormatModel(ref int i, List<Record> records)
+            public StreamFormatModel(ref int i, List<Record> records) : this(ref i, records, structures: true)
+            {
+            }
+
+            ///
+            ///The library read with a pause between runs of elements, for <see cref="constructGDSAsync"/>. A run is so
+            ///many elements however they fall into structures, so a library of many small cells pauses as often as one
+            ///of a few big ones.
+            ///
+            internal static async ValueTask<StreamFormatModel> ReadAsync(List<Record> records, Func<ValueTask> pause)
+            {
+                int i = 0;
+                int left = Pauses.Every;
+                var library = new StreamFormatModel(ref i, records, structures: false);
+
+                while (next(i, records, RecordType.BGNSTR))
+                {
+                    var structure = StructureModel.Head(ref i, records);
+
+                    while (true)
+                    {
+                        left -= structure.ReadElements(ref i, records, left);
+
+                        //Short of the run: the structure's elements ended first.
+                        if (left > 0)
+                            break;
+
+                        await pause();
+
+                        left = Pauses.Every;
+                    }
+
+                    structure.ENDSTR = take(ref i, records, RecordType.ENDSTR);
+                    library.add(structure);
+                }
+
+                library.ENDLIB = take(ref i, records, RecordType.ENDLIB);
+
+                return library;
+            }
+
+            ///<summary>The library's head and, unless <paramref name="structures"/> is false, the rest - see ReadAsync.</summary>
+            private StreamFormatModel(ref int i, List<Record> records, bool structures)
             {
                 HEADER = take(ref i, records, RecordType.HEADER);
                 BGNLIB = take(ref i, records, RecordType.BGNLIB);
@@ -742,10 +977,55 @@ namespace GdsII
 
                 UNITS = take(ref i, records, RecordType.UNITS);
 
+                //Read by ReadAsync instead, a run of elements at a time, which sets this once it gets there.
+                if (!structures)
+                {
+                    ENDLIB = null!;
+
+                    return;
+                }
+
                 while (next(i, records, RecordType.BGNSTR))
-                    Structures.Add(new StructureModel(ref i, records));
+                    add(new StructureModel(ref i, records));
 
                 ENDLIB = take(ref i, records, RecordType.ENDLIB);
+            }
+
+            ///<summary>The name of KLayout's context cell - see <see cref="Context"/>.</summary>
+            public const string ContextName = "$$$CONTEXT_INFO$$$";
+
+            ///
+            ///KLayout's context cell, when the library starts with one: held here rather than among
+            ///<see cref="Structures"/>, because it is not a cell of the layout.
+            ///
+            ///**What it is.** KLayout writes it first in a GDSII library it saves with a cell made from a PCell or a
+            ///library, to say what each such cell was made from: an SREF of it at the origin, with the library, the
+            ///PCell and its parameters in the SREF's properties - and, when the layout has something of its own to
+            ///keep, a BOUNDARY of no area on 0/0 carrying that. Reading the file back, KLayout makes no cell of it
+            ///(`read_context_info_cell` in its `dbGDS2ReaderBase.cc`).
+            ///
+            ///**What it did here, among the cells.** Nothing places it, so it was a second top cell, and everything it
+            ///places was drawn a second time at the origin: IHP's 60 GHz amplifier core came out with its via stack
+            ///and its transistor twice, 5,564 shapes where KLayout reads 3,957. Held aside, every walk of the cells - the
+            ///flattener's tops, the cell lists, the layer table, a rule check, an import, a conversion - leaves it out
+            ///without having to know it is there.
+            ///
+            ///**Kept rather than dropped**, because its records are still the file's: a GDSII save writes it back where it
+            ///was, first, so KLayout reading that file still knows its PCells. Renaming a cell renames it here too - see
+            ///RenameStructure.
+            ///
+            ///**Only the first structure**, as KLayout's reader asks: one by that name anywhere else is a cell to KLayout,
+            ///and so it is here.
+            ///
+            public StructureModel? Context { get; private set; }
+
+            ///<summary>One structure read: a cell, or <see cref="Context"/> when it is that.</summary>
+            private void add(StructureModel structure)
+            {
+                if (Structures.Count == 0 && Context is null && Hierarchy.NameOf(structure) == ContextName)
+                    Context = structure;
+                else
+                    Structures.Add(structure);
             }
 
             public Record HEADER { get; set; }
@@ -785,7 +1065,17 @@ namespace GdsII
 
         public class StructureModel
         {
-            public StructureModel(ref int i, List<Record> records)
+            public StructureModel(ref int i, List<Record> records) : this(ref i, records, elements: true)
+            {
+            }
+
+            ///<summary>A structure's head, for a read that takes its elements a run at a time - see StreamFormatModel.ReadAsync.</summary>
+            internal static StructureModel Head(ref int i, List<Record> records)
+            {
+                return new StructureModel(ref i, records, elements: false);
+            }
+
+            private StructureModel(ref int i, List<Record> records, bool elements)
             {
                 BGNSTR = take(ref i, records, RecordType.BGNSTR);
                 STRNAME = take(ref i, records, RecordType.STRNAME);
@@ -793,10 +1083,35 @@ namespace GdsII
                 if (next(i, records, RecordType.STRCLASS))
                     STRCLASS = take(ref i, records, RecordType.STRCLASS);
 
-                while (i < records.Count && ElementModel.IsElementRecord(records[i].Type))
-                    Elements.Add(new ElementModel(ref i, records));
+                //Read by whoever asked for the head, which sets this once the elements are in.
+                if (!elements)
+                {
+                    ENDSTR = null!;
+
+                    return;
+                }
+
+                ReadElements(ref i, records, int.MaxValue);
 
                 ENDSTR = take(ref i, records, RecordType.ENDSTR);
+            }
+
+            ///
+            ///Reads this structure's elements from <paramref name="i"/>, at most <paramref name="most"/> of them, and
+            ///says how many it read - fewer once the structure's elements have ended. The constructor's loop, so a read
+            ///that pauses between runs takes the elements exactly as one that does not.
+            ///
+            internal int ReadElements(ref int i, List<Record> records, int most)
+            {
+                int read = 0;
+
+                while (read < most && i < records.Count && ElementModel.IsElementRecord(records[i].Type))
+                {
+                    Elements.Add(new ElementModel(ref i, records));
+                    read++;
+                }
+
+                return read;
             }
 
             public Record BGNSTR { get; set; }
@@ -870,9 +1185,10 @@ namespace GdsII
             ///and BOX - and upper bounds are not enforced anywhere here, for the same reason the 200-pair
             ///boundary cap is not.
             ///
-            ///No bundled file carries a property at all, so unlike the geometry rules this one cannot be
-            ///checked against the corpus. It is written the loosest way that still means something: a
-            ///repeat is refused, and nothing is said about which numbers or how many.
+            ///No bundled cell carries a property at all, so when this was written it could not be checked
+            ///against the corpus. It is written the loosest way that still means something: a repeat is
+            ///refused, and nothing is said about which numbers or how many. The bundled designs carry 10,506
+            ///properties between them now, and every one of them reads under it.
             ///</summary>
             private static void requireUnusedAttribute(PropertyModel property, List<PropertyModel> alreadyRead, int position)
             {
@@ -1364,18 +1680,18 @@ namespace GdsII
             ///handle but garbage part way through the file - and nothing at any point said so. SerializedLength
             ///is an int and does not wrap, so the buffer is even the right size; only the field lies.
             ///
-            ///Thrown rather than split. Splitting an element across consecutive XY records is what a writer
-            ///that meets this limit normally does, and it is the one thing this reader refuses to read back
-            ///(see ToleranceTests) - so writing one would make a file this app cannot open. One set of rules
-            ///for both directions is the rule here, and the honest way to hold it is to say what cannot be
-            ///written rather than to write something unreadable.
+            ///**What reaches this is refused**, because by now the shapes have been dealt with: Serialize runs
+            ///<see cref="Fracture.ForGdsii"/> first, which cuts a boundary over the ceiling into several and splits
+            ///a path's or a node's XY across the consecutive records takeXy reads back as one. So a record still
+            ///over it here is not a shape - a string of sixty-six thousand characters, say - and there is nothing
+            ///honest to do with one but say what cannot be written rather than write something unreadable.
             ///
             private int lengthOrRefuse(int payloadLength)
             {
                 int length = payloadLength + 4;
 
                 if (length > MostBytes)
-                    throw new InvalidDataException($"A {Type} record of {length} bytes cannot be written: a GDSII record carries its own length in two bytes, so {MostBytes} is the most one can be - which for an element's coordinates is {(MostBytes - 4) / 8} points. Split the shape into smaller ones.");
+                    throw new InvalidDataException($"A {Type} record of {length} bytes cannot be written: a GDSII record carries its own length in two bytes, so {MostBytes} is the most one can be - which for an element's coordinates is {(MostBytes - 4) / 8} points.");
 
                 return length;
             }

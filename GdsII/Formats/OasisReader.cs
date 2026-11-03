@@ -15,10 +15,11 @@ namespace GdsII
     ///OASIS file is read into the same record list a .gds would have produced, which also means opening one
     ///and saving it writes a valid GDSII file: the conversion is free.
     ///
-    ///**Reading only.** Writing OASIS is a bigger job than reading it and a different one - a writer has to
-    ///choose which of the eleven repetition forms and six point-list forms says a thing most compactly, and
-    ///getting that wrong costs file size rather than correctness, so it is the half where the format earns
-    ///its keep and the half worth doing carefully rather than quickly.
+    ///**Reading here; writing is <see cref="OasisWriter"/>'s.** Writing is the bigger job and a different one -
+    ///a writer has to choose which of the eleven repetition forms and six point-list forms says a thing most
+    ///compactly, and getting that wrong costs file size rather than correctness. The two share the modal
+    ///variables below, which have to be exactly each other's, and a file that leaves one out before its cell
+    ///has set it is read as its writer meant and said in <see cref="Read(byte[], out IReadOnlyList{string})"/>.
     ///
     ///**What it costs to convert.** A few OASIS ideas have no GDSII spelling and are expanded on the way
     ///through: a repetition becomes one element per position, a CTRAPEZOID or a CIRCLE becomes an ordinary
@@ -86,7 +87,24 @@ namespace GdsII
 
         public static GDS Read(byte[] bytes)
         {
-            return GDS.FromRecords(new Reader(bytes).ToRecords());
+            return Read(bytes, out _);
+        }
+
+        ///
+        ///The same, with what the file got wrong that was read past: every modal variable a cell used before any
+        ///record in it had set one - see the reader's fields for why that is read rather than refused. Empty for a
+        ///file that keeps to the specification, which every file KLayout writes does, and which this project's
+        ///own writer did not until 2026-11-03.
+        ///
+        public static GDS Read(byte[] bytes, out IReadOnlyList<string> problems)
+        {
+            var reader = new Reader(bytes);
+
+            var gds = GDS.FromRecords(reader.ToRecords());
+
+            problems = reader.Problems;
+
+            return gds;
         }
 
         ///<summary>
@@ -230,7 +248,9 @@ namespace GdsII
                 {
                     b = ReadByte();
 
-                    if (shift > 63)
+                    //The tenth byte may hold one bit, the sixty-fourth, and an eleventh none: anything more was
+                    //shifted off the top and read as the small number its low bits made.
+                    if (shift > 63 || (b & 0x7F) >> (64 - shift) != 0)
                         throw new InvalidDataException("Invalid OASIS file: an integer runs past what 64 bits can hold.");
 
                     value |= (ulong)(b & 0x7F) << shift;
@@ -445,30 +465,108 @@ namespace GdsII
 
             private double unit = 1000;
 
+            //
             //The modal variables, in the order the specification lists them.
+            //
+            //**All but the positions are undefined at every CELL record** - see Modal and resetModalState - and
+            //a record that leaves one out before anything in its cell has set it is a fault in the file, kept in
+            //problems. The value carried on with is the one the cell before left, since that is what such a
+            //file's writer meant: this project's own writer did it until 2026-11-03, and KLayout reads the same
+            //files with a warning. Reading them as the specification's undefined - a zero, or a refusal - would
+            //turn a file that drew correctly into one that does not, over a fault the person opening it did not
+            //make.
+            //
             private bool absolutePosition = true;
-            private int layer;
-            private int dataType;
-            private int textLayer;
-            private int textType;
+            private Modal<int> layer;
+            private Modal<int> dataType;
+            private Modal<int> textLayer;
+            private Modal<int> textType;
             private long geometryX;
             private long geometryY;
             private long textX;
             private long textY;
             private long placementX;
             private long placementY;
-            private long width;
-            private long height;
-            private int pathHalfWidth;
-            private long pathStartExtension;
-            private long pathEndExtension;
-            private List<Element.Point> polygonPoints = new List<Element.Point>();
-            private List<Element.Point> pathPoints = new List<Element.Point>();
-            private List<(long X, long Y)> repetition = new List<(long, long)>();
-            private string? lastText;
-            private long? lastTextReference;
-            private string? lastPlacementName;
-            private long? lastPlacementReference;
+            private Modal<long> width;
+            private Modal<long> height;
+            private Modal<int> pathHalfWidth;
+            private Modal<long> pathStartExtension;
+            private Modal<long> pathEndExtension;
+            private Modal<List<Element.Point>> polygonPoints = new Modal<List<Element.Point>> { Value = new List<Element.Point>() };
+            private Modal<List<Element.Point>> pathPoints = new Modal<List<Element.Point>> { Value = new List<Element.Point>() };
+            private Modal<List<(long X, long Y)>> repetition = new Modal<List<(long X, long Y)>> { Value = new List<(long, long)>() };
+            private Modal<(string? Text, long? Reference)> textString;
+            private Modal<(string? Name, long? Reference)> placementCell;
+            private Modal<bool> lastPropertyName;
+            private Modal<bool> lastValueList;
+
+            ///<summary>The faults read past - see the modal variables - and how many there were, since only the first few are kept in full.</summary>
+            private readonly List<string> problems = new List<string>();
+            private int problemCount;
+
+            private const int MostProblems = 20;
+
+            ///<summary>The modal variables faulted on in this cell, so a run of records missing the same one is said once.</summary>
+            private readonly HashSet<string> faultedHere = new HashSet<string>();
+
+            ///<summary>
+            ///One modal variable: its value, and whether a record has set it since the last CELL. A reset leaves
+            ///the value where it was, which is what a record that faults carries on with - see the fields.
+            ///</summary>
+            private struct Modal<T>
+            {
+                public T Value;
+                public bool IsSet;
+
+                public void Set(T value)
+                {
+                    Value = value;
+                    IsSet = true;
+                }
+            }
+
+            ///<summary>A modal variable's value for a record that left it out, the fault noted when nothing in this cell has set it.</summary>
+            private T use<T>(ref Modal<T> modal, string name)
+            {
+                if (!modal.IsSet)
+                    fault(name);
+
+                return modal.Value;
+            }
+
+            private void fault(string name)
+            {
+                if (!faultedHere.Add(name))
+                    return;
+
+                problemCount++;
+
+                if (problems.Count >= MostProblems)
+                    return;
+
+                string where = "A record before any cell";
+
+                if (cell is not null)
+                    where = $"Cell {cell.Name ?? FormattableString.Invariant($"#{cell.NameReference}")}";
+
+                problems.Add($"{where} uses the modal variable {name} before any record in it has set it. OASIS resets the modal variables at every CELL record, so the file relies on what the cell before left behind - which is what it is read as.");
+            }
+
+            ///<summary>The faults read past, the first few in full and the rest counted.</summary>
+            public IReadOnlyList<string> Problems
+            {
+                get
+                {
+                    if (problemCount <= problems.Count)
+                        return problems;
+
+                    var said = new List<string>(problems);
+
+                    said.Add(FormattableString.Invariant($"And {problemCount - problems.Count} more of the same kind."));
+
+                    return said;
+                }
+            }
 
             public Reader(byte[] bytes)
             {
@@ -509,7 +607,9 @@ namespace GdsII
 
                 unit = cursor.ReadReal();
 
-                if (unit <= 0)
+                //Written so that NaN fails it too - NaN is not less than or equal to zero either - and an
+                //infinity, which an eight-byte real can carry, is no size.
+                if (!(unit > 0) || double.IsInfinity(unit))
                     throw new InvalidDataException($"Invalid OASIS file: its unit of {unit} is not a positive number.");
 
                 //Zero means the table offsets are here rather than in the END record. They are skipped
@@ -527,19 +627,22 @@ namespace GdsII
                 {
                     case 0: return;//PAD
 
-                    case 3: cellNames[implicitCellName++] = cursor.ReadString(); return;
-                    case 4: readNamed(cellNames); return;
-                    case 5: textStrings[implicitTextString++] = cursor.ReadString(); return;
-                    case 6: readNamed(textStrings); return;
+                    //A name record resets the modal variables as a CELL does (10.1). Which only shows for a
+                    //property hung on one that leans on the property before it, since geometry never follows
+                    //a name record without a CELL between.
+                    case 3: resetModalState(); cellNames[implicitCellName++] = cursor.ReadString(); return;
+                    case 4: resetModalState(); readNamed(cellNames); return;
+                    case 5: resetModalState(); textStrings[implicitTextString++] = cursor.ReadString(); return;
+                    case 6: resetModalState(); readNamed(textStrings); return;
 
                     //The property and extension name tables. Read past rather than kept: nothing here
                     //draws a property, and skipping the payload is what keeps the cursor aligned.
-                    case 7: cursor.ReadString(); return;
-                    case 8: cursor.ReadString(); cursor.ReadUnsigned(); return;
-                    case 9: cursor.ReadString(); return;
-                    case 10: cursor.ReadString(); cursor.ReadUnsigned(); return;
-                    case 30: cursor.ReadUnsigned(); cursor.ReadString(); return;
-                    case 31: cursor.ReadUnsigned(); cursor.ReadString(); cursor.ReadUnsigned(); return;
+                    case 7: resetModalState(); cursor.ReadString(); return;
+                    case 8: resetModalState(); cursor.ReadString(); cursor.ReadUnsigned(); return;
+                    case 9: resetModalState(); cursor.ReadString(); return;
+                    case 10: resetModalState(); cursor.ReadString(); cursor.ReadUnsigned(); return;
+                    case 30: resetModalState(); cursor.ReadUnsigned(); cursor.ReadString(); return;
+                    case 31: resetModalState(); cursor.ReadUnsigned(); cursor.ReadString(); cursor.ReadUnsigned(); return;
 
                     case 11:
                     case 12: readLayerName(); return;
@@ -616,7 +719,7 @@ namespace GdsII
 
                 cells.Add(cell);
 
-                resetCellState();
+                resetModalState();
             }
 
             private void startCell(ulong reference)
@@ -625,15 +728,16 @@ namespace GdsII
 
                 cells.Add(cell);
 
-                resetCellState();
+                resetModalState();
             }
 
             ///<summary>
-            ///What a new cell resets. Deliberately not everything: the format keeps the layer, the sizes
-            ///and the point lists across a cell boundary, and only the positions and the addressing mode
-            ///go back to where they started.
+            ///What a CELL record resets, and a name record: everything. The positions and the addressing mode go
+            ///back to where they started, and every other modal variable becomes unset - keeping its value for
+            ///the file that relies on it, and faulting when one does. This reset only the positions until
+            ///2026-11-03, on a reading of the specification that was wrong; see the fields.
             ///</summary>
-            private void resetCellState()
+            private void resetModalState()
             {
                 absolutePosition = true;
 
@@ -643,6 +747,27 @@ namespace GdsII
                 textY = 0;
                 placementX = 0;
                 placementY = 0;
+
+                layer.IsSet = false;
+                dataType.IsSet = false;
+                textLayer.IsSet = false;
+                textType.IsSet = false;
+                width.IsSet = false;
+                height.IsSet = false;
+                pathHalfWidth.IsSet = false;
+                pathStartExtension.IsSet = false;
+                pathEndExtension.IsSet = false;
+                polygonPoints.IsSet = false;
+                pathPoints.IsSet = false;
+                repetition.IsSet = false;
+                textString.IsSet = false;
+                placementCell.IsSet = false;
+                ctrapezoidType.IsSet = false;
+                circleRadius.IsSet = false;
+                lastPropertyName.IsSet = false;
+                lastValueList.IsSet = false;
+
+                faultedHere.Clear();
             }
 
             #endregion **************************************************************************
@@ -657,23 +782,17 @@ namespace GdsII
 
                 var placement = new Placement();
 
+                //Whichever was given replaces the other, so a later placement without a name follows the one
+                //that was actually last rather than the last of its own kind.
                 if ((info & 0x80) != 0)
                 {
                     if ((info & 0x40) != 0)
-                        lastPlacementReference = (long)cursor.ReadUnsigned();
+                        placementCell.Set((null, (long)cursor.ReadUnsigned()));
                     else
-                        lastPlacementName = cursor.ReadString();
-
-                    //Whichever was given replaces the other, so a later placement without a name follows
-                    //the one that was actually last rather than the last of its own kind.
-                    if ((info & 0x40) != 0)
-                        lastPlacementName = null;
-                    else
-                        lastPlacementReference = null;
+                        placementCell.Set((cursor.ReadString(), null));
                 }
 
-                placement.Name = lastPlacementName;
-                placement.NameReference = lastPlacementReference;
+                (placement.Name, placement.NameReference) = use(ref placementCell, "placement-cell");
 
                 if (transformed)
                 {
@@ -719,22 +838,16 @@ namespace GdsII
                 if ((info & 0x40) != 0)
                 {
                     if ((info & 0x20) != 0)
-                    {
-                        lastTextReference = (long)cursor.ReadUnsigned();
-                        lastText = null;
-                    }
+                        textString.Set((null, (long)cursor.ReadUnsigned()));
                     else
-                    {
-                        lastText = cursor.ReadString();
-                        lastTextReference = null;
-                    }
+                        textString.Set((cursor.ReadString(), null));
                 }
 
                 if ((info & 0x01) != 0)
-                    textLayer = checked((int)cursor.ReadUnsigned());
+                    textLayer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    textType = checked((int)cursor.ReadUnsigned());
+                    textType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x10) != 0)
                     textX = moved(textX, cursor.ReadSigned());
@@ -742,14 +855,18 @@ namespace GdsII
                 if ((info & 0x08) != 0)
                     textY = moved(textY, cursor.ReadSigned());
 
+                (string? text, long? reference) = use(ref textString, "text-string");
+                int onLayer = use(ref textLayer, "textlayer");
+                int ofType = use(ref textType, "texttype");
+
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
                 {
                     currentCell().Shapes.Add(new Shape
                     {
-                        Layer = textLayer,
-                        DataType = textType,
-                        Text = lastText,
-                        TextReference = lastTextReference,
+                        Layer = onLayer,
+                        DataType = ofType,
+                        Text = text,
+                        TextReference = reference,
                         Points = { point(textX + offset.X, textY + offset.Y) }
                     });
                 }
@@ -760,24 +877,27 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x40) != 0)
-                    width = (long)cursor.ReadUnsigned();
+                    width.Set((long)cursor.ReadUnsigned());
 
                 if ((info & 0x20) != 0)
-                    height = (long)cursor.ReadUnsigned();
+                    height.Set((long)cursor.ReadUnsigned());
                 else if ((info & 0x80) != 0)
-                    height = width;//A square says its width once
+                    height.Set(use(ref width, "geometry-w"));//A square says its width once
 
                 if ((info & 0x10) != 0)
                     geometryX = moved(geometryX, cursor.ReadSigned());
 
                 if ((info & 0x08) != 0)
                     geometryY = moved(geometryY, cursor.ReadSigned());
+
+                long w = use(ref width, "geometry-w");
+                long h = use(ref height, "geometry-h");
 
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
                 {
@@ -787,9 +907,9 @@ namespace GdsII
                     addBoundary(new List<Element.Point>
                     {
                         point(x, y),
-                        point(x + width, y),
-                        point(x + width, y + height),
-                        point(x, y + height)
+                        point(x + w, y),
+                        point(x + w, y + h),
+                        point(x, y + h)
                     });
                 }
             }
@@ -799,13 +919,13 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x20) != 0)
-                    polygonPoints = readPointList(closed: true);
+                    polygonPoints.Set(readPointList(closed: true));
 
                 if ((info & 0x10) != 0)
                     geometryX = moved(geometryX, cursor.ReadSigned());
@@ -813,8 +933,10 @@ namespace GdsII
                 if ((info & 0x08) != 0)
                     geometryY = moved(geometryY, cursor.ReadSigned());
 
+                var points = use(ref polygonPoints, "polygon-point-list");
+
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
-                    addBoundary(shifted(polygonPoints, geometryX + offset.X, geometryY + offset.Y));
+                    addBoundary(shifted(points, geometryX + offset.X, geometryY + offset.Y));
             }
 
             private void readPath()
@@ -822,19 +944,19 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x40) != 0)
-                    pathHalfWidth = checked((int)cursor.ReadUnsigned());
+                    pathHalfWidth.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x80) != 0)
                     readPathExtensions();
 
                 if ((info & 0x20) != 0)
-                    pathPoints = readPointList(closed: false);
+                    pathPoints.Set(readPointList(closed: false));
 
                 if ((info & 0x10) != 0)
                     geometryX = moved(geometryX, cursor.ReadSigned());
@@ -842,18 +964,25 @@ namespace GdsII
                 if ((info & 0x08) != 0)
                     geometryY = moved(geometryY, cursor.ReadSigned());
 
+                int onLayer = use(ref layer, "layer");
+                int ofType = use(ref dataType, "datatype");
+                var points = use(ref pathPoints, "path-point-list");
+                int halfWidth = use(ref pathHalfWidth, "path-halfwidth");
+                long startExtension = use(ref pathStartExtension, "path-start-extension");
+                long endExtension = use(ref pathEndExtension, "path-end-extension");
+
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
                 {
                     currentCell().Shapes.Add(new Shape
                     {
-                        Layer = layer,
-                        DataType = dataType,
-                        Points = shifted(pathPoints, geometryX + offset.X, geometryY + offset.Y),
+                        Layer = onLayer,
+                        DataType = ofType,
+                        Points = shifted(points, geometryX + offset.X, geometryY + offset.Y),
                         Path = new PathEnds
                         {
-                            HalfWidth = pathHalfWidth,
-                            StartExtension = pathStartExtension,
-                            EndExtension = pathEndExtension
+                            HalfWidth = halfWidth,
+                            StartExtension = startExtension,
+                            EndExtension = endExtension
                         }
                     });
                 }
@@ -869,16 +998,16 @@ namespace GdsII
 
                 switch (scheme & 0x0C)
                 {
-                    case 0x04: pathStartExtension = 0; break;
-                    case 0x08: pathStartExtension = pathHalfWidth; break;
-                    case 0x0C: pathStartExtension = cursor.ReadSigned(); break;
+                    case 0x04: pathStartExtension.Set(0); break;
+                    case 0x08: pathStartExtension.Set(use(ref pathHalfWidth, "path-halfwidth")); break;
+                    case 0x0C: pathStartExtension.Set(cursor.ReadSigned()); break;
                 }
 
                 switch (scheme & 0x03)
                 {
-                    case 0x01: pathEndExtension = 0; break;
-                    case 0x02: pathEndExtension = pathHalfWidth; break;
-                    case 0x03: pathEndExtension = cursor.ReadSigned(); break;
+                    case 0x01: pathEndExtension.Set(0); break;
+                    case 0x02: pathEndExtension.Set(use(ref pathHalfWidth, "path-halfwidth")); break;
+                    case 0x03: pathEndExtension.Set(cursor.ReadSigned()); break;
                 }
             }
 
@@ -893,16 +1022,16 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x40) != 0)
-                    width = (long)cursor.ReadUnsigned();
+                    width.Set((long)cursor.ReadUnsigned());
 
                 if ((info & 0x20) != 0)
-                    height = (long)cursor.ReadUnsigned();
+                    height.Set((long)cursor.ReadUnsigned());
 
                 long a = 0;
                 long b = 0;
@@ -929,12 +1058,15 @@ namespace GdsII
 
                 bool vertical = (info & 0x80) != 0;
 
+                long w = use(ref width, "geometry-w");
+                long h = use(ref height, "geometry-h");
+
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
                 {
                     long x = geometryX + offset.X;
                     long y = geometryY + offset.Y;
 
-                    addBoundary(trapezoidCorners(x, y, width, height, a, b, vertical));
+                    addBoundary(trapezoidCorners(x, y, w, h, a, b, vertical));
                 }
             }
 
@@ -981,19 +1113,19 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x80) != 0)
-                    ctrapezoidType = cursor.ReadByte();
+                    ctrapezoidType.Set(cursor.ReadByte());
 
                 if ((info & 0x40) != 0)
-                    width = (long)cursor.ReadUnsigned();
+                    width.Set((long)cursor.ReadUnsigned());
 
                 if ((info & 0x20) != 0)
-                    height = (long)cursor.ReadUnsigned();
+                    height.Set((long)cursor.ReadUnsigned());
 
                 if ((info & 0x10) != 0)
                     geometryX = moved(geometryX, cursor.ReadSigned());
@@ -1005,7 +1137,7 @@ namespace GdsII
                     addBoundary(cTrapezoidCorners(geometryX + offset.X, geometryY + offset.Y));
             }
 
-            private byte ctrapezoidType;
+            private Modal<byte> ctrapezoidType;
 
             ///<summary>
             ///The corners of one of the twenty-six named shapes.
@@ -1018,25 +1150,35 @@ namespace GdsII
             ///</summary>
             private List<Element.Point> cTrapezoidCorners(long x, long y)
             {
-                long w = width;
-                long h = height;
+                byte type = use(ref ctrapezoidType, "ctrapezoid-type");
+
+                //Only the dimension a shape is built from is one it needs: twenty and twenty-one stand on
+                //their height alone, sixteen to nineteen and twenty-two to twenty-five on their width alone.
+                long w = width.Value;
+                long h = height.Value;
+
+                if (type != 20 && type != 21)
+                    w = use(ref width, "geometry-w");
+
+                if (type < 16 || type == 20 || type == 21 || type == 24)
+                    h = use(ref height, "geometry-h");
 
                 //Sixteen to twenty-three are triangles, all three corners starting at the box's origin.
-                if (ctrapezoidType > 15 && ctrapezoidType < 24)
+                if (type > 15 && type < 24)
                 {
                     long[] tx = { x, x, x };
                     long[] ty = { y, y, y };
 
-                    switch (ctrapezoidType)
+                    switch (type)
                     {
-                        case 16: tx[1] += w; ty[2] += w; height = w; break;
-                        case 17: tx[1] += w; ty[1] += w; ty[2] += w; height = w; break;
-                        case 18: tx[1] += w; tx[2] += w; ty[2] += w; height = w; break;
-                        case 19: tx[0] += w; tx[1] += w; ty[1] += w; ty[2] += w; height = w; break;
-                        case 20: tx[1] += 2 * h; tx[2] += h; ty[2] += h; width = 2 * h; break;
-                        case 21: tx[0] += h; tx[1] += 2 * h; ty[1] += h; ty[2] += h; width = 2 * h; break;
-                        case 22: tx[1] += w; ty[1] += w; ty[2] += 2 * w; height = 2 * w; break;
-                        case 23: tx[0] += w; tx[1] += w; ty[1] += 2 * w; ty[2] += w; height = 2 * w; break;
+                        case 16: tx[1] += w; ty[2] += w; height.Set(w); break;
+                        case 17: tx[1] += w; ty[1] += w; ty[2] += w; height.Set(w); break;
+                        case 18: tx[1] += w; tx[2] += w; ty[2] += w; height.Set(w); break;
+                        case 19: tx[0] += w; tx[1] += w; ty[1] += w; ty[2] += w; height.Set(w); break;
+                        case 20: tx[1] += 2 * h; tx[2] += h; ty[2] += h; width.Set(2 * h); break;
+                        case 21: tx[0] += h; tx[1] += 2 * h; ty[1] += h; ty[2] += h; width.Set(2 * h); break;
+                        case 22: tx[1] += w; ty[1] += w; ty[2] += 2 * w; height.Set(2 * w); break;
+                        case 23: tx[0] += w; tx[1] += w; ty[1] += 2 * w; ty[2] += w; height.Set(2 * w); break;
                     }
 
                     return new List<Element.Point> { point(tx[0], ty[0]), point(tx[1], ty[1]), point(tx[2], ty[2]) };
@@ -1046,7 +1188,7 @@ namespace GdsII
                 long[] cx = { x, x + w, x + w, x };
                 long[] cy = { y, y, y + h, y + h };
 
-                switch (ctrapezoidType)
+                switch (type)
                 {
                     case 0: cx[2] -= h; break;
                     case 1: cx[1] -= h; break;
@@ -1072,7 +1214,7 @@ namespace GdsII
                     case 25: cy[2] = y + w; cy[3] = y + w; break;
 
                     default:
-                        throw new InvalidDataException($"Invalid OASIS file: {ctrapezoidType} is not one of the named trapezoids.");
+                        throw new InvalidDataException($"Invalid OASIS file: {type} is not one of the named trapezoids.");
                 }
 
                 return new List<Element.Point>
@@ -1093,13 +1235,13 @@ namespace GdsII
                 byte info = cursor.ReadByte();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x20) != 0)
-                    circleRadius = (long)cursor.ReadUnsigned();
+                    circleRadius.Set((long)cursor.ReadUnsigned());
 
                 if ((info & 0x10) != 0)
                     geometryX = moved(geometryX, cursor.ReadSigned());
@@ -1107,11 +1249,13 @@ namespace GdsII
                 if ((info & 0x08) != 0)
                     geometryY = moved(geometryY, cursor.ReadSigned());
 
+                long radius = use(ref circleRadius, "circle-radius");
+
                 foreach (var offset in repetitionFor((info & 0x04) != 0))
-                    addBoundary(circleCorners(geometryX + offset.X, geometryY + offset.Y, circleRadius));
+                    addBoundary(circleCorners(geometryX + offset.X, geometryY + offset.Y, radius));
             }
 
-            private long circleRadius;
+            private Modal<long> circleRadius;
 
             private static List<Element.Point> circleCorners(long x, long y, long radius)
             {
@@ -1133,8 +1277,15 @@ namespace GdsII
             ///</summary>
             private void readProperty(bool repeatLast)
             {
+                //Record 29 is the last property over again, its name and its values both - which are modal
+                //variables like the rest, kept here only as set or not.
                 if (repeatLast)
+                {
+                    use(ref lastPropertyName, "last-property-name");
+                    use(ref lastValueList, "last-value-list");
+
                     return;
+                }
 
                 byte info = cursor.ReadByte();
 
@@ -1144,10 +1295,20 @@ namespace GdsII
                         cursor.ReadUnsigned();
                     else
                         cursor.ReadString();
+
+                    lastPropertyName.Set(true);
+                }
+                else
+                {
+                    use(ref lastPropertyName, "last-property-name");
                 }
 
                 if ((info & 0x08) != 0)
+                {
+                    use(ref lastValueList, "last-value-list");
+
                     return;
+                }
 
                 ulong values = (ulong)(info >> 4);
 
@@ -1156,6 +1317,8 @@ namespace GdsII
 
                 for (ulong i = 0; i < values; i++)
                     skipPropertyValue();
+
+                lastValueList.Set(true);
             }
 
             private void skipPropertyValue()
@@ -1203,10 +1366,10 @@ namespace GdsII
                 cursor.ReadUnsigned();
 
                 if ((info & 0x01) != 0)
-                    layer = checked((int)cursor.ReadUnsigned());
+                    layer.Set(checked((int)cursor.ReadUnsigned()));
 
                 if ((info & 0x02) != 0)
-                    dataType = checked((int)cursor.ReadUnsigned());
+                    dataType.Set(checked((int)cursor.ReadUnsigned()));
 
                 cursor.ReadString();
 
@@ -1285,7 +1448,7 @@ namespace GdsII
 
             private void addBoundary(List<Element.Point> points)
             {
-                currentCell().Shapes.Add(new Shape { Layer = layer, DataType = dataType, Points = points });
+                currentCell().Shapes.Add(new Shape { Layer = use(ref layer, "layer"), DataType = use(ref dataType, "datatype"), Points = points });
             }
 
             private static List<Element.Point> shifted(List<Element.Point> points, long x, long y)
@@ -1419,7 +1582,7 @@ namespace GdsII
                 byte type = cursor.ReadByte();
 
                 if (type == 0)
-                    return repetition;
+                    return use(ref repetition, "repetition");
 
                 var offsets = new List<(long X, long Y)>();
 
@@ -1572,7 +1735,7 @@ namespace GdsII
                         throw new InvalidDataException($"Invalid OASIS file: {type} is not a kind of repetition.");
                 }
 
-                repetition = offsets;
+                repetition.Set(offsets);
 
                 return offsets;
             }

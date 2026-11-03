@@ -207,7 +207,7 @@ public static class GdsTestData
     ///<summary>
     ///Walks up from the test binaries to the repository root, identified by GDSViewer.csproj. The
     ///sample GDS files are served from wwwroot at runtime, so the tests read them in place rather
-    ///than copying ~9 MB into the test output.
+    ///than copying ~31 MB into the test output.
     ///</summary>
     public static string RepositoryRoot
     {
@@ -260,11 +260,57 @@ public static class GdsTestData
         return File.ReadAllBytes(Path.Combine(SampleDirectory, relativePath));
     }
 
-    ///<summary>Every bundled .gds file, sorted so failures are reported in a stable order.</summary>
+    ///<summary>
+    ///Every bundled .gds file, sorted so failures are reported in a stable order: the 896 sky130 cells and
+    ///Mosfet.gds, the open-source designs beside them, and since 2026-11-02 GF180's 229 cells and IHP's 84. A corpus
+    ///for whatever reads and writes a file, whichever process it is drawn in.
+    ///</summary>
     public static IEnumerable<string> AllSampleFiles()
     {
         return Directory
             .EnumerateFiles(SampleDirectory, "*.gds", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    ///<summary>The bundled files drawn in sky130 - its cells, Mosfet.gds and its designs - for a test about sky130 itself.</summary>
+    public static IEnumerable<string> Sky130SampleFiles()
+    {
+        return AllSampleFiles().Where(path => Path.GetFileName(Path.GetDirectoryName(path)!).StartsWith("Sky130 ", StringComparison.Ordinal));
+    }
+
+    ///
+    ///The bundled files drawn in GF180, for a test about gf180mcu itself: its 229 cells. Its designs are not among them -
+    ///each is downloaded from its own repository when it is opened, and ships in nothing here; see DesignTests.
+    ///
+    public static IEnumerable<string> Gf180SampleFiles()
+    {
+        return Directory
+            .EnumerateFiles(Path.Combine(SampleDirectory, "GF180 GDS"), "*.gds")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    ///
+    ///The bundled files drawn in IHP SG13G2, for a test about ihp-sg13g2 itself: its 84 standard cells, a file each,
+    ///split from the PDK's sg13g2_stdcell.gds with every cell's records as they were. Its designs are downloaded when
+    ///opened, as GF180's are.
+    ///
+    public static IEnumerable<string> IhpSampleFiles()
+    {
+        return Directory
+            .EnumerateFiles(Path.Combine(SampleDirectory, "IHP GDS"), "*.gds")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    ///
+    ///The cells' folder alone - the 896 sky130 cells and Mosfet.gds, without the designs.
+    ///
+    ///For a test that pins a measurement of that corpus, which the designs would move without anything
+    ///about the measurement having changed.
+    ///
+    public static IEnumerable<string> CellSampleFiles()
+    {
+        return Directory
+            .EnumerateFiles(Path.Combine(SampleDirectory, "Sky130 GDS"), "*.gds")
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
     }
 

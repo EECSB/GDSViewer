@@ -17,6 +17,13 @@
 const LEAST_SIDEBAR = 140;
 const MOST_SIDEBAR = 720;
 
+///
+///How short a cell tree's picture may be dragged, and how much of the panel the rows above it keep - for the edge
+///between the two, which drags up and down (asked for 2026-10-19). See data-sidebar-axis.
+///
+const LEAST_PREVIEW = 60;
+const ROWS_KEPT = 120;
+
 ///What is being dragged, or null between drags.
 let dragging = null;
 
@@ -51,20 +58,43 @@ function onSidebarDown(event) {
     if (grabber.dataset.sidebarApply != null)
         apply = document.getElementById(grabber.dataset.sidebarApply) ?? panel;
 
-    //Which way the panel grows as the pointer moves right: +1 for a panel on the left, -1 on the right.
+    //Which way the panel grows as the pointer moves right: +1 for a panel on the left, -1 on the right. Or, for an
+    //edge dragged up and down, as it moves down: -1 for a picture under the edge, which grows as the edge goes up.
     let towards = 1;
 
-    if (grabber.dataset.sidebarTowards === 'left')
+    if (grabber.dataset.sidebarTowards === 'left' || grabber.dataset.sidebarTowards === 'up')
         towards = -1;
+
+    const across = grabber.dataset.sidebarAxis === 'y';
+    const box = panel.getBoundingClientRect();
+
+    let least = LEAST_SIDEBAR;
+    let most = MOST_SIDEBAR;
+    let from = event.clientX;
+    let was = box.width;
+
+    //
+    //**Up and down, for the edge over a cell tree's picture**: its height, held between a picture still worth having
+    //and the rows above it keeping enough to scroll in - the panel's own height is what there is to share.
+    //
+    if (across) {
+        least = LEAST_PREVIEW;
+        most = Math.max(LEAST_PREVIEW, (grabber.parentElement?.getBoundingClientRect().height ?? 0) - ROWS_KEPT);
+        from = event.clientY;
+        was = box.height;
+    }
 
     dragging = {
         panel: apply,
         variable: grabber.dataset.sidebarVariable,
 
         towards: towards,
+        across: across,
+        least: least,
+        most: most,
 
-        from: event.clientX,
-        was: panel.getBoundingClientRect().width
+        from: from,
+        was: was
     };
 
     //So the drag keeps receiving moves when the pointer runs ahead of the border, which it always does.
@@ -74,14 +104,22 @@ function onSidebarDown(event) {
     event.preventDefault();
 
     document.body.classList.add('sidebarResizing');
+
+    if (across)
+        document.body.classList.add('sidebarResizingAcross');
 }
 
 function onSidebarMove(event) {
     if (dragging == null)
         return;
 
-    const wanted = dragging.was + ((event.clientX - dragging.from) * dragging.towards);
-    const held = Math.min(MOST_SIDEBAR, Math.max(LEAST_SIDEBAR, wanted));
+    let at = event.clientX;
+
+    if (dragging.across)
+        at = event.clientY;
+
+    const wanted = dragging.was + ((at - dragging.from) * dragging.towards);
+    const held = Math.min(dragging.most, Math.max(dragging.least, wanted));
 
     //
     //The variable rather than the width.
@@ -103,7 +141,7 @@ function onSidebarUp() {
 
     dragging = null;
 
-    document.body.classList.remove('sidebarResizing');
+    document.body.classList.remove('sidebarResizing', 'sidebarResizingAcross');
 }
 
 ///
@@ -300,12 +338,22 @@ function measurePopupRoom() {
     //Re-read rather than reusing the rect above, which was taken before --popup-room could change the width
     //and rewrap the contents.
     //
+    //**Out of the popup's height as capped, not only as measured.** The stylesheet caps the popup and the
+    //picker each with a constant of its own, and those two had to stay as far apart as the chrome or the popup
+    //scrolled inside its cap on a tall window - which it did once the Examples popup had a line under it for
+    //every file, and would have for any design's credit. Its computed max-height is that cap with the room
+    //already folded in, so the picker is handed what is left of it.
+    //
     if (picker != null) {
         const rect = popup.getBoundingClientRect();
         const border = rect.height - popup.clientHeight;
         const chrome = popup.scrollHeight + border - picker.getBoundingClientRect().height;
+        let most = parseFloat(getComputedStyle(popup).maxHeight);
 
-        set('--picker-tall', Math.max(0, tall - chrome));
+        if (!Number.isFinite(most))
+            most = tall;
+
+        set('--picker-tall', Math.max(0, Math.min(tall, most) - chrome));
     }
 
     if (view == null)

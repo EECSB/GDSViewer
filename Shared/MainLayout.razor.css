@@ -16,7 +16,8 @@
     address bar hidden. The vh line stays as the fallback where dvh is not understood.
 
     Below 768 pixels it lets go of the height altogether and the page scrolls, because the sidebars are put
-    under the view there - see the phone block after full screen in app.css.
+    under the view there - see the second phone block after full screen in app.css. A phone on its side keeps
+    the height: it loses only the page's margins, in the block before that one.
 */
 .page {
     position: relative;

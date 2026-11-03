@@ -26,6 +26,8 @@
                 }
             }
         </script>
+        <!-- Light or dark, decided before the first paint rather than once Blazor is up. See js/theme.js. -->
+        <script src="js/theme.js"></script>
         <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
         <link href="css/app.css" rel="stylesheet" />
         <link rel="icon" type="image/png" href="favicon.png" />
@@ -50,10 +52,21 @@
             <a class="dismiss" title="Hide this message and carry on. The app may not behave correctly until it is reloaded">🗙</a>
         </div>
 
-        <!--First, because the two below read window.viewGeometry from it. It is a plain script with no DOM or three.js dependency, which is what lets tests/jstests/ require it under Node.-->
+        <!--First, because the scripts below read window.viewGeometry from it. It is a plain script with no DOM or three.js dependency, which is what lets tests/jstests/ require it under Node.-->
         <script src="js/viewGeometry.js"></script>
+        <script src="js/frameMeter.js"></script>
+        <!--The chip game's physics, read as window.chipGame by js/ThreeInterop.js. Pure for the same reason viewGeometry is.-->
+        <script src="js/chipGame.js"></script>
+        <!--And its music, as notes - window.chipGameMusic - which ThreeInterop.js plays. Pure for the same reason.-->
+        <script src="js/chipGameMusic.js"></script>
         <script src="js/sidebars.js"></script>
         <script src="js/fileDrop.js"></script>
+        <script src="js/commandPalette.js"></script>
+        <script src="js/tour.js"></script>
+        <script src="js/floatingWindow.js"></script>
+        <script src="js/speechWav.js"></script>
+        <script src="js/speech.js"></script>
+        <script src="js/camera.js"></script>
         <script src="js/StorageInterop.js"></script>
         <script src="js/JavaScriptInterOp.js"></script>
         <script src="js/MonacoInterop.js"></script>

@@ -1,5 +1,7 @@
-﻿@using GdsII;
+﻿@using System.Globalization;
+@using GdsII;
 @using GDSViewer.Models;
+@using static GdsII.GDS.Record;
 
 @inject IJSRuntime JSR;
 
@@ -12,7 +14,139 @@
     next save, next to the editor it is about.
 *@
 <div class="editorPane">
-    <div id="gdsTextEditor"></div>
+    <div class="editorBody">
+        @*
+            The file's cells beside the text, to go to one: the RGB mixer is a hundred and fifty thousand lines, and
+            scrolling for a cell's name in that is not a way to find it.
+
+            **From the file's cells, not from the text.** The list is the cells the library holds, as the 2D view's
+            tree lists them, and each cell's first line is worked out from where its records are and handed to the
+            editor once, as the text goes in - see linesOf. The editor marks those lines and moves the marks with
+            every edit above them, so a press here is a lookup however much has been typed since. An outline built
+            from the text would read every line of it again after each pause in typing.
+
+            A list of its own rather than the 2D tree, which carries layers, shapes and renaming this has no use for.
+            It takes that tree's look, the same switch in the bar - and since 2026-10-16 the picture under it, for
+            the cell pointed at, and a way into where each cell is placed.
+
+            **A cell under the cell that places it opens to its placements there** - one row each, where it is and
+            how it is turned or arrayed, going to its SREF or AREF. Their lines are marked as the text goes in, with
+            the cells', so a press is a lookup however much has been typed since. A cell placed by two cells is under
+            both, so every placement is in the list somewhere.
+        *@
+        @if (CellListOpen && Gds is not null)
+        {
+            <div id="textCells" class="cellTree textCells" @onmouseleave="forgetCellPreview">
+                <div class="sidebarTitle">
+                    <b>Cells</b>
+
+                    <button id="textCellsClose" class="cellListClose"
+                            @onclick="OnCellListClosed"
+                            aria-label="Close the cell list"
+                            title="Close">&#128473;</button>
+                </div>
+
+                <div class="cellTreeRows">
+                    @*Drawn again only with the file, or a row opened or shut - a save message is a render of this view too.*@
+                    <KeptUntilChanged Stamp="@rowsLook()">
+                        @foreach (var shown in cellRows())
+                        {
+                            var row = shown.Row;
+                            string name = row.Cell.Name;
+                            bool open = shown.Parent is not null && opened.Contains(foldKey(shown.Parent, name));
+
+                            <div class="cellRowPair" style="--indent: @(row.Depth * 14)px;" data-depth="@row.Depth">
+                                @*
+                                    The 2D tree's chevron, drawn rather than typed, and a blank where there is nothing to open:
+                                    a cell at the top is placed by nothing.
+                                *@
+                                @if (shown.Parent is string parent)
+                                {
+                                    <button class="cellRowTwisty cellRowFold @(open ? "cellRowFoldOpen" : "")"
+                                            data-fold="@foldKey(parent, name)"
+                                            @onclick="() => toggleOpen(parent, name)"
+                                            aria-expanded="@(open ? "true" : "false")"
+                                            aria-label="@(open ? "Hide" : "Show") where @name is placed in @parent"
+                                            title="@(open ? "Hide" : "Show") where @name is placed in @parent">
+                                        <svg viewBox="0 0 12 12" aria-hidden="true">
+                                            <path d="M4.5 2.5 L8 6 L4.5 9.5" fill="none" stroke="currentColor"
+                                                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                                        </svg>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="cellRowTwisty" aria-hidden="true"></span>
+                                }
+
+                                <button class="cellRow textCellRow" data-cell="@name"
+                                        @onclick="() => goToCell(name)"
+                                        @onmouseenter="() => previewCell(name)"
+                                        @onfocus="() => previewCell(name)"
+                                        title="Go to where @name begins">
+                                    <span class="cellRowName">@name</span>
+                                </button>
+                            </div>
+
+                            @if (open && shown.Parent is string placedIn)
+                            {
+                                @placementRows(placedIn, name, row.Depth + 1)
+                            }
+                        }
+                    </KeptUntilChanged>
+                </div>
+
+                @*
+                    The cell pointed at, drawn - the 2D tree's frame, under the rows, a square that keeps its place whether
+                    or not anything is pointed at. See drawCellPreview. A picture drawn at a pace, with the one before it
+                    kept while it is, as the 2D tree's is.
+                *@
+                @*The edge over the picture, to drag it taller or shorter against the rows - asked for 2026-10-19. See sidebars.js.*@
+                <div class="previewGrabber" data-sidebar-grab="textCellPreview" data-sidebar-apply="textCells" data-sidebar-variable="--cell-preview"
+                     data-sidebar-axis="y" data-sidebar-towards="up" role="separator" aria-orientation="horizontal" title="Drag to resize the picture"></div>
+
+                <div id="textCellPreview" class="cellTreePreviewFrame @(cellPreviewDrawing ? "isDrawing" : "")">
+                    @if (cellPreviewFor.Length == 0)
+                    {
+                        <span class="cellPreviewEmpty">Point at a cell</span>
+                    }
+                    else if (cellPreviewPicture.Length > 0)
+                    {
+                        <img class="cellPreview" src="@cellPreviewPicture" alt="Drawing of @cellPreviewShownFor" />
+                    }
+                    else if (!cellPreviewDrawn && !cellPreviewDrawing)
+                    {
+                        @*Auto-generate preview is off, so the cell pointed at waits for this press - see AutoPreview.*@
+                        <button id="textCellPreviewGenerate" class="previewGenerate" @onclick="generateCellPreview"
+                                title="Draw @cellPreviewFor">
+                            <span class="previewGenerateSays">Generate preview</span>
+                            <span class="previewGenerateName">@cellPreviewFor</span>
+                        </button>
+                    }
+                    else if (!cellPreviewDrawing)
+                    {
+                        <span class="cellPreviewEmpty">@cellPreviewFor is empty</span>
+                    }
+
+                    @if (cellPreviewDrawing)
+                    {
+                        <span class="previewDrawing" role="status">
+                            <span class="viewLoadingSpinner" aria-hidden="true"></span>
+                            <span>Drawing @cellPreviewFor</span>
+                        </span>
+                    }
+                </div>
+
+                @*One switch with the 2D tree's and the History and Examples previews, which the shell keeps - see AutoPreviewSwitch.*@
+                <label class="previewAuto cellPreviewAuto" title="@AutoPreviewSwitch.Title">
+                    <input id="textCellsAutoPreview" type="checkbox" checked="@AutoPreview" @onchange="autoPreviewToggled" />
+                    Auto-generate preview
+                </label>
+            </div>
+        }
+
+        <div id="gdsTextEditor"></div>
+    </div>
 
     @if (saveMessage.Length > 0)
     {
@@ -57,6 +191,85 @@
     ///</summary>
     [Parameter]
     public EventCallback OnFileChanged { get; set; }
+
+    ///<summary>Whether the cell list is showing beside the text - the bar's one switch for the cells, which the 2D view's tree answers to as well.</summary>
+    [Parameter]
+    public bool CellListOpen { get; set; }
+
+    ///<summary>The cross on the list, which the shell answers by turning that switch off.</summary>
+    [Parameter]
+    public EventCallback OnCellListClosed { get; set; }
+
+    ///
+    ///Moved on whenever the text is worked out again from the file, which is when the cells and where they
+    ///begin can have changed - so the list is drawn again then and kept otherwise. See KeptUntilChanged.
+    ///
+    private int textVersion = 0;
+
+    ///<summary>The cells, in the order and at the depth the file's hierarchy puts them, each with the cell it is listed under - none at the top. As last worked out.</summary>
+    private List<(Hierarchy.CellRow Row, string? Parent)> rows = new List<(Hierarchy.CellRow, string?)>();
+
+    private int rowsAt = -1;
+
+    ///
+    ///Where each cell begins and where each placement is, in the text that goes into the editor with them - worked out
+    ///from the records in one walk as the text is made. See linesOf.
+    ///
+    ///A placement's lines run from its SREF or AREF to its ENDEL, and it is found by the record it begins with - the
+    ///very object, which the file's placements share with its records.
+    ///
+    private sealed record TextLines(string[] Names, int[] Lines, int[] PlacedFrom, int[] PlacedTo, Dictionary<GDS.Record, int> Placements);
+
+    private TextLines textLines = new TextLines(Array.Empty<string>(), Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>(), new Dictionary<GDS.Record, int>());
+
+    ///<summary>The cells opened to their placements, each as the cell it is listed under and its own name - see foldKey.</summary>
+    private readonly HashSet<string> opened = new HashSet<string>();
+
+    ///<summary>Moved on as a row is opened or shut, which is a change the list has to be drawn again for. See rowsLook.</summary>
+    private int foldsMoved = 0;
+
+    ///<summary>A cell's placements in a parent, by foldKey, as worked out for the text they are of - see placementsOf.</summary>
+    private readonly Dictionary<string, List<GDS.ElementModel>> placements = new Dictionary<string, List<GDS.ElementModel>>();
+
+    private int placementsAt = -1;
+
+    ///
+    ///**Auto-generate preview**: whether a cell pointed at is drawn by itself, or waits for a press on the frame. The
+    ///shell's - one switch with the 2D tree and the History and Examples previews; see AutoPreviewSwitch.
+    ///
+    [Parameter]
+    public bool AutoPreview { get; set; } = true;
+
+    ///<summary>The box under the frame, ticked or not - the shell holds the switch and remembers it.</summary>
+    [Parameter]
+    public EventCallback<bool> OnAutoPreviewChanged { get; set; }
+
+    ///<summary>Which cell the pointer is on, or empty when it is on none.</summary>
+    private string cellPreviewFor = "";
+
+    ///<summary>The picture in the frame - a PNG's or an SVG's address, or empty - and whose: it stays while the next is drawn.</summary>
+    private string cellPreviewPicture = "";
+
+    private string cellPreviewShownFor = "";
+
+    ///<summary>Whether that cell has been drawn - a cell may be drawn and hold nothing. False while it waits for Generate preview.</summary>
+    private bool cellPreviewDrawn = false;
+
+    ///<summary>Whether the cell pointed at is being drawn, which the frame shows once that has taken a moment.</summary>
+    private bool cellPreviewDrawing = false;
+
+    ///<summary>The 2D tree's pause before a hover counts as a look, and for the same reason - see its CellPreviewDelayMs.</summary>
+    private const int CellPreviewDelayMs = 160;
+
+    private const int MostCachedCellPreviews = 40;
+
+    ///<summary>The 2D tree's: solid enough to read as a shape at this size.</summary>
+    private const float CellPreviewOpacity = 0.85f;
+
+    ///<summary>The cells drawn for the list, kept until the text is made again, and the one being drawn - see PreviewPictures.</summary>
+    private readonly PreviewPictures cellPictures = new PreviewPictures(MostCachedCellPreviews);
+
+    private CancellationTokenSource? cellPreviewWait;
 
     ///<summary>This view's own toolbar controls. The shell renders them; it does not know what they are.</summary>
     public RenderFragment Toolbar => (__builder) =>
@@ -112,11 +325,14 @@
             //loads its file during exactly that gap. Reading GdsAsText afterwards would record the new
             //dump as the one Monaco was given, when it was handed the empty one.
             string initial = GdsAsText;
+            var initialLines = textLines;
 
             await JSR.InvokeVoidAsync("InitializeMonaco", initial, "GDS");
 
             isEditorReady = true;
             editorText = initial;
+
+            await markCells(initialLines);
 
             //Nothing renders again after this, so if the file did arrive during the wait, this is the
             //only chance to put it in.
@@ -148,23 +364,332 @@
 
     #region Methods ******************************************
 
+    ///<summary>Puts the text into the editor, and the marks on where each cell begins in it and each placement is.</summary>
     private async Task loadEditor(string text)
     {
+        var lines = textLines;
+
         await JSR.InvokeVoidAsync("SetMonacoContent", text);
+
+        await markCells(lines);
+    }
+
+    ///
+    ///Hands the editor the line each cell begins on, and the lines of each placement, to mark - see MarkMonacoCells
+    ///and MarkMonacoPlacements. Once a text: the marks move with whatever is typed, which is what makes going to a cell
+    ///or a placement a lookup rather than a search.
+    ///
+    private async Task markCells(TextLines lines)
+    {
+        await JSR.InvokeVoidAsync("MarkMonacoCells", lines.Names, lines.Lines);
+        await JSR.InvokeVoidAsync("MarkMonacoPlacements", lines.PlacedFrom, lines.PlacedTo);
+    }
+
+    ///<summary>Goes to a placement's lines, its SREF or AREF to its ENDEL, lit - wherever typing has moved them. See GoToMonacoPlacement.</summary>
+    private async Task goToPlacement(GDS.ElementModel placement)
+    {
+        if (!textLines.Placements.TryGetValue(placement.Element.Opening, out int at))
+            return;
+
+        await JSR.InvokeAsync<bool>("GoToMonacoPlacement", at);
+    }
+
+    ///<summary>Goes to where a cell begins in the text: the editor's own mark on that line, wherever typing has moved it.</summary>
+    private async Task goToCell(string name)
+    {
+        await JSR.InvokeAsync<bool>("GoToMonacoCell", name);
+    }
+
+    ///
+    ///**Goes to a shape's lines** - from its first record to its ENDEL, lit - for a fault the rules found on it.
+    ///
+    ///Counted from the records, as linesOf counts where each cell begins, and **from the cell's own mark**: the line
+    ///is so many after the cell's first, and the editor has moved that mark past whatever was typed above the cell
+    ///since the text went in. Typing inside the cell, above the shape, is the one thing that can put it a few lines
+    ///off. To where the cell begins when the shape is not known, and nowhere when neither is - a fault in open
+    ///ground is on no shape. The editor is not given the focus, so the rules panel's arrows go on stepping.
+    ///
+    public async Task GoToShape(GDS.ElementModel? shape, string? cell)
+    {
+        if (Gds is null || cell is null)
+            return;
+
+        int at = Array.IndexOf(textLines.Names, cell);
+
+        if (shape is not null && at >= 0 && linesOfShape(Gds, shape) is (int from, int to))
+        {
+            int begins = textLines.Lines[at];
+
+            await JSR.InvokeAsync<bool>("GoToMonacoCellLines", cell, from - begins, to - begins);
+
+            return;
+        }
+
+        await goToCell(cell);
+    }
+
+    ///<summary>The lines a shape's records are on, its first to its ENDEL, in the text AsText writes - or null for one not in the file.</summary>
+    private static (int From, int To)? linesOfShape(GDS gds, GDS.ElementModel shape)
+    {
+        var opening = shape.Element.Opening;
+        var closing = shape.ENDEL;
+
+        int line = 1;
+        int from = 0;
+
+        foreach (var record in gds.Records)
+        {
+            if (ReferenceEquals(record, opening))
+                from = line;
+
+            if (from > 0 && ReferenceEquals(record, closing))
+                return (from, line);
+
+            line += 1 + breaksIn(record);
+        }
+
+        if (from > 0)
+            return (from, from);
+
+        return null;
+    }
+
+    ///
+    ///The cells for the list, worked out again only with the text - see textVersion - each with the cell it is listed
+    ///under, which is the cell whose placements of it its row opens to.
+    ///
+    ///The 2D tree's two-level walk: every cell under each that places it, a cell placed in two parents under
+    ///both, and a loop drawn once and not descended into. See Hierarchy.Tree. A row's parent is the row above it
+    ///one level up, which the walk keeps a level at a time.
+    ///
+    private List<(Hierarchy.CellRow Row, string? Parent)> cellRows()
+    {
+        if (Gds is null)
+            return rows;
+
+        if (rowsAt == textVersion)
+            return rows;
+
+        var levels = new List<string>();
+        var found = new List<(Hierarchy.CellRow, string?)>();
+
+        foreach (var row in Hierarchy.Tree(Gds))
+        {
+            if (levels.Count > row.Depth)
+                levels.RemoveRange(row.Depth, levels.Count - row.Depth);
+
+            string? parent = null;
+
+            if (row.Depth > 0 && levels.Count >= row.Depth)
+                parent = levels[row.Depth - 1];
+
+            found.Add((row, parent));
+            levels.Add(row.Cell.Name);
+        }
+
+        rows = found;
+        rowsAt = textVersion;
+
+        return rows;
+    }
+
+    ///<summary>What the list shows depends on: the text it is of, and which rows are open. See KeptUntilChanged.</summary>
+    private string rowsLook()
+    {
+        return FormattableString.Invariant($"{textVersion}:{foldsMoved}");
+    }
+
+    ///<summary>A cell's row under the cell placing it, by both names - a cell placed by two cells has a row under each.</summary>
+    private static string foldKey(string parent, string child)
+    {
+        return parent + "\u001F" + child;
+    }
+
+    ///<summary>A cell's row opened to its placements in the cell above it, or shut again.</summary>
+    private void toggleOpen(string parent, string child)
+    {
+        string key = foldKey(parent, child);
+
+        if (!opened.Remove(key))
+            opened.Add(key);
+
+        foldsMoved++;
+    }
+
+    ///<summary>Where `child` is placed in `parent`, worked out once a text - see Hierarchy.PlacementsIn.</summary>
+    private List<GDS.ElementModel> placementsOf(string parent, string child)
+    {
+        if (placementsAt != textVersion)
+        {
+            placements.Clear();
+            placementsAt = textVersion;
+        }
+
+        string key = foldKey(parent, child);
+
+        if (placements.TryGetValue(key, out var known))
+            return known;
+
+        var found = new List<GDS.ElementModel>();
+
+        if (Gds is not null && Hierarchy.Named(Gds, parent) is GDS.StructureModel holder)
+            found = Hierarchy.PlacementsIn(holder, child);
+
+        placements[key] = found;
+
+        return found;
+    }
+
+    ///
+    ///A cell's placements in the cell above it, a row each under its own - where it is, and how it is turned or
+    ///arrayed - going to its lines. At most Hierarchy.MostPlacementsListed, as many as the 2D tree lists, and the
+    ///rest counted.
+    ///
+    private RenderFragment placementRows(string parent, string child, int depth)
+    {
+        return (__builder) =>
+        {
+            var placed = placementsOf(parent, child);
+            int listed = Math.Min(placed.Count, Hierarchy.MostPlacementsListed);
+
+            for (int i = 0; i < listed; i++)
+            {
+                var placement = placed[i];
+
+                <div class="cellRowPair textPlacementPair" style="--indent: @(depth * 14)px;" data-depth="@depth">
+                    <span class="cellRowTwisty" aria-hidden="true"></span>
+
+                    <button class="cellRow textPlacement" data-placement="@i"
+                            @onclick="() => goToPlacement(placement)"
+                            title="Go to this placement of @child in @parent">
+                        <span class="cellRowName">@Hierarchy.DescribePlacement(placement)</span>
+                    </button>
+                </div>
+            }
+
+            if (placed.Count > listed)
+            {
+                <div class="cellRowPair textPlacementPair" style="--indent: @(depth * 14)px;" data-depth="@depth">
+                    <span class="cellRowTwisty" aria-hidden="true"></span>
+                    <span class="textPlacementMore">@((placed.Count - listed).ToString("N0", CultureInfo.InvariantCulture)) more</span>
+                </div>
+            }
+        };
+    }
+
+    ///
+    ///Where each cell begins in the text AsText writes, as the line its BGNSTR is on - and where each placement is,
+    ///from its SREF or AREF to its ENDEL.
+    ///
+    ///**Counted from the records, not found in the text.** AsText writes one line a record, so a record's place
+    ///is its line - with one exception, counted here: a string holding a line break writes a line of its own
+    ///for each, and the editor counts a lone carriage return as one just as it does a newline. One walk of the
+    ///records, as the text is made, where searching the text would be a second pass over all of it.
+    ///
+    private static TextLines linesOf(GDS gds)
+    {
+        var names = new List<string>();
+        var lines = new List<int>();
+        var placedFrom = new List<int>();
+        var placedTo = new List<int>();
+        var placedAt = new Dictionary<GDS.Record, int>(ReferenceEqualityComparer.Instance);
+
+        int line = 1;
+        int began = 0;
+        GDS.Record? placing = null;
+        int placingFrom = 0;
+
+        foreach (var record in gds.Records)
+        {
+            if (record.Type == RecordType.BGNSTR)
+                began = line;
+            else if (record.Type == RecordType.STRNAME && began > 0 && record.Data is AsciiData name)
+            {
+                names.Add(name.Value);
+                lines.Add(began);
+
+                began = 0;
+            }
+            else if (record.Type == RecordType.SREF || record.Type == RecordType.AREF)
+            {
+                placing = record;
+                placingFrom = line;
+            }
+            else if (record.Type == RecordType.ENDEL && placing is not null)
+            {
+                placedAt[placing] = placedFrom.Count;
+                placedFrom.Add(placingFrom);
+                placedTo.Add(line);
+
+                placing = null;
+            }
+
+            line += 1 + breaksIn(record);
+        }
+
+        return new TextLines(names.ToArray(), lines.ToArray(), placedFrom.ToArray(), placedTo.ToArray(), placedAt);
+    }
+
+    ///<summary>How many line breaks a record's text holds, the way the editor counts them: \r\n, \n and a lone \r are one each.</summary>
+    private static int breaksIn(GDS.Record record)
+    {
+        if (record.Data is not AsciiData text)
+            return 0;
+
+        int breaks = 0;
+        string says = text.Value;
+
+        for (int i = 0; i < says.Length; i++)
+        {
+            if (says[i] == '\n')
+                breaks++;
+            else if (says[i] == '\r' && (i + 1 == says.Length || says[i + 1] != '\n'))
+                breaks++;
+        }
+
+        return breaks;
+    }
+
+    ///<summary>The Save button: what is in the editor, read back into the file.</summary>
+    private async Task saveChanges()
+    {
+        await save(await JSR.InvokeAsync<string>("GetMonacoContent"));
+    }
+
+    ///
+    ///**What has been typed, saved before something reads the file** - the assistant, or a check of the rules. Both
+    ///work on the file, which typing has not reached until it is saved: the rules would be checked on the file as it
+    ///was, and the assistant's change drawn over the typing.
+    ///
+    ///True when the file is what the editor shows - nothing typed since the text went in, or typed and read back in;
+    ///false when what was typed could not be read, which the strip under the editor says, as a Save would.
+    ///
+    public async Task<bool> SaveIfTyped()
+    {
+        //No editor yet is nothing typed - and its empty text read back would be an empty file.
+        if (!isEditorReady || Gds is null)
+            return true;
+
+        string shown = await JSR.InvokeAsync<string>("GetMonacoContent");
+
+        if (shown == editorText)
+            return true;
+
+        return await save(shown);
     }
 
     ///<summary>
-    ///Reads the buffer back into the loaded file. A text that will not parse leaves the file untouched -
+    ///Reads `text` back into the loaded file. A text that will not parse leaves the file untouched -
     ///Deserialize is all or nothing - so the message is all that is needed to recover: fix the line it
-    ///names and save again.
+    ///names and save again. True when it was read in.
     ///</summary>
-    private async Task saveChanges()
+    private async Task<bool> save(string text)
     {
-        GdsAsText = await JSR.InvokeAsync<string>("GetMonacoContent");
+        GdsAsText = text;
 
         //Nothing to save the edit back into until a file is open.
         if (Gds is null)
-            return;
+            return false;
 
         try
         {
@@ -176,7 +701,7 @@
             //with it, and it now sits beside the text it is about rather than over the top of it.
             report($"This text could not be read as GDSII, so the file is unchanged. {ex.Message}", failed: true);
 
-            return;
+            return false;
         }
 
         //Set before the callback, not after. OnFileChanged renders the shell and comes back through
@@ -186,6 +711,8 @@
         //An edit can add or remove a layer, so the shell's sidebar and the other views are out of date
         //until it re-reads the file. Without this the saved change appears not to have happened.
         await OnFileChanged.InvokeAsync();
+
+        return true;
     }
 
     private void report(string message, bool failed)
@@ -234,9 +761,213 @@
 
         GdsAsText = Gds.AsText();
 
+        //And where each cell begins in it and each placement is, which go into the editor with it. See linesOf.
+        textLines = linesOf(Gds);
+        textVersion++;
+
+        //And the cells drawn for the list are of the file as it was.
+        forgetCellPreviews();
+
         //Rendering is what pushes it into Monaco, in OnAfterRenderAsync - so this does not have to know
         //whether the editor exists yet.
         StateHasChanged();
+    }
+
+    #endregion ***********************************************
+
+
+
+    #region The cell pointed at ******************************
+
+    ///<summary>A row pointed at - or reached by the keyboard - drawn, after the pause a look waits. Nothing to do for the one showing.</summary>
+    private async Task previewCell(string name)
+    {
+        if (name == cellPreviewFor)
+            return;
+
+        await drawCellPreview(name);
+    }
+
+    ///
+    ///**Draws the cell under the pointer, after a pause** - the 2D tree's drawCellPreview, for the same picture: the cell
+    ///flattened from itself rather than from the file's top, so a cell placed four hundred times is drawn once, at its
+    ///own size. Kept, forty at a time, until the text is made again.
+    ///
+    ///With Auto-generate preview off, a cell not drawn yet waits for a press on the frame instead - see AutoPreview.
+    ///
+    private async Task drawCellPreview(string name)
+    {
+        cellPreviewWait?.Cancel();
+
+        var waiting = new CancellationTokenSource();
+        cellPreviewWait = waiting;
+
+        try
+        {
+            await Task.Delay(CellPreviewDelayMs, waiting.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            //The pointer moved on. Whichever row it moved to is the one being waited for now.
+            return;
+        }
+
+        if (Gds is null)
+            return;
+
+        //A cell taken away or renamed by a save while it was being looked at.
+        if (Hierarchy.Named(Gds, name) is null)
+        {
+            await forgetCellPreview();
+
+            return;
+        }
+
+        cellPreviewFor = name;
+
+        if (cellPictures.TryGet(name, out string drawn))
+        {
+            cellPictures.Stop();
+
+            cellPreviewPicture = drawn;
+            cellPreviewShownFor = name;
+            cellPreviewDrawn = true;
+            cellPreviewDrawing = false;
+
+            StateHasChanged();
+
+            return;
+        }
+
+        if (!AutoPreview)
+        {
+            cellPictures.Stop();
+
+            cellPreviewPicture = "";
+            cellPreviewShownFor = "";
+            cellPreviewDrawn = false;
+            cellPreviewDrawing = false;
+
+            StateHasChanged();
+
+            return;
+        }
+
+        await buildCellPreview(name);
+    }
+
+    ///<summary>Generate preview, pressed: the cell pointed at, drawn now - no pause, since this is the look being asked for.</summary>
+    private async Task generateCellPreview()
+    {
+        cellPreviewWait?.Cancel();
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        await buildCellPreview(cellPreviewFor);
+    }
+
+    ///
+    ///Draws a cell for the list now, keeps it, and shows it - **at a pace, and given up when the pointer moves on**, as
+    ///the 2D tree's is: see PreviewPictures, and the 2D tree's buildCellPreview for why an edit between two pauses
+    ///cannot leave a picture of half of each.
+    ///
+    private async Task buildCellPreview(string name)
+    {
+        if (Gds is null)
+            return;
+
+        var gds = Gds;
+
+        cellPreviewDrawing = true;
+        cellPreviewDrawn = false;
+
+        StateHasChanged();
+
+        var pixels = await PreviewPictures.PixelsFor(JSR, "#textCellPreview");
+
+        //The pointer gone from the list while the frame was measured, or on another cell, which draws its own.
+        if (cellPreviewFor != name)
+            return;
+
+        string? picture = await cellPictures.DrawAsync(
+            name,
+            async pacer => await GdsFlattener.FlattenAsync(gds, name, pacer.Pause),
+            pixels,
+            CellPreviewOpacity);
+
+        //Given up, for another cell or for none.
+        if (picture is null)
+        {
+            cellPreviewDrawing = cellPictures.Drawing;
+
+            return;
+        }
+
+        if (cellPreviewFor != name)
+            return;
+
+        cellPreviewPicture = picture;
+        cellPreviewShownFor = name;
+        cellPreviewDrawn = true;
+        cellPreviewDrawing = false;
+
+        StateHasChanged();
+    }
+
+    ///<summary>The box under the frame: the shell told, and a cell already waiting for its press drawn now, as it would have been.</summary>
+    private async Task autoPreviewToggled(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool ticked && ticked;
+
+        await OnAutoPreviewChanged.InvokeAsync(on);
+
+        if (on && cellPreviewFor.Length > 0 && !cellPreviewDrawn)
+            await generateCellPreview();
+    }
+
+    ///<summary>The pointer has left the list, so there is nothing being looked at - and nothing worth drawing on.</summary>
+    private async Task forgetCellPreview()
+    {
+        cellPreviewWait?.Cancel();
+        cellPictures.Stop();
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        cellPreviewFor = "";
+        cellPreviewPicture = "";
+        cellPreviewShownFor = "";
+        cellPreviewDrawn = false;
+        cellPreviewDrawing = false;
+
+        StateHasChanged();
+
+        await Task.CompletedTask;
+    }
+
+    ///
+    ///Throws away every cell drawn for the list, because the text they were drawn from has been made again - a save,
+    ///another file, a change from elsewhere. **All of them**, since a cell's picture has every cell it places drawn into
+    ///it. The one being looked at is drawn again after the pause, or waits for its press if that is the switch. One being
+    ///drawn is given up at its next pause, before its walk reads any of the file as it is now.
+    ///
+    private void forgetCellPreviews()
+    {
+        cellPictures.ForgetAll();
+        cellPreviewDrawing = false;
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        string looking = cellPreviewFor;
+
+        cellPreviewFor = "";
+        cellPreviewPicture = "";
+        cellPreviewShownFor = "";
+        cellPreviewDrawn = false;
+
+        _ = drawCellPreview(looking);
     }
 
     #endregion ***********************************************

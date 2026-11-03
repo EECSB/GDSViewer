@@ -300,6 +300,13 @@ namespace GdsII
 
         private static byte[] encodeOne(double value)
         {
+            //Neither has an encoding: the format's real is a sign, an exponent and a fraction, and nothing in
+            //it says infinite or not a number. Refused here rather than looped on - an infinity never
+            //normalizes, since a sixteenth of it is still infinite, so the loop below would never return - or
+            //written as the zero a NaN's mantissa rounds to, which reads back as a value nobody put in.
+            if (!double.IsFinite(value))
+                throw new ArgumentException(FormattableString.Invariant($"{value} cannot be written as a GDSII eight-byte real, which has no infinity and no NaN."), nameof(value));
+
             var data = new byte[8];
 
             //A zero mantissa reads back as zero whatever the exponent, so all-zero bytes are the
@@ -343,7 +350,17 @@ namespace GdsII
         }
     }
 
-    ///<summary>An ASCII string, null-padded to an even length on the wire.</summary>
+    ///<summary>
+    ///A string, null-padded to an even length on the wire.
+    ///
+    ///**Read and written as Latin-1, not ASCII.** The format calls the type ASCII and every name and label in the
+    ///corpus is, but a byte over 127 is what a tool writing in its own code page puts into a label - "µm" is
+    ///`B5 6D` - and ASCII decoding turned that byte into a question mark and wrote the question mark back, the one
+    ///record the byte-for-byte round trip changed. Under Latin-1 every byte is one character and goes out as it came
+    ///in; what it may get wrong is which accented letter a byte shows as, which is a wrong glyph rather than a lost
+    ///one. A character past 255 - typed into the text view - has no byte and goes out as a question mark, since the
+    ///file cannot hold it.
+    ///</summary>
     public sealed class AsciiData : RecordData
     {
         public AsciiData(string value)
@@ -362,11 +379,16 @@ namespace GdsII
         {
             int length = data.Length;
 
-            //Drop the pad byte an odd-length string is padded to even with.
-            if (data[length - 1] == 0)
+            //
+            //Drop the padding an odd-length string is padded to even with - all of it, not one byte. The format pads
+            //with one null, but a writer that sizes its names up front pads with more, and a cell named `AB` whose
+            //STRNAME carried two came back as `AB` with a null on the end: no SREF to `AB` could find it, and its
+            //geometry was not drawn.
+            //
+            while (length > 0 && data[length - 1] == 0)
                 length--;
 
-            return new AsciiData(Encoding.ASCII.GetString(data, 0, length));
+            return new AsciiData(Encoding.Latin1.GetString(data, 0, length));
         }
 
         ///<summary>Rounded up to even, the same padding Encode applies.</summary>
@@ -385,14 +407,29 @@ namespace GdsII
 
             var bytes = new byte[length];
 
-            Encoding.ASCII.GetBytes(Value, 0, Value.Length, bytes, 0);
+            Encoding.Latin1.GetBytes(Value, 0, Value.Length, bytes, 0);
 
             return bytes;
         }
 
+        ///
+        ///The text form, with the three characters the line format cannot carry escaped: a backslash as `\\`, a line
+        ///feed as `\n` and a carriage return as `\r`. A string holding a newline was dumped over two lines, and the
+        ///second could not be read back as a record. See <see cref="TextFormat"/>, which undoes this.
+        ///
         public override void AppendText(StringBuilder builder)
         {
-            builder.Append(Value);
+            foreach (char character in Value)
+            {
+                if (character == '\\')
+                    builder.Append("\\\\");
+                else if (character == '\n')
+                    builder.Append("\\n");
+                else if (character == '\r')
+                    builder.Append("\\r");
+                else
+                    builder.Append(character);
+            }
         }
     }
 

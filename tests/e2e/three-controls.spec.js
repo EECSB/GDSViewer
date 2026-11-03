@@ -2,32 +2,43 @@
 //these draw geometry, so nothing else in the suite touches them - and all three run entirely in JS the
 //build cannot check.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, captureScene, cameraPosition, selectBackground, MOSFET } = require('./helpers');
+const { gotoExample, captureScene, cameraPosition, openViewSettings, selectBackground, MOSFET } = require('./helpers');
 
+//
+//With the page's margins: the view widths below - 543, 747 - and the QR code's share of the view were measured in
+//them. Full screen, the default since 2026-11-03, gives the view room enough that the row never has to stack.
+//
 test.beforeEach(async ({ page }) => {
-    await gotoExample(page, MOSFET, '3d');
+    await gotoExample(page, MOSFET, '3d', false, false);
 
     await expect(page.locator('#container canvas')).toBeVisible();
 });
 
 ///
-///The controls at the foot of the view - the headset row and Admire - as a picture of whether they collide.
+///The foot of the view - the headset row, and the axis indicator in its corner - as a picture of whether they collide.
 ///
-///Only the ones drawn: Open On Phone is in the markup on a phone and not shown. Inside means within the view's
-///own left and right edges, since a row wider than the view is the other way these went wrong.
+///Only the buttons drawn: Open On Phone is in the markup on a phone and not shown. The indicator is drawn into the
+///canvas rather than laid over it, so its square is where the interop draws it: 88 pixels, 12 in from the corner -
+///AXES_VIEWPORT and AXES_MARGIN in ThreeInterop.js. Inside means within the view's own left and right edges, since a
+///row wider than the view is the other way these went wrong. It was Admire, in the other corner, the row had to clear
+///until that went into the view's settings.
 ///
 async function footOfTheView(page) {
     return page.evaluate(() => {
-        const shown = [...document.querySelectorAll('#xrButtons > *'), document.getElementById('admire')];
-        const boxes = shown.map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
         const view = document.querySelector('#container').getBoundingClientRect();
+        const boxes = [...document.querySelectorAll('#xrButtons > *')]
+            .map(control => control.getBoundingClientRect())
+            .filter(box => box.width > 0);
+
+        const indicator = { left: view.left + 12, right: view.left + 100, top: view.bottom - 100, bottom: view.bottom - 12 };
+        const all = [...boxes, indicator];
 
         let overlapping = false;
 
-        for (let i = 0; i < boxes.length; i++) {
-            for (let j = i + 1; j < boxes.length; j++) {
-                const a = boxes[i];
-                const b = boxes[j];
+        for (let i = 0; i < all.length; i++) {
+            for (let j = i + 1; j < all.length; j++) {
+                const a = all[i];
+                const b = all[j];
 
                 if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
                     overlapping = true;
@@ -42,7 +53,10 @@ async function footOfTheView(page) {
     });
 }
 
-test('the QR popup encodes the address, so it carries the file and view', async ({ page }) => {
+test('the QR popup carries the file and the view, though the address no longer names the file', async ({ page }) => {
+    //The link that opened it has let go of its file= by now, so the code cannot be copying it off the address.
+    await expect.poll(() => new URL(page.url()).searchParams.get('file'), { timeout: 20000 }).toBeNull();
+
     await page.locator('#openOnPhone').click();
 
     //
@@ -57,9 +71,33 @@ test('the QR popup encodes the address, so it carries the file and view', async 
 
     await expect(qr).toBeVisible();
 
-    const modules = await qr.locator('path, rect').count();
+    //
+    //Each row's run of dark modules is a stretch of one path, so what is counted is the runs.
+    //
+    //**And the code is the whole of its box.** Its modules were a whole number of units each in a 300-unit box, so a
+    //code 53 across was 265 of the 300 and the rest a white band down the right and along the bottom - the code off
+    //center in its popup. The finder squares sit in three corners, so a box the code fills is one its drawing
+    //reaches from edge to edge.
+    //
+    const drawn = await qr.evaluate(svg => {
+        const path = svg.querySelector('path');
+        const reach = path.getBBox();
 
-    expect(modules).toBeGreaterThan(50);
+        return {
+            runs: (path.getAttribute('d').match(/M/g) || []).length,
+            box: svg.viewBox.baseVal.width + ' x ' + svg.viewBox.baseVal.height,
+            reach: reach.x + ',' + reach.y + ' ' + reach.width + ' x ' + reach.height
+        };
+    });
+
+    expect(drawn.runs).toBeGreaterThan(50);
+    expect(drawn.reach).toBe('0,0 ' + drawn.box);
+
+    //And what a phone scanning it opens: this file, in this view.
+    const link = new URL(await page.locator('.svgContainer').getAttribute('data-link'));
+
+    expect(link.searchParams.get('file')).toBe(MOSFET);
+    expect(link.searchParams.get('view')).toBe('3d');
 });
 
 ///
@@ -176,9 +214,9 @@ test('the three ways onto a headset or a phone are one row of matching buttons',
 ///History and Examples are a pair, History first, and the pair sits a gutter from the file controls.
 ///
 ///Three spacings, and each one says something different. The two lists are all but touching, because they
-///are the same kind of thing. They are one ordinary column gutter from Open and Save, because those open
-///files too - wider than the gap inside the pair, and nothing like the fence past them. And the fence goes
-///after Examples, where the bar stops being about getting a file on screen.
+///are the same kind of thing. They are one ordinary column gutter from Open, Save and Compare, because those
+///bring files in too - wider than the gap inside the pair, and nothing like the fence past them. And the fence
+///goes after Examples, where the bar stops being about getting a file on screen.
 ///
 test('History and Examples are a pair, a gutter from the file controls', async ({ page }) => {
     const boxes = await page.evaluate(() => {
@@ -195,6 +233,9 @@ test('History and Examples are a pair, a gutter from the file controls', async (
             downloadStarts: box('#downloadGds'),
             downloadEnds: box('#downloadFormat'),
 
+            //And Compare after it, the last of the file controls.
+            compare: box('#compareButton'),
+
             history: box('#historyButton'),
             examples: box('#examplesButton'),
             view: box('#viewPick')
@@ -202,13 +243,17 @@ test('History and Examples are a pair, a gutter from the file controls', async (
     });
 
     //In that order along the bar.
-    expect(boxes.history.left).toBeGreaterThanOrEqual(boxes.downloadEnds.right);
+    expect(boxes.compare.left).toBeGreaterThanOrEqual(boxes.downloadEnds.right);
+    expect(boxes.history.left).toBeGreaterThanOrEqual(boxes.compare.right);
     expect(boxes.examples.left).toBeGreaterThanOrEqual(boxes.history.right);
 
     const insideTheFileControls = boxes.downloadStarts.left - boxes.open.right;
     const insideThePair = boxes.examples.left - boxes.history.right;
 
-    const betweenThem = boxes.history.left - boxes.downloadEnds.right;
+    //Compare is one of the file controls, a file control's gap from the download.
+    expect(Math.round(boxes.compare.left - boxes.downloadEnds.right)).toBe(Math.round(insideTheFileControls));
+
+    const betweenThem = boxes.history.left - boxes.compare.right;
     const theFence = boxes.view.left - boxes.examples.right;
 
     //The pair is as close together as the file controls are to each other, which is what makes it a pair.
@@ -267,16 +312,19 @@ test('choosing no background clears it again', async ({ page }) => {
     await expect.poll(async () => page.evaluate(() => window.__gdsScene?.background == null)).toBe(true);
 });
 
-test('Admire moves the camera, and pressing it again stops', async ({ page }) => {
+test('Admire moves the camera, and switching it off stops it', async ({ page }) => {
     await captureScene(page);
 
     const before = await cameraPosition(page);
 
     expect(before).not.toBeNull();
 
-    const admire = page.getByRole('button', { name: 'Admire' });
+    //A switch in the view's settings, under the cube.
+    await openViewSettings(page);
 
-    await admire.click();
+    const admire = page.locator('#viewAdmire');
+
+    await admire.check();
 
     //Driven from the render loop, so it takes frames rather than a call to move.
     await expect.poll(async () => {
@@ -285,7 +333,7 @@ test('Admire moves the camera, and pressing it again stops', async ({ page }) =>
         return now.x !== before.x || now.y !== before.y || now.z !== before.z;
     }, { timeout: 15000 }).toBe(true);
 
-    await admire.click();
+    await admire.uncheck();
 
     //Settled once toggled off: two readings a moment apart match.
     await page.waitForTimeout(500);
@@ -300,11 +348,12 @@ test('Admire moves the camera, and pressing it again stops', async ({ page }) =>
 test('the layer-spacing slider spreads the stack', async ({ page }) => {
     await captureScene(page);
 
-    //Read off the meshes' own offsets, which is what the slider actually changes.
+    //Read off the slabs' own offsets, which is what the slider actually changes. The slabs are the meshes
+    //carrying outlines - a layer's labels are a mesh too.
     const spreadOf = () => page.evaluate(() => {
         const meshes = window.__gdsScene?.children
             .flatMap(child => child.children ?? [])
-            .filter(child => child.isMesh) ?? [];
+            .filter(child => child.isMesh && child.userData.outlines != null) ?? [];
 
         if (meshes.length === 0)
             return 0;
@@ -345,9 +394,10 @@ test('spreading the stack keeps it in front of the camera, not above it', async 
         //The group's own position is part of the answer, so the whole tree has to be current before reading.
         scene.updateMatrixWorld(true);
 
+        //The slabs, which are the meshes carrying outlines - a layer's labels are a mesh too.
         const meshes = scene.children
             .flatMap(child => child.children ?? [])
-            .filter(child => child.isMesh);
+            .filter(child => child.isMesh && child.userData.outlines != null);
 
         if (meshes.length === 0)
             return null;
@@ -448,13 +498,14 @@ test.describe('on a touch device', () => {
     });
 
     ///
-    ///And the two that stay go up the side above Admire, rather than across the foot of the view into it.
+    ///And the two that stay go up the side, rather than across the foot of the view over the axis indicator.
     ///
-    ///Nothing three.js can say fits beside Admire at this width. What it says here is what a desktop Chromium
-    ///gets, NOT SUPPORTED at 150 pixels; a real iPhone has no WebXR at all and gets WEBXR NOT AVAILABLE at 180 -
-    ///so the buttons are relabeled the way three.js would and asked again, at the widest they ever are.
+    ///Nothing three.js can say fits along the foot clear of the indicator at this width. What it says here is
+    ///what a desktop Chromium gets, NOT SUPPORTED at 150 pixels; a real iPhone has no WebXR at all and gets WEBXR
+    ///NOT AVAILABLE at 180 - so the buttons are relabeled the way three.js would and asked again, at the widest
+    ///they ever are.
     ///
-    test('the headset buttons stack above Admire instead of running into it', async ({ page }) => {
+    test('the headset buttons go up the side instead of over the axis indicator', async ({ page }) => {
         await expect.poll(async () => page.locator('#xrButtons button:visible').count(), { timeout: 30000 })
             .toBe(2);
 
@@ -474,9 +525,10 @@ test.describe('on a touch device', () => {
 ///
 ///The same stack on a laptop, once the layer sidebar leaves the view too narrow for the row.
 ///
-///At 1024 by 768 the view is 543 wide, and the three buttons a mouse gets ran 88 pixels into Admire - which is
-///why the rule asks how wide the view is rather than the window. At the 1400 the rest of this file runs at,
-///the view is 844 and the row stays a row, which the tests on the row and on Admire hold.
+///At 1024 by 768 the view is 543 wide, and the three buttons a mouse gets would run 70 pixels over the axis
+///indicator - which is why the rule asks how wide the view is rather than the window. At the 1280 by 720 the rest
+///of this file runs at, the view is 747 and the row stays a row, which the tests on the row hold. (Not the 1400 the
+///config's top-level `use` names: the project's Desktop Chrome brings a viewport of its own, and it wins.)
 ///
 test('on a narrow laptop window the view controls stack rather than overlap', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
@@ -484,6 +536,46 @@ test('on a narrow laptop window the view controls stack rather than overlap', as
     await expect.poll(async () => page.locator('#xrButtons button').count(), { timeout: 30000 }).toBe(3);
 
     await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'column', inside: true });
+});
+
+///
+///And the labels decide it as much as the window does.
+///
+///With the view 747 wide, the row of NOT SUPPORTED buttons clears the axis indicator by 32 pixels, and the
+///WEBXR NOT AVAILABLE a browser without WebXR gets does not: 180 a button is a row sixty pixels wider, which
+///leaves it two and a half, inside the eight the row keeps off the indicator. A breakpoint cannot be right for
+///both - 800 held the second and stacked the first here, which is what the tests on the row caught - so the row
+///is measured, and relabeling the buttons the way three.js does is enough to stack it, and to put it back.
+///
+///**At 1279 wide, which is what puts the view at 747.** That was the 1280 this file runs at, until the editor
+///was kept wide enough for the toolbar from 1280 up (see #mainAppContainer in Viewer.razor.css) and the view
+///there grew past where either row could fail to fit. One pixel narrower is the widest window that floor does
+///not reach, so the view is the width this was measured at, to the pixel.
+///
+test('the row stacks for labels that do not fit, and goes back for ones that do', async ({ page }) => {
+    await page.setViewportSize({ width: 1279, height: 720 });
+
+    await expect(page.locator('#VRButton')).toHaveText('VR NOT SUPPORTED', { timeout: 30000 });
+
+    await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'row', inside: true });
+
+    await page.evaluate(() => {
+        for (const button of document.querySelectorAll('#VRButton, #ARButton')) {
+            button.textContent = 'WEBXR NOT AVAILABLE';
+            button.style.width = '180px';
+        }
+    });
+
+    await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'column', inside: true });
+
+    await page.evaluate(() => {
+        for (const button of document.querySelectorAll('#VRButton, #ARButton')) {
+            button.textContent = button.id.slice(0, 2) + ' NOT SUPPORTED';
+            button.style.width = '150px';
+        }
+    });
+
+    await expect.poll(async () => footOfTheView(page)).toEqual({ overlapping: false, arrangement: 'row', inside: true });
 });
 
 ///
@@ -530,150 +622,74 @@ test.describe('the 3D view puts its controls in the bar the way everything else 
     });
 
     ///
-    ///Admire is not in the bar at all. It is in the corner of the view, with the other two controls that
-    ///are about the view rather than about the file.
+    ///The headset row wears the look three.js gives its own buttons, and Admire is not down here with it.
     ///
-    ///It was a word in a row of file formats and backgrounds, which is the wrong company: what it does is
-    ///move the camera, and the two controls that already sit on the canvas are the ways of taking this view
-    ///somewhere else. Same height as them, same margin off the edge, same look - and in the far corner,
-    ///since their row is centered and holds the ways of leaving rather than of looking.
+    ///Admire sat in the far corner of the canvas until 2026-10-17 - a word in a row of file formats and
+    ///backgrounds before that. It is a switch in the view's settings now, under the cube, with the other things
+    ///that change what this view shows; see view-settings.spec.js.
     ///
-    test('Admire sits on the canvas with the other view controls', async ({ page }) => {
-        //Out of the bar entirely, not merely moved along it.
-        await expect(page.locator('.viewToolbar #admire')).toHaveCount(0);
+    test('the headset row wears the three.js buttons\' look, and Admire is not on the canvas', async ({ page }) => {
+        await expect(page.locator('#admire')).toHaveCount(0);
 
-        const placed = await page.evaluate(() => {
-            const admire = document.querySelector('#admire').getBoundingClientRect();
-            const phone = document.querySelector('#openOnPhone').getBoundingClientRect();
-            const view = document.querySelector('#container').getBoundingClientRect();
+        const style = await page.evaluate(() => {
+            const looks = getComputedStyle(document.querySelector('#openOnPhone'));
 
-            const style = getComputedStyle(document.querySelector('#admire'));
-
-            return {
-                height: [Math.round(admire.height), Math.round(phone.height)],
-
-                //Sitting on the same line as them, off the same edge.
-                bottoms: [Math.round(view.bottom - admire.bottom), Math.round(view.bottom - phone.bottom)],
-
-                //And in the far corner rather than in their row, which is centered.
-                pastTheRow: admire.left > phone.right,
-                fromTheRight: Math.round(view.right - admire.right),
-
-                //Their look, not the bar's blue: a wash with a dark outline and dark lettering on it.
-                border: style.borderTopWidth,
-                color: style.color,
-                background: style.backgroundColor
-            };
+            return { border: looks.borderTopWidth, color: looks.color, background: looks.backgroundColor };
         });
-
-        expect(placed.height[0]).toBe(placed.height[1]);
-        expect(placed.bottoms[0]).toBe(placed.bottoms[1]);
-
-        expect(placed.pastTheRow).toBe(true);
-        expect(placed.fromTheRight).toBeLessThan(40);
 
         //
         //A wash with an outline, which is what the three.js buttons beside it are.
         //
-        //Not a solid panel: these sit over the layout, and four filled slabs across the foot of the view
-        //are the loudest thing on screen when what they are is three ways out of it and a camera toggle.
-        //Drawn in ink rather than in white, since the default scene is light gray.
+        //Not a solid panel: these sit over the layout, and filled slabs across the foot of the view are the
+        //loudest thing on screen when what they are is three ways out of it. Drawn in ink rather than in white,
+        //since the default scene is light gray.
         //
-        expect(placed.border).toBe('1px');
-        expect(placed.background).toMatch(/^rgba\(255, 255, 255, 0\./);
+        expect(style.border).toBe('1px');
+        expect(style.background).toMatch(/^rgba\(255, 255, 255, 0\./);
 
-        const ink = placed.color.match(/\d+/g).map(Number);
+        const ink = style.color.match(/\d+/g).map(Number);
 
         expect(Math.max(...ink)).toBeLessThan(80);
     });
 
-    ///<summary>And it says when it is running, which the picture cannot.</summary>
-    test('Admire lights up while it is running', async ({ page }) => {
-        const admire = page.locator('#admire');
-
-        await expect(admire).toHaveAttribute('aria-pressed', 'false');
-
-        await admire.click();
-
-        await expect(admire).toHaveAttribute('aria-pressed', 'true');
-        await expect(admire).toHaveClass(/admireOn/);
-
-        await admire.click();
-
-        await expect(admire).toHaveAttribute('aria-pressed', 'false');
-        await expect(admire).not.toHaveClass(/admireOn/);
-    });
-
     ///
-    ///No words over the dropdowns.
+    ///No word over the file type.
     ///
-    ///Both said what the box under them already said - "Background" over a box reading No Background, "File
-    ///Type" over one reading STL - and the bar stopped heading anything the day Tool, Grid, Join and View
-    ///lost theirs.
+    ///It said what the box under it already said - "File Type" over a box reading STL, as "Background" did over
+    ///the backdrop's box when that was in the bar - and the bar stopped heading anything the day Tool, Grid, Join
+    ///and View lost theirs.
     ///
-    test('neither control is headed by a word', async ({ page }) => {
-        //Both are here, so an empty list below is the words being gone rather than the bar being.
-        await expect(page.locator('#backgroundPicker')).toBeVisible();
+    test('the file type is not headed by a word', async ({ page }) => {
+        //Here, so an empty list below is the word being gone rather than the bar being.
         await expect(page.locator('#modelFormat')).toBeVisible();
 
-        //Nothing in this bar is headed, which is the whole statement - the two were the last that were.
+        //Nothing in this bar is headed, which is the whole statement - the two this view had were the last that were.
         await expect(page.locator('.toolbarLabel')).toHaveCount(0);
 
-        //Still named for anything not reading the screen, which is what the words were doing for them.
-        await expect(page.locator('#backgroundPicker')).toHaveAttribute('aria-label', 'Background');
+        //Still named for anything not reading the screen, which is what the word was doing for it.
         await expect(page.locator('#modelFormat')).toHaveAttribute('aria-label', '3D file type');
-    });
-
-    ///And the backdrop picker is the height of the row it is in, which a bare select was not.
-    test('the backdrop picker is a bar-height control', async ({ page }) => {
-        const heights = await page.evaluate(() => {
-            const of = (selector) => Math.round(document.querySelector(selector).getBoundingClientRect().height);
-
-            return [of('#backgroundPicker'), of('#downloadModel')];
-        });
-
-        expect(heights[0]).toBe(heights[1]);
     });
 });
 
 ///
-///Which backdrop, shown rather than named.
+///Which backdrop, shown rather than named - in the 3D view's settings, which hang from the cube of the view switch.
 ///
 ///"Future Room" and "Neon" are what somebody called two photographs, and no arrangement of words says what
-///one looks like - which is the whole question the control is asking. So the menu carries a picture of
-///each, generated once from the backdrop and committed beside it: the backdrops themselves run to nine
-///megabytes, and a menu that showed those would fetch thirteen to open.
+///one looks like - which is the whole question being asked. So each row carries a picture, generated once
+///from the backdrop and committed beside it: the backdrops themselves run to nine megabytes, and a menu
+///that showed those would fetch thirteen to open.
 ///
-test.describe('the backdrop picker', () => {
-    test('it opens a menu with a picture of each backdrop', async ({ page }) => {
-        await expect(page.locator('#backgroundMenu')).toHaveCount(0);
-
-        await page.locator('#backgroundPicker').click();
-
-        await expect(page.locator('#backgroundMenu')).toBeVisible();
-
-        const rows = page.locator('#backgroundMenu button');
-
-        await expect(rows).toHaveCount(5);
-
-        //Every one carries a swatch: four photographs and the plain scene's own gray.
-        await expect(page.locator('#backgroundMenu .backgroundSwatch')).toHaveCount(5);
-        await expect(page.locator('#backgroundMenu img.backgroundSwatch')).toHaveCount(4);
-
-        //And the names are kept, since they are what a returning user recognizes.
-        const names = await page.locator('#backgroundMenu .backgroundName').allTextContents();
-
-        expect(names.map(one => one.trim()))
-            .toEqual(['No Background', 'White', 'White Room', 'Future Room', 'Neon']);
-    });
-
+///They had a menu of their own behind a button along the bar, until the settings took them in and the
+///cube took the settings.
+///
+test.describe('the backdrops, in the view\'s settings', () => {
     ///
     ///The pictures are the small ones, not the backdrops.
     ///
     ///The whole reason they exist. Asserted by what is fetched rather than by the path in the markup: a
     ///thumbnail that pointed at the full image would still look right and would still cost the megabytes.
     ///
-    test('opening the menu fetches kilobytes rather than megabytes', async ({ page }) => {
+    test('a picture each, and opening them fetches kilobytes rather than megabytes', async ({ page }) => {
         const fetched = [];
 
         page.on('response', response => {
@@ -681,9 +697,11 @@ test.describe('the backdrop picker', () => {
                 fetched.push(response.url());
         });
 
-        await page.locator('#backgroundPicker').click();
+        await openViewSettings(page);
 
-        await expect(page.locator('#backgroundMenu')).toBeVisible();
+        //Every row carries a swatch: four photographs and the plain scene's own gray.
+        await expect(page.locator('#viewBackground .backgroundSwatch')).toHaveCount(5);
+        await expect(page.locator('#viewBackground img.backgroundSwatch')).toHaveCount(4);
 
         //Give the images a moment to be asked for.
         await expect.poll(async () => fetched.length, { timeout: 15000 }).toBeGreaterThan(3);
@@ -693,7 +711,7 @@ test.describe('the backdrop picker', () => {
             expect(url).toContain('/preview/');
     });
 
-    ///Choosing one puts it on the scene and closes the menu, which is what a menu is for.
+    ///Choosing one puts it on the scene.
     test('choosing one dresses the scene', async ({ page }) => {
         await captureScene(page);
 
@@ -704,48 +722,47 @@ test.describe('the backdrop picker', () => {
     });
 
     ///
-    ///A press somewhere else puts it away, and does not choose anything on the way past.
-    ///
-    ///Through the listener the 2D view's own menus share. The bar is the shell's, so the dismissal has to
-    ///travel out to the shell before it is real - which is the thing that was silently missing when this
-    ///menu first would not open at all.
-    ///
-    ///
-    ///And it goes when the pointer leaves, the way every other panel in the bar does.
+    ///The pointer arriving at the cube opens them, and they go when it leaves, the way every other panel in the
+    ///bar does.
     ///
     ///The reachable half is the part that is easy to get wrong: the menu hangs twelve pixels below the
-    ///column, and if that twelve is a gap rather than part of the menu's own box then crossing it *is*
+    ///cube, and if that twelve is a gap rather than part of the menu's own box then crossing it *is*
     ///leaving, and the menu shuts on the way in. Stepped, or the move is one event at the destination.
     ///
-    test('the pointer can reach it, and it goes when the pointer leaves', async ({ page }) => {
-        const button = await page.locator('#backgroundPicker').boundingBox();
+    test('the pointer can reach them, and they go when the pointer leaves', async ({ page }) => {
+        const cube = await page.locator('#viewPick3D').boundingBox();
 
-        await page.locator('#backgroundPicker').hover();
+        await page.locator('#viewPick3D').hover();
 
-        await expect(page.locator('#backgroundMenu')).toBeVisible();
+        await expect(page.locator('#viewSettingsMenu')).toBeVisible();
 
-        const menu = await page.locator('#backgroundMenu').boundingBox();
+        const backdrops = await page.locator('#viewBackground').boundingBox();
 
-        await page.mouse.move(button.x + (button.width / 2), menu.y + 30, { steps: 20 });
+        await page.mouse.move(cube.x + (cube.width / 2), backdrops.y + 30, { steps: 30 });
 
-        await expect(page.locator('#backgroundMenu')).toBeVisible();
+        await expect(page.locator('#viewSettingsMenu')).toBeVisible();
 
         await page.mouse.move(4, 4);
 
-        await expect(page.locator('#backgroundMenu')).toHaveCount(0);
+        await expect(page.locator('#viewSettingsMenu')).toHaveCount(0);
     });
 
-    test('a press outside puts it away', async ({ page }) => {
+    ///
+    ///A press somewhere else puts them away, and chooses nothing on the way past.
+    ///
+    ///Through the listener the 2D view's own menus share. The menu is drawn by the shell, so the dismissal has
+    ///to travel out to the shell before it is real - which is the thing that was silently missing when the
+    ///backdrops' own menu first would not open at all.
+    ///
+    test('a press outside puts them away', async ({ page }) => {
         //The scene has to be reachable before it can be asked what it is wearing.
         await captureScene(page);
 
-        await page.locator('#backgroundPicker').click();
-
-        await expect(page.locator('#backgroundMenu')).toBeVisible();
+        await openViewSettings(page);
 
         await page.locator('#layerSidebar').click({ position: { x: 5, y: 5 } });
 
-        await expect(page.locator('#backgroundMenu')).toHaveCount(0);
+        await expect(page.locator('#viewSettingsMenu')).toHaveCount(0);
 
         //And nothing was dressed on the way past.
         expect(await page.evaluate(() => window.__gdsScene?.background)).toBeNull();

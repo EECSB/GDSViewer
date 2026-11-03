@@ -26,6 +26,17 @@ GdsII/Clipper2/** -text -diff
 GdsII/Clipper2/README.md text diff
 
 ###############################################################################
+# And for the stylesheets and fonts the page is dressed in.
+#
+# Bootstrap, Open Iconic and Roboto sit under wwwroot/css beside the app's own
+# app.css rather than under wwwroot/lib, and had none of this until the
+# 2026-10-21 audit. Their versions are in docs/THIRD-PARTY-NOTICES.md.
+###############################################################################
+wwwroot/css/bootstrap/** -text -diff
+wwwroot/css/open-iconic/** -text -diff
+wwwroot/css/fonts/** -text -diff
+
+###############################################################################
 # Layout files.
 #
 # Binary, and asserted byte for byte: the corpus and interop tests serialize

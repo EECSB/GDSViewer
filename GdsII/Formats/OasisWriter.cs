@@ -294,15 +294,18 @@ namespace GdsII
             ///
             ///The modal variables this writer keeps, which have to be exactly the reader's.
             ///
-            ///**None of them is reset at a cell boundary, and that is not an oversight on either side.**
-            ///OasisReader.resetCellState resets the addressing mode and the six x/y variables and nothing
-            ///else, so layer, datatype and the sizes carry from the last record of one cell into the first
-            ///record of the next. A writer that reset them here would leave out a field the reader still
-            ///thinks it knows, and every shape in the second cell would land on the layer the first one
-            ///ended on. Compressing the bodies changes nothing about this: the state belongs to the reader,
-            ///not to the buffer it is reading from.
+            ///**Every one of them is reset at a cell boundary** - see resetModalState, which writeCell calls -
+            ///because that is what the format does: specification 10.1 has a reader start every CELL record
+            ///with all of them undefined but the six positions, so a record that leaves a field out relies on
+            ///one set earlier *in the same cell*. This writer carried them across cells until 2026-11-03, and
+            ///what it wrote parsed everywhere while being wrong: KLayout read a second cell whose first
+            ///rectangle repeated the first cell's size with "Modal variable accessed before being defined",
+            ///and a strict reader refuses such a file outright. The reader here carried them too, which is why
+            ///1,220 round trips never saw it - a reader and a writer that share a mistake agree perfectly.
+            ///Compressing the bodies changes nothing about this: the state belongs to the reader, not to the
+            ///buffer it is reading from.
             ///
-            ///Started at -1, which no layer, datatype or size can be, so the first record of a file writes
+            ///Started at -1, which no layer, datatype or size can be, so the first record of a cell writes
             ///every field.
             ///
             ///**Text has its own pair.** textlayer and texttype are separate modal variables from layer and
@@ -316,6 +319,19 @@ namespace GdsII
             private long modalWidth = -1;
             private long modalHeight = -1;
             private long modalPathHalfWidth = -1;
+
+            ///<summary>What a CELL record undoes on the reader's side, undone here: every modal variable, so the first record of each cell says everything.</summary>
+            private void resetModalState()
+            {
+                modalLayer = -1;
+                modalDataType = -1;
+                modalTextLayer = -1;
+                modalTextType = -1;
+                modalWidth = -1;
+                modalHeight = -1;
+                modalPathHalfWidth = -1;
+                modalPlacementName = null;
+            }
 
             ///<summary>Elements with nothing to write them as. Reported rather than passed over.</summary>
             public int Skipped { get; private set; }
@@ -375,7 +391,21 @@ namespace GdsII
                 if (metersPerDatabaseUnit <= 0 || double.IsNaN(metersPerDatabaseUnit) || double.IsInfinity(metersPerDatabaseUnit))
                     return DefaultUnit;
 
-                return 1e-6 / metersPerDatabaseUnit;
+                double unit = 1e-6 / metersPerDatabaseUnit;
+
+                //
+                //**Snapped to the whole number it is**, when it is one. Neither UNITS value is exact in binary,
+                //so the quotient of the usual 1e-6 and 1e-9 is 999.9999999999999 - which Real() wrote as an
+                //eight-byte double where every other writer puts the integer 1000, and a reader on the other
+                //side got a database unit of 1.0000000000000002e-3. A unit within a part in a billion of a
+                //whole number is that number; one that is not - a third - goes out as the double it is.
+                //
+                double whole = Math.Round(unit);
+
+                if (whole > 0 && Math.Abs(unit - whole) <= whole * 1e-9)
+                    return whole;
+
+                return unit;
             }
 
             ///<summary>
@@ -435,6 +465,9 @@ namespace GdsII
                 file.Byte(14);//CELL, named rather than by reference number
                 file.Text(nameOf(structure));
 
+                //Which is where a reader forgets every modal variable, so this does too - see the fields.
+                resetModalState();
+
                 //
                 //The body is built on its own before it is put in the file, so it can be compressed whole.
                 //
@@ -468,7 +501,7 @@ namespace GdsII
             ///A cell's records, compressed if that makes them smaller and plain if it does not.
             ///
             ///**DEFLATE over the records already written, which is what makes this cheap and safe.** Every
-            ///byte inside the block is a byte this writer already produced and 897 files already round-trip
+            ///byte inside the block is a byte this writer already produced and 1,220 files already round-trip
             ///through - nothing about how a record is spelled changes, only whether it is stored packed. So
             ///a compression bug cannot produce a wrong shape; it can only produce a block that will not
             ///inflate, which fails loudly at the first record read.
@@ -1367,8 +1400,8 @@ namespace GdsII
             ///This writer only ever writes names, so only the name is tracked, and a record that leaves the
             ///name out clears 0x80 entirely.
             ///
-            ///Null to start, which no cell name can be, so the first placement in a file always says which.
-            ///Not reset per cell, for the reason none of the others are.
+            ///Null to start, which no cell name can be, so the first placement in a cell always says which -
+            ///reset with the rest at every cell, see resetModalState.
             ///
             private string? modalPlacementName;
 

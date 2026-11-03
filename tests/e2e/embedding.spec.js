@@ -4,8 +4,26 @@
 //Only a browser can show this. The parsing is covered in C# - see EmbeddingTests - and what is left is the
 //part that only exists once it is rendered: whether the bar is in the page at all, whether a control is
 //actually unusable rather than merely faded, and whether a setting the address named beat the session.
+const fs = require('fs');
+const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, showGrid, MOSFET , acceptsClosingWhatIsOpen } = require('./helpers');
+const {
+    gotoApp,
+    gotoExample,
+    expectLoaded,
+    openFile,
+    showGrid,
+    layerLabel,
+    selectExample,
+    uploadFile,
+    openedOnItsOwn,
+    onOtherLayers,
+    MOSFET,
+    MOSFET_ELSEWHERE
+} = require('./helpers');
+
+//A file of the visitor's own, for the cases about what an address leaves on one: the bundled Mosfet, under another name.
+const MOSFET_ON_DISK = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
 
 ///Opens the app on a query of its own, and waits for a file to be on screen.
 async function embed(page, query) {
@@ -139,7 +157,8 @@ test.describe('the layermap an address names', () => {
         await embed(page, `?file=Mosfet&view=2d&tree=false&layermap=${encodeURIComponent(MAP(baseURL))}`);
 
         //The sidebar stops reading as bare numbers, which is the visible half of it.
-        await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
+        await expect.poll(
+            async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
             { timeout: 20000 }).toContain('met1');
 
         //And nothing was reported, because nothing went wrong.
@@ -203,6 +222,73 @@ test.describe('the layermap an address names', () => {
     ///`layermap=` from a default that landed. What the test is named for is whether the app went and fetched
     ///it, so that is what is watched.
     ///
+    ///
+    ///**The page's mapping, and never the visitor's own.** Served by the test, on the app's origin, naming one
+    ///layer of Mosfet - so a name from it is told apart from the bundled one at a glance.
+    ///
+    async function openWithPageMapping(page, baseURL) {
+        const map = `${baseURL}/page-maps/custom.csv`;
+
+        await page.route(map, route => route.fulfill({ contentType: 'text/csv', body: '65,20,pagediff,#00ff00\n' }));
+
+        await gotoApp(page, `?file=${MOSFET}&view=2d&layermap=${encodeURIComponent(map)}`);
+        await expectLoaded(page);
+
+        await expect.poll(async () => layerLabel(page, '65/20'), { timeout: 20000 }).toBe('pagediff (65/20)');
+    }
+
+    ///A file the visitor brings, opened on its own rather than into the one on screen.
+    async function uploadMine(page, bytes = fs.readFileSync(MOSFET_ON_DISK)) {
+        await uploadFile(page, { name: 'mine.gds', mimeType: 'application/octet-stream', buffer: bytes });
+        await openedOnItsOwn(page);
+
+        await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('mine.gds');
+    }
+
+    ///
+    ///**It names the page's files**: the one the address opens, and an example opened in that page, the way the
+    ///bundled mapping names an example - **and not a file the visitor uploads there**, which could be any
+    ///technology. It used to be remembered like an Import, and went onto every file opened afterwards.
+    ///
+    test('it names the files the page opens, and not one the visitor uploads there', async ({ page, baseURL }) => {
+        await openWithPageMapping(page, baseURL);
+
+        await selectExample(page, 'sky130_fd_sc_hd__nand2_1.gds');
+
+        await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('sky130_fd_sc_hd__nand2_1.gds');
+        await expect.poll(async () => layerLabel(page, '65/20')).toBe('pagediff (65/20)');
+
+        await uploadMine(page);
+
+        await expect.poll(async () => layerLabel(page, '65/20')).toBe('65/20');
+    });
+
+    ///
+    ///**And once the visitor leaves, only the file it named keeps it.** A visit of their own, with nothing in the
+    ///address, brings that file back as it was left - and every other file is named as though the link had never
+    ///been followed: an example by the PDK in use, and an upload from another process not at all.
+    ///
+    test('after the visitor leaves the page, only the file it named keeps the mapping', async ({ page, baseURL }) => {
+        await openWithPageMapping(page, baseURL);
+
+        await page.waitForTimeout(1000);
+
+        await gotoApp(page, '', null);
+        await expectLoaded(page);
+
+        await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
+        await expect.poll(async () => layerLabel(page, '65/20')).toBe('pagediff (65/20)');
+
+        await selectExample(page, 'sky130_fd_sc_hd__nand2_1.gds');
+
+        await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('sky130_fd_sc_hd__nand2_1.gds');
+        await expect.poll(async () => layerLabel(page, '65/20')).toBe('diff (65/20)');
+
+        await uploadMine(page, onOtherLayers(fs.readFileSync(MOSFET_ON_DISK), MOSFET_ELSEWHERE));
+
+        await expect.poll(async () => layerLabel(page, '22/20')).toBe('22/20');
+    });
+
     test('a layermap that is not http is not fetched', async ({ page }) => {
         const asked = [];
 
@@ -250,24 +336,21 @@ test.describe('the files an embedder brings', () => {
         await expect(page.locator('.examplePickerOption[data-file="Chip A"]')).toBeVisible();
 
         //First, over the files the app ships with - the page that named it means it to be the one offered.
-        const headings = await page.locator('.examplePickerHeading').allTextContents();
+        //
+        //Polled, because the list is virtualized and the app is still opening its own file while this looks.
+        //Read once, it landed in the middle of a render in a full run on 2026-10-08: the row was there and the
+        //heading over it was not yet, and a moment later the list was in order.
+        await expect.poll(async () => (await page.locator('.examplePickerHeading').allTextContents())[0])
+            .toBe('From this page');
 
-        expect(headings[0]).toBe('From this page');
-
-        const first = await page.locator('.examplePickerOption').first().getAttribute('data-file');
-
-        expect(first).toBe('Chip A');
+        await expect.poll(async () => page.locator('.examplePickerOption').first().getAttribute('data-file'))
+            .toBe('Chip A');
     });
 
     test('choosing it fetches the address it was given', async ({ page, baseURL }) => {
         await openEmbed(page, `?view=2d&example=${OWN(baseURL)}`);
 
         await picker(page);
-
-        //Opening one closes what is open, and the app asks first.
-
-        acceptsClosingWhatIsOpen(page);
-
 
         await page.locator('.examplePickerOption[data-file="Chip A"]').click();
 
@@ -289,8 +372,6 @@ test.describe('the files an embedder brings', () => {
 
         //Listed twice, since the bundled one is still there under its own heading - and the injected row
         //is the first, which is the one this opens.
-        acceptsClosingWhatIsOpen(page);
-
         await page.locator('.examplePickerOption[data-file="Mosfet"]').first().click();
 
         await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');

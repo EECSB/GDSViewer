@@ -117,7 +117,7 @@ namespace GdsII
         ///
         ///One point on the curve, at <paramref name="t"/> from 0 at the first control point to 1 at the last.
         ///
-        ///De Casteljau's algorithm: repeatedly take each neighbouring pair of points and step
+        ///De Casteljau's algorithm: repeatedly take each neighboring pair of points and step
         ///<paramref name="t"/> of the way between them, until one point is left. It is slower than
         ///evaluating the Bernstein polynomials and it is numerically stable at every degree, which matters
         ///more here than the arithmetic does.

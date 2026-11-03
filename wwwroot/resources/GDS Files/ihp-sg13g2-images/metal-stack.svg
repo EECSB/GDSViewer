@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="620" viewBox="0 0 760 620" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<title>The SG13G2 stack, to scale</title>
+<rect x="0" y="0" width="760" height="620" fill="#ffffff"/>
+<rect x="70" y="560.0" width="400" height="40.0" fill="#eeeeee"/>
+<text x="76" y="594" fill="#666666">substrate</text>
+<line x1="60" y1="560.0" x2="480" y2="560.0" stroke="#666666" stroke-dasharray="4 3"/>
+<rect x="90" y="560.0" width="170" height="13.6" fill="#b7d7a8" stroke="#333333" stroke-width="0.6"><title>Activ: -400 to 0 nm</title></rect>
+<rect x="300" y="554.6" width="60" height="5.4" fill="#e06666" stroke="#333333" stroke-width="0.6"><title>GatPoly: 0 to 160 nm</title></rect>
+<rect x="150" y="538.2" width="30" height="21.8" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Cont: 0 to 640 nm</title></rect>
+<rect x="315" y="538.2" width="30" height="16.3" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Cont: 160 to 640 nm</title></rect>
+<rect x="110" y="524.0" width="290" height="14.3" fill="#6fa8dc" stroke="#333333" stroke-width="0.6"><title>Metal1: 640 to 1060 nm</title></rect>
+<rect x="330" y="505.6" width="30" height="18.4" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Via1: 1060 to 1600 nm</title></rect>
+<rect x="150" y="488.9" width="290" height="16.7" fill="#8e7cc3" stroke="#333333" stroke-width="0.6"><title>Metal2: 1600 to 2090 nm</title></rect>
+<rect x="380" y="470.6" width="30" height="18.4" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Via2: 2090 to 2630 nm</title></rect>
+<rect x="110" y="453.9" width="330" height="16.7" fill="#6fa8dc" stroke="#333333" stroke-width="0.6"><title>Metal3: 2630 to 3120 nm</title></rect>
+<rect x="150" y="435.6" width="30" height="18.4" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Via3: 3120 to 3660 nm</title></rect>
+<rect x="110" y="418.9" width="290" height="16.7" fill="#8e7cc3" stroke="#333333" stroke-width="0.6"><title>Metal4: 3660 to 4150 nm</title></rect>
+<rect x="330" y="400.5" width="30" height="18.4" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Via4: 4150 to 4690 nm</title></rect>
+<rect x="110" y="383.9" width="330" height="16.7" fill="#6fa8dc" stroke="#333333" stroke-width="0.6"><title>Metal5: 4690 to 5180 nm</title></rect>
+<rect x="300" y="377.4" width="120" height="5.1" fill="#f6b26b" stroke="#333333" stroke-width="0.6"><title>MIM: 5220 to 5370 nm</title></rect>
+<rect x="345" y="355.0" width="30" height="22.4" fill="#999999" stroke="#333333" stroke-width="0.6"><title>Vmim: 5370 to 6030 nm</title></rect>
+<rect x="150" y="355.0" width="50" height="28.9" fill="#999999" stroke="#333333" stroke-width="0.6"><title>TopVia1: 5180 to 6030 nm</title></rect>
+<rect x="110" y="287.0" width="330" height="68.0" fill="#ffd966" stroke="#333333" stroke-width="0.6"><title>TopMetal1: 6030 to 8030 nm</title></rect>
+<rect x="250" y="191.8" width="80" height="95.2" fill="#999999" stroke="#333333" stroke-width="0.6"><title>TopVia2: 8030 to 10830 nm</title></rect>
+<rect x="110" y="89.8" width="330" height="102.0" fill="#ffd966" stroke="#333333" stroke-width="0.6"><title>TopMetal2: 10830 to 13830 nm</title></rect>
+<line x1="474" y1="140.8" x2="496" y2="140.8" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="144.8" fill="#222222">TopMetal2 - 10.83 µm up, 3000 nm thick</text>
+<line x1="474" y1="239.4" x2="496" y2="239.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="243.4" fill="#222222">TopVia2 - 8.03 µm up, 2800 nm thick</text>
+<line x1="474" y1="321.0" x2="496" y2="321.0" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="325.0" fill="#222222">TopMetal1 - 6.03 µm up, 2000 nm thick</text>
+<line x1="474" y1="369.4" x2="496" y2="369.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="373.4" fill="#222222">TopVia1 and Vmim - 5.18 µm up, 850 nm thick</text>
+<line x1="474" y1="380.0" x2="496" y2="384.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="388.4" fill="#222222">MIM plate - 5.22 µm up, 150 nm thick</text>
+<line x1="474" y1="392.2" x2="496" y2="399.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="403.4" fill="#222222">Metal5 - 4.69 µm up, 490 nm thick</text>
+<line x1="474" y1="409.7" x2="496" y2="414.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="418.4" fill="#222222">Via4 - 4.15 µm up, 540 nm thick</text>
+<line x1="474" y1="427.2" x2="496" y2="429.4" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="433.4" fill="#222222">Metal4 - 3.66 µm up, 490 nm thick</text>
+<line x1="474" y1="444.7" x2="496" y2="444.7" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="448.7" fill="#222222">Via3 - 3.12 µm up, 540 nm thick</text>
+<line x1="474" y1="462.2" x2="496" y2="462.2" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="466.2" fill="#222222">Metal3 - 2.63 µm up, 490 nm thick</text>
+<line x1="474" y1="479.8" x2="496" y2="479.8" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="483.8" fill="#222222">Via2 - 2.09 µm up, 540 nm thick</text>
+<line x1="474" y1="497.3" x2="496" y2="497.3" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="501.3" fill="#222222">Metal2 - 1.60 µm up, 490 nm thick</text>
+<line x1="474" y1="514.8" x2="496" y2="514.8" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="518.8" fill="#222222">Via1 - 1.06 µm up, 540 nm thick</text>
+<line x1="474" y1="531.1" x2="496" y2="531.1" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="535.1" fill="#222222">Metal1 - 0.64 µm up, 420 nm thick</text>
+<line x1="474" y1="549.1" x2="496" y2="549.1" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="553.1" fill="#222222">Cont - 0.00 µm up, 640 nm thick</text>
+<line x1="474" y1="557.3" x2="496" y2="564.1" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="568.1" fill="#222222">GatPoly - 0.00 µm up, 160 nm thick</text>
+<line x1="474" y1="566.8" x2="496" y2="579.1" stroke="#999999" stroke-width="0.8"/>
+<text x="500" y="583.1" fill="#222222">Activ, in the 400 nm trench - from -0.40 µm</text>
+<text x="70" y="22" font-size="14" font-weight="bold" fill="#222222">SG13G2, to scale</text>
+<text x="70" y="40" fill="#555555">Heights from the silicon surface, the dashed line, after the process specification 2.16</text>
+</svg>

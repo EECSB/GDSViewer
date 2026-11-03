@@ -12,7 +12,7 @@ const { expect } = require('@playwright/test');
 //
 //It was 18 until the file gained two more licon1 contacts on 66/44, taking that layer from one shape to
 //three. Every number below moved with it, and they are measured off the running app rather than counted
-//out of the file - see the note on MOSFET_MESHES for why the two do not simply agree.
+//out of the file - see the note on MOSFET_OUTLINES for why the two do not simply agree.
 const MOSFET = 'Mosfet';
 const MOSFET_POLYGONS = 20;
 const MOSFET_LABELS = 3;
@@ -24,7 +24,13 @@ const MOSFET_LABELS = 3;
 //covering exactly the same ground. Held apart from the polygon count rather than derived from it: the two
 //views deliberately draw the same layout differently now, and a single number would hide that.
 //
-const MOSFET_MESHES = 19;
+const MOSFET_OUTLINES = 19;
+
+//
+//**Built as nine meshes**, one for each layer/datatype pair with something on it - which in this file is all
+//of them. A mesh says how many outlines went into it, and that is where the nineteen are counted.
+//
+const MOSFET_MESHES = 9;
 const MOSFET_LAYERS = [65, 66, 67, 68, 93, 95];
 
 //The same file by layer/datatype pair, which is what the sidebar lists. Three of its six layers carry two
@@ -34,9 +40,9 @@ const MOSFET_LAYER_PAIRS = ['65/20', '66/20', '66/44', '67/20', '67/44', '68/5',
 //
 //The rung of the even stack - AdditionalGDSInformation.DefaultLayerSpacing.
 //
-//Where a layer rests when the file was told no height for it, which after clearLayerNames is every layer.
+//Where a layer rests when the file was told no height for it, which after bareNumbers is every layer.
 //The spacing slider opens its gap on top of wherever a layer already rests, so a step between untold
-//layers is this plus the slider, and at the slider's nought it is exactly this.
+//layers is this plus the slider, and at the slider's zero it is exactly this.
 //
 //It used to be neither: the slider was read as the step itself, so its minimum had to be this number to
 //mean "add nothing" and a file could never open on its own process stack. Every assertion below that adds
@@ -99,69 +105,15 @@ async function gotoApp(page, query = '', tree = false) {
 }
 
 ///
-///Opens a file the way the Open button does, and says yes to the question that follows.
-///
-///**Opening replaces what is on screen, and the app asks before it does** - see discardsWhatIsOpen in
-///Viewer.razor. Playwright dismisses a dialog nobody told it about, and dismissing that one is Cancel, so a
-///spec that sets the input directly now uploads nothing and fails much later holding whatever was already
-///open. That is the same silent-nothing this file's own note about `_blazorInputFileNextFileId` describes,
-///arriving by a second route.
+///Opens a file the way the Open button does.
 ///
 ///`files` is whatever setInputFiles takes: a path, a list of them, or the {name, mimeType, buffer} form.
 ///
-///A spec that wants to answer the question itself - to check that Cancel keeps the file - registers its own
-///handler and drives the input directly rather than calling this.
+///It used to say yes to a question first: opening replaced what was on screen, and the app asked before it did.
+///With tabs nothing is replaced - the file on screen keeps its tab - and the question went, along with the
+///standing yes this armed and the helpers for a spec that wanted to answer it itself.
 ///
-///**It answers that question and no other.** This was a bare `page.once`, which is wrong twice over. An
-///upload does not always ask - mayOfferImport offers to bring the file in as a cell instead, and that offer
-///is a panel rather than a dialog - so the handler was often left armed with nothing to answer, and the
-///next dialog in the test got it. In history.spec that was Clear History, which has a handler of its own:
-///both fired, both answered, and the second one threw `Cannot accept dialog which is already handled`.
-///Matching on the message is what keeps it to its own question, and armed once per page is what keeps a
-///second upload from stacking a second handler on the same one.
-///
-const armed = new WeakSet();
-
-function answerDiscardQuestion(dialog) {
-    if (!dialog.message().includes(' and close '))
-        return;
-
-    //Whoever got there first wins, and losing that race is not a failure.
-    dialog.accept().catch(() => { });
-}
-
-///
-///Says yes, from here on, to the question anything that closes the open file asks.
-///
-///For a spec that opens something by clicking rather than through a helper - a row of the Examples list,
-///say. Idempotent, so calling it before every click is fine.
-///
-function acceptsClosingWhatIsOpen(page) {
-    if (armed.has(page))
-        return;
-
-    page.on('dialog', answerDiscardQuestion);
-
-    armed.add(page);
-}
-
-///
-///Hands the question back, for a spec that means to answer it itself.
-///
-///The arming above lasts the rest of the page, which is what every spec that just wants its file open
-///wants - and exactly wrong for the one asserting that Cancel is a real answer, where the standing yes
-///wins the race and the spec's own handler finds the dialog already answered. Any helper that arms it
-///again afterwards - openRow, uploadFile - does so, so this is a gap rather than a switch.
-///
-function answersClosingItself(page) {
-    page.off('dialog', answerDiscardQuestion);
-
-    armed.delete(page);
-}
-
 async function uploadFile(page, files) {
-    acceptsClosingWhatIsOpen(page);
-
     //A relative path is resolved against tests/, not the runner's cwd - the specs were written when the
     //tooling lived at the repository root and 'e2e/fixtures/...' only still resolves when the runner
     //happens to start from tests/. An absolute path or a {name, buffer} object passes through untouched.
@@ -242,7 +194,11 @@ async function filterExamples(page, text) {
 ///Passing tree = true puts it back, which is what cell-tree.spec does. The same parameter an embedder uses
 ///to open the viewer without it, rather than a hook that exists only for the tests.
 ///
-async function gotoExample(page, file, view, tree = false) {
+///**full = false opens it with the page's margins**, for a spec measured to the pixel against them - which every
+///spec was, until the app began full screen (2026-11-03). Left out, the app opens as anybody gets it. The same
+///embedder's parameter again.
+///
+async function gotoExample(page, file, view, tree = false, full = null) {
     let query = `?file=${file}`;
 
     if (view)
@@ -250,9 +206,20 @@ async function gotoExample(page, file, view, tree = false) {
 
     query += `&tree=${tree}`;
 
+    if (full !== null)
+        query += `&full=${full}`;
+
     await gotoApp(page, query);
 
     await expectLoaded(page);
+
+    //
+    //**And drawn, not merely named** - see selectExample, which waits the same way for the same reason. A load is
+    //paced now, so the page renders while the file is read and data-file names it a while before its picture is
+    //in and framed: a spec that counted the shapes or read the viewBox straight after this read the page before
+    //the file was on it. The text view never puts a note up, so there this passes at once.
+    //
+    await expect(page.locator('#viewLoading')).toHaveCount(0, { timeout: 120000 });
 }
 
 ///Waits for a file to be open.
@@ -262,6 +229,22 @@ async function gotoExample(page, file, view, tree = false) {
 ///Examples button now and not in the page unless that is open.
 async function expectLoaded(page) {
     await expect.poll(async () => openFile(page), { timeout: 60000 }).not.toBe('');
+}
+
+///
+///Waits for a pan, a zoom or a pinch in the 2D view to settle: the picture's shift taken off and the viewBox put on.
+///
+///**A gesture moves the picture already drawn, and the viewBox follows once it has stopped** - see showViewBox
+///in JavaScriptInterOp.js. So the attribute read straight after a gesture is where the view was before it, and
+///a spec that reads the viewBox has to wait for this first. The point under the pointer needs no waiting: the
+///SVG's own matrix includes the shift.
+///
+async function viewSettled(page) {
+    await expect.poll(async () => page.evaluate(() => {
+        const svg = document.getElementById('gdsSVG');
+
+        return svg == null || svg.style.transform === '';
+    }), { timeout: 15000 }).toBe(true);
 }
 
 ///Whatever file the shell currently has open, or '' for none.
@@ -408,20 +391,50 @@ async function layerNumbers(page) {
 }
 
 ///
+///Opens the 3D view's settings, which hang from the cube of the view switch while that view is on - pressed, or the
+///pointer arriving - and leaves them alone if they already are.
+///
+async function openViewSettings(page) {
+    if (await page.locator('#viewSettingsMenu').count() === 0)
+        await page.locator('#viewPick3D').click();
+
+    await expect(page.locator('#viewSettingsMenu')).toBeVisible();
+}
+
+///
 ///Chooses a scene backdrop in the 3D view, by the file the shell names it with.
 ///
-///It was a native select and is a menu of pictures now - the names are somebody's and no arrangement of
-///words says what a photograph looks like - so this is the one place that knows a backdrop is chosen by
-///pressing a button and then a row.
+///It was a native select, then a menu of pictures behind a button of its own - the names are somebody's and no
+///arrangement of words says what a photograph looks like - and it is those rows in the view's settings now, under the
+///cube. So this is the one place that knows a backdrop is chosen by opening them and pressing a row. They stay open as
+///one is chosen, so the pointer leaving puts them away after, as it would for somebody.
 ///
 async function selectBackground(page, file) {
-    await page.locator('#backgroundPicker').click();
+    await openViewSettings(page);
 
-    await expect(page.locator('#backgroundMenu')).toBeVisible();
+    const row = page.locator(`#viewBackground [data-background="${file}"]`);
 
-    await page.locator(`#backgroundMenu [data-background="${file}"]`).click();
+    await row.click();
 
-    await expect(page.locator('#backgroundMenu')).toHaveCount(0);
+    await expect(row).toHaveClass(/shapePickOn/);
+
+    await page.mouse.move(4, 4);
+
+    await expect(page.locator('#viewSettingsMenu')).toHaveCount(0);
+}
+
+///
+///Saves the view as a picture, from the camera in its corner: the camera opens a menu of the two kinds, and the
+///line chosen in it saves. kind is 'svg' or 'png'.
+///
+async function saveImage(page, kind) {
+    let line = '#downloadSvg';
+
+    if (kind === 'png')
+        line = '#downloadPng';
+
+    await page.locator('#downloadImage').click();
+    await page.locator(`#imageMenu ${line}`).click();
 }
 
 ///
@@ -446,12 +459,24 @@ async function selectExample(page, fileName) {
 
     await filterExamples(page, fileName);
 
-    //Choosing a row closes whatever is open, and the app asks first - see uploadFile for the same note.
-    acceptsClosingWhatIsOpen(page);
-
     await exampleRow(page, fileName).click();
 
-    await expectLoaded(page);
+    //
+    //**That file, not merely a file.** A file is open the whole time - the one that was, until the chosen one
+    //arrives - so waiting for any file returned with the old one still on screen, and the next step of a spec
+    //acted on it. The question that used to come first gave the fetch a head start that hid it.
+    //
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(fileName);
+
+    //
+    //**And in, not merely named.** The shell writes the chosen file's name before it has read the file, and
+    //data-file says it from that render - while the layout is swapped in only after the paint that puts the
+    //loading note on screen, a frame later. A step taken in that frame acted on the file still open: a live
+    //link call made the moment data-file changed was answered on Mosfet, about one run in five. The note goes
+    //once the chosen file is drawn, which is after it is in; the text view never puts one up, so there this
+    //passes at once.
+    //
+    await expect(page.locator('#viewLoading')).toHaveCount(0, { timeout: 60000 });
 
     //
     //Gone on its own, rather than needing the pointer moved off it.
@@ -583,12 +608,13 @@ function shapesDrawn(page, withLabels = false, root = '#gdsSVG') {
             const fill = style.fill;
             const opacity = parseFloat(style.opacity);
 
-            //Split on the move that starts each subpath. A subpath is one shape, which is the whole reason
-            //the picture can be one node per layer and still say what it is made of.
-            const runs = path.getAttribute('d').split('M').filter(run => run.length > 0);
+            //A subpath is one shape, which is the whole reason the picture can be one node per layer and
+            //still say what it is made of. Read by the app's own reader, because the picture writes a shape
+            //as steps between its corners rather than as the corners - see subpaths in viewGeometry.js.
+            const runs = window.viewGeometry.subpaths(path.getAttribute('d'));
 
             for (let i = 0; i < runs.length; i++) {
-                const numbers = runs[i].replace(/[LZ]/g, ' ').trim().split(/[\s,]+/).map(Number);
+                const numbers = runs[i].corners;
                 const points = [];
 
                 for (let n = 0; n + 1 < numbers.length; n += 2)
@@ -605,11 +631,60 @@ function shapesDrawn(page, withLabels = false, root = '#gdsSVG') {
 }
 
 ///
-///The same count, inside something other than the 2D view - the thumbnail in the Examples and History
-///popups, which is the same markup drawn small.
+///The picture in a preview frame - the Examples and History popups', or a cell list's - read back in the page: whose it
+///says it is, how many pixels it is across and down, how many of them are drawn on, and the box round those.
 ///
-async function previewShapeCount(page, root = 'svg.examplePreview') {
-    return (await shapesDrawn(page, false, root)).length;
+///**An image since 2026-10-17**, not markup on the page - a PNG, or a small layout's SVG as a document of its own since
+///2026-10-21 - see PreviewPictures in the app - so there are no shapes in it to count.
+///What a spec can still ask is whether there is a picture, whose it is, and whether it is framed on what it draws; the
+///drawing itself is pinned pixel by pixel in PngWriterTests. Null while the frame has no picture, or one that has not
+///decoded yet, so a spec polls.
+///
+async function previewPicture(page, root = 'img.examplePreview') {
+    return await page.evaluate(async selector => {
+        const picture = document.querySelector(selector);
+
+        if (picture == null || !picture.complete || picture.naturalWidth === 0)
+            return null;
+
+        const canvas = document.createElement('canvas');
+
+        canvas.width = picture.naturalWidth;
+        canvas.height = picture.naturalHeight;
+
+        const context = canvas.getContext('2d');
+
+        context.drawImage(picture, 0, 0);
+
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let drawn = 0;
+        let left = canvas.width;
+        let top = canvas.height;
+        let right = -1;
+        let bottom = -1;
+
+        for (let y = 0; y < canvas.height; y++) {
+            for (let x = 0; x < canvas.width; x++) {
+                if (pixels[((y * canvas.width) + x) * 4 + 3] === 0)
+                    continue;
+
+                drawn++;
+                left = Math.min(left, x);
+                top = Math.min(top, y);
+                right = Math.max(right, x);
+                bottom = Math.max(bottom, y);
+            }
+        }
+
+        return {
+            alt: picture.getAttribute('alt'),
+            width: canvas.width,
+            height: canvas.height,
+            drawn: drawn,
+            box: { left: left, top: top, right: right, bottom: bottom },
+            source: picture.getAttribute('src')
+        };
+    }, root);
 }
 
 ///
@@ -890,8 +965,9 @@ async function stackHeights(page) {
 
         THREE.Object3D.prototype.add = original;
 
+        //The slabs, which are the meshes carrying outlines: a layer's labels are a mesh too, lifted clear of it.
         const heights = added
-            .filter(object => object.isMesh)
+            .filter(object => object.isMesh && object.userData.outlines != null)
             .map(object => Math.round(object.position.y));
 
         return [...new Set(heights)].sort((low, high) => low - high);
@@ -902,6 +978,10 @@ async function stackHeights(page) {
 ///
 ///Hooks Object3D.add and then forces a redraw, because the scene is built inside a module the specs
 ///cannot reach into - this is the same route the manual checks took.
+///
+///`meshes` are the slabs, a mesh per layer carrying the outlines in it. The labels are meshes too, a layer's
+///at a time, each carrying how many labels it draws and per label the point it hangs from - so `labels` is
+///counted out of them and `labelMeshes` says how many draws that took.
 async function threeCounts(page) {
     return page.evaluate(async () => {
         const THREE = await import('three');
@@ -925,10 +1005,23 @@ async function threeCounts(page) {
 
         THREE.Object3D.prototype.add = original;
 
+        const meshes = added.filter(object => object.isMesh && object.userData.outlines != null);
+        const labeled = added.filter(object => object.isMesh && object.userData.labels != null);
+
         return {
-            meshes: added.filter(object => object.isMesh).length,
-            sprites: added.filter(object => object.isSprite).length,
-            spriteCenters: added.filter(object => object.isSprite).map(sprite => [sprite.center.x, sprite.center.y])
+            meshes: meshes.length,
+            outlines: meshes.reduce((sum, mesh) => sum + mesh.userData.outlines, 0),
+            labels: labeled.reduce((sum, mesh) => sum + mesh.userData.labels, 0),
+            labelMeshes: labeled.length,
+            labelHangs: labeled.flatMap(mesh => {
+                const hang = mesh.geometry.getAttribute('hang');
+                const points = [];
+
+                for (let i = 0; i < hang.count; i++)
+                    points.push([hang.getX(i), hang.getY(i)]);
+
+                return points;
+            })
         };
     });
 }
@@ -1038,6 +1131,137 @@ async function cameraPosition(page) {
     });
 }
 
+///
+///Where the stack lands on screen, through the camera the scene renders with - and the scene stashed, for
+///cameraPosition after it.
+///
+///The corners the view frames on are projected - each layer's box, and a box around each layer's labels - so
+///`left`, `right`, `bottom` and `top` inside -1..1 are inside the frame, and `nearest` and `farthest` inside
+///-1..1 are between the near and far planes: past either, the renderer clips the stack away however well it is
+///framed. Every vertex is inside one of those boxes. `pitch` is how far the camera looks down, in degrees, and
+///`middle` and `radius` are the sphere around the stack.
+///
+///Found the way threeCounts finds the scene - a redraw asked for through the spacing slider - and counted until
+///a second passes with nothing added, which a design on the dev server needs. Then two frames, because the
+///planes are fitted to the stack on the frame after it changes.
+///
+async function stackOnScreen(page) {
+    return page.evaluate(async () => {
+        const THREE = await import('three');
+
+        const added = [];
+        let lastAdded = performance.now();
+
+        const original = THREE.Object3D.prototype.add;
+
+        THREE.Object3D.prototype.add = function (...objects) {
+            for (const object of objects) {
+                if (object.isMesh) {
+                    added.push(object);
+                    lastAdded = performance.now();
+                }
+            }
+
+            return original.apply(this, objects);
+        };
+
+        const slider = document.getElementById('layerSpacing');
+
+        slider.value = String(Number(slider.value) + 1);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+        const started = performance.now();
+
+        while (performance.now() - started < 60000) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+
+            if (added.length > 0 && performance.now() - lastAdded > 1000)
+                break;
+        }
+
+        THREE.Object3D.prototype.add = original;
+
+        //Still in the scene, in case the redraw came twice and the first one's objects were let go. The slabs
+        //are the meshes carrying outlines; the others are layers' labels.
+        const drawn = added.filter(object => object.parent != null);
+        const meshes = drawn.filter(object => object.userData.outlines != null);
+
+        if (meshes.length === 0)
+            return { meshes: 0 };
+
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        //Up to the scene, then the camera it holds - the same one the renderer draws with.
+        let root = meshes[0];
+
+        while (root.parent)
+            root = root.parent;
+
+        window.__gdsScene = root;
+
+        const camera = root.children.find(child => child.isCamera);
+
+        if (camera == null)
+            return { meshes: meshes.length, camera: false };
+
+        //A box per object, which is a box per layer and a box around each layer's labels.
+        const boxes = [];
+
+        for (const object of drawn) {
+            object.updateMatrixWorld(true);
+
+            boxes.push(new THREE.Box3().expandByObject(object));
+        }
+
+        camera.updateMatrixWorld(true);
+
+        const whole = new THREE.Box3();
+        const on = { left: 9, right: -9, bottom: 9, top: -9, nearest: 9, farthest: -9 };
+
+        for (const box of boxes) {
+            whole.union(box);
+
+            for (const x of [box.min.x, box.max.x])
+                for (const y of [box.min.y, box.max.y])
+                    for (const z of [box.min.z, box.max.z]) {
+                        const corner = new THREE.Vector3(x, y, z).project(camera);
+
+                        on.left = Math.min(on.left, corner.x);
+                        on.right = Math.max(on.right, corner.x);
+                        on.bottom = Math.min(on.bottom, corner.y);
+                        on.top = Math.max(on.top, corner.y);
+                        on.nearest = Math.min(on.nearest, corner.z);
+                        on.farthest = Math.max(on.farthest, corner.z);
+                    }
+        }
+
+        const looking = camera.getWorldDirection(new THREE.Vector3());
+        const sphere = whole.getBoundingSphere(new THREE.Sphere());
+
+        return {
+            meshes: meshes.length,
+            camera: true,
+            ...on,
+            pitch: Math.asin(-looking.y) * (180 / Math.PI),
+            middle: { x: sphere.center.x, y: sphere.center.y, z: sphere.center.z },
+            radius: sphere.radius
+        };
+    });
+}
+
+///
+///What stackOnScreen found, said as one line, for an assertion's message.
+///
+///Depth to five places, because that is where it changes: it crowds up towards 1 with distance, and a
+///design past the far plane came out at 1.00003 - which at two places reads as exactly the limit.
+///
+function onScreenSaid(on) {
+    const two = value => value.toFixed(2);
+    const five = value => value.toFixed(5);
+
+    return `x ${two(on.left)}..${two(on.right)}, y ${two(on.bottom)}..${two(on.top)}, depth ${five(on.nearest)}..${five(on.farthest)}`;
+}
+
 ///Reads a download to a Buffer, so its bytes can be compared rather than only its name.
 async function downloadBytes(download) {
     const stream = await download.createReadStream();
@@ -1048,6 +1272,37 @@ async function downloadBytes(download) {
 
     return Buffer.concat(chunks);
 }
+
+///
+///A GDSII file's bytes drawn on other layer numbers - a file from another process, for whether the PDK in use lays
+///itself over one (it does over a file most of whose layers are its own; see the PDK manager). Each LAYER record's
+///number is rewritten in place by `renumbered`, `{ 65: 22 }`, so the file is otherwise the one it was made from.
+///
+function onOtherLayers(bytes, renumbered) {
+    const copy = Buffer.from(bytes);
+
+    for (let at = 0; at + 4 <= copy.length; ) {
+        const length = copy.readUInt16BE(at);
+
+        if (length < 4)
+            break;
+
+        //LAYER is record 0x0D, holding one two-byte integer.
+        if (copy[at + 2] === 0x0D && copy[at + 3] === 0x02) {
+            const number = copy.readInt16BE(at + 4);
+
+            if (renumbered[number] !== undefined)
+                copy.writeInt16BE(renumbered[number], at + 4);
+        }
+
+        at += length;
+    }
+
+    return copy;
+}
+
+///Mosfet's layers moved onto gf180mcu's numbers - COMP, Poly2, Contact, Metal1, Nplus and SAB - none of them sky130's.
+const MOSFET_ELSEWHERE = { 65: 22, 66: 30, 67: 33, 68: 34, 93: 32, 95: 49 };
 
 ///
 ///How far in from the left of the view a click has to be to miss the selection panel.
@@ -1225,6 +1480,17 @@ async function drawingLayer(page) {
     //The row's label carries the layer's name where it has one - `diff.drawing (65/20)` - and the pair is
     //the part that identifies it.
     return ((await marked.first().textContent()).match(/\d+\/\d+/) || [null])[0];
+}
+
+///
+///Which layers the sidebar marks as holding a chosen shape, as `65/20` pairs in the order they are listed.
+///
+///The same mark as the row being drawn on - see drawingLayer - under a class of its own, so the two can be
+///told apart here though they look alike on screen.
+///
+async function chosenLayers(page) {
+    return page.locator('.layerRowChosen .layerName').evaluateAll(nodes =>
+        nodes.map(node => ((node.textContent.match(/\d+\/\d+/) || [null])[0])).filter(Boolean));
 }
 
 ///Takes the nth layer in the sidebar as the one to draw on, and hands back the pair it is.
@@ -1428,7 +1694,8 @@ async function openedOnItsOwn(page, timeout = 6000) {
         //touched it, so a spec that lands on the app's own default and uploads is never asked. The wait is
         //bounded rather than long for that reason: every one of those sites would otherwise pay the whole
         //timeout for a dialog that is never coming. Uploading something big needs longer - the app reads and
-        //parses the file before it can say what is in it - so those sites pass their own.
+        //parses the file before it can say what is in it - and those sites go through uploadOpenedOnItsOwn,
+        //which stops waiting as soon as the file is opened without one.
         //
         return;
     }
@@ -1436,6 +1703,73 @@ async function openedOnItsOwn(page, timeout = 6000) {
     await choice.click();
 
     await expect(page.locator('#importDialog')).toHaveCount(0);
+}
+
+///
+///Uploads a file and opens it on its own, as openedOnItsOwn does - without sitting out the wait for a question that
+///is not coming.
+///
+///**Whichever comes first: the question, or the page taking the file's name.** The app asks only when the file on
+///screen is somebody's - see mayOfferImport - and reads and parses the whole upload before it can, which on the
+///twenty-thousand-shape layout is seconds, so the wait for it has to be long. Where it does not ask, it opens the
+///file straight away, and the page has its name a render later. Sitting out the whole wait there was a minute of
+///nothing: large-layout.spec reported every open of its layout as taking sixty seconds, and all of it was this.
+///
+///The open file's name is read before the upload rather than after it: without a question the page can have the
+///new one by the time this looks. And a file uploaded over one of the same name says nothing by its name, so only
+///the question is waited for then.
+///
+async function uploadOpenedOnItsOwn(page, files, timeout = 60000) {
+    const before = await openFile(page);
+    const name = uploadedName(files);
+
+    await uploadFile(page, files);
+
+    if (name === null || name === before) {
+        await openedOnItsOwn(page, timeout);
+
+        return;
+    }
+
+    let answer;
+
+    try {
+        answer = await page.waitForFunction((name) => {
+            const choice = document.getElementById('importAsFile');
+
+            if (choice !== null && choice.getClientRects().length > 0)
+                return 'asked';
+
+            const shell = document.getElementById('mainAppContainer');
+
+            if (shell !== null && shell.getAttribute('data-file') === name)
+                return 'opened';
+
+            return null;
+        }, name, { timeout, polling: 100 });
+    }
+    catch {
+        throw new Error(`Uploading ${name} neither asked whether to bring it into ${before} nor opened it, in ${timeout} ms.`);
+    }
+
+    if (await answer.jsonValue() === 'asked')
+        await openedOnItsOwn(page, timeout);
+}
+
+///The name of the file an upload carries - the first, for several - or null for one this cannot tell.
+function uploadedName(files) {
+    let first = files;
+
+    if (Array.isArray(files))
+        first = files[0];
+
+    if (typeof first === 'string')
+        return require('path').basename(first);
+
+    if (first != null && typeof first.name === 'string')
+        return first.name;
+
+    return null;
 }
 
 ///
@@ -1451,21 +1785,131 @@ async function leaveCell(page) {
 }
 
 ///
-///Drops the layermap a bundled example arrives with, leaving bare numbers and the automatic stack.
+///Opens the PDK manager from Settings, on the PDK in use, and closes it again.
 ///
-///**The shipped mapping now carries sky130's process stack**, so an example no longer opens on the evenly
-///spaced synthetic heights. That is the point of it, and it is the wrong ground to stand on for a spec about
-///the even spacing itself - those ask for a file with no process table, which is what this makes.
+///**A layermap or a deck reaches the open file through it** since 2026-10-19, when the layer and rules panels' own
+///Import, Clear and Example went there - so the specs that put one in place come through here, by the helpers below.
 ///
-async function clearLayerNames(page) {
-    await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
+async function openPdkManager(page) {
+    await page.locator('#settingsMenu').click();
+    await page.locator('#pdkManagerItem').click();
 
-    await expect(page.locator('#layerExampleOffer')).toBeVisible();
+    await expect(page.locator('#pdkManagerWindow')).toBeVisible();
+}
+
+async function closePdkManager(page) {
+    await page.locator('#pdkManagerWindow .closeButton').click();
+
+    await expect(page.locator('#pdkManagerWindow')).toBeHidden();
+}
+
+///
+///Puts a PDK with no layers in use, so the open file is drawn in none: bare numbers in the palette's colors, the
+///automatic stack, and no rules. What Clear on the layer panel gave before it went (2026-10-19) - for every file opened
+///afterwards as well as this one, since a file is drawn in a PDK or it is not.
+///
+///**The shipped mapping carries sky130's process stack**, so an example does not open on the evenly spaced synthetic
+///heights. That is the point of it, and it is the wrong ground to stand on for a spec about the even spacing itself -
+///those ask for a file with no process table, which is what this makes.
+///
+async function bareNumbers(page) {
+    await openPdkManager(page);
+
+    await page.locator('#pdkNew').click();
+    await page.locator('#pdkUse').click();
+
+    await expect(page.locator('#pdkUse')).toHaveCount(0);
+
+    await closePdkManager(page);
+
+    //Every row its pair alone, which is a file nothing names.
+    await expect.poll(
+        async () => (await page.locator('.layerRow .layerName').allTextContents()).every(text => /^\s*\d+\/\d+\s*$/.test(text)),
+        { timeout: 20000 }).toBe(true);
+}
+
+///
+///Imports a layermap into the PDK in use through the PDK manager's layers Import, and gives back what the manager said
+///about how it read. What the layermap says about a pair replaces what the PDK said and the rest stays - and the open
+///file, if it is drawn in the PDK, is named again by it. `files` is whatever setInputFiles takes.
+///
+///**Waited for on the manager's line, not on the file**: what the file shows is the caller's to poll for, since the
+///layers are laid over it again after the line is said. A layermap that names nothing says so in a dialog instead,
+///and is not one for this.
+///
+async function importLayermap(page, files) {
+    await openPdkManager(page);
+    await page.locator('#pdkLayersTab').click();
+
+    await page.locator('#pdkLayersImport').setInputFiles(files);
+
+    await expect(page.locator('#pdkLayersSays')).toContainText('Imported', { timeout: 60000 });
+
+    const said = (await page.locator('#pdkLayersSays').textContent()).trim();
+
+    await closePdkManager(page);
+
+    return said;
+}
+
+///
+///Imports a deck into the PDK in use through the PDK manager's rules Import, in place of its rules, and waits for the
+///manager to say it applied - the way a deck reaches the rules panel since its Import went there. Whether the panel
+///shows it is the caller's to wait for: it does only on a file drawn in the PDK.
+///
+async function importRules(page, contents, name = 'probe.drc') {
+    await openPdkManager(page);
+    await page.locator('#pdkRulesTab').click();
+
+    await page.locator('#pdkRulesImport').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(contents, 'utf8') });
+
+    await expect(page.locator('#pdkRulesSays')).toContainText('Applied', { timeout: 60000 });
+
+    await closePdkManager(page);
+}
+
+///
+///The session as it is stored, as text: IndexedDB's copy, or the one the exit handler leaves in localStorage.
+///
+async function storedSession(page, exitCopy = false) {
+    return page.evaluate(async (exitCopy) => {
+        let value;
+
+        if (exitCopy)
+            value = window.localStorage.getItem('gdsviewer.session');
+        else
+            value = await window.gdsStorage.get('gdsviewer.session');
+
+        if (value === null)
+            return '';
+
+        //
+        //**Decoded the way AppStorage encoded it.** A session under the threshold is stored as plain JSON
+        //behind a marker and one over it is deflated and base64'd, and which side of that line a session
+        //falls on depends on how many settings the app has - so a helper that read the raw string would
+        //stop being able to see anything the day a field was added, having tested nothing in between.
+        //
+        if (value.startsWith('z')) {
+            const bytes = Uint8Array.from(atob(value.slice(1)), letter => letter.charCodeAt(0));
+
+            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+
+            return new Response(stream).text();
+        }
+
+        return value.slice(1);
+    }, exitCopy);
 }
 
 module.exports = {
+    storedSession,
+    viewSettled,
     leaveCell,
-    clearLayerNames,
+    openPdkManager,
+    closePdkManager,
+    bareNumbers,
+    importLayermap,
+    importRules,
     openGridMenu,
     chooseShape,
     openShapeSettings,
@@ -1480,19 +1924,19 @@ module.exports = {
     CLEAR_OF_PANEL,
     otherShapeClearOfPanel,
     uploadFile,
-    acceptsClosingWhatIsOpen,
-    answersClosingItself,
     chosenShapeClearOfPanel,
     dismissSelection,
     chosenLayer,
     chooseLayer,
     layersOffered,
     drawingLayer,
+    chosenLayers,
     useDrawingLayer,
     layersListed,
     MOSFET_POLYGONS,
     LAYER_RUNG,
     MOSFET_MESHES,
+    MOSFET_OUTLINES,
     MOSFET_LABELS,
     MOSFET_LAYERS,
     MOSFET_LAYER_PAIRS,
@@ -1505,6 +1949,7 @@ module.exports = {
     filterExamples,
     openFile,
     openedOnItsOwn,
+    uploadOpenedOnItsOwn,
     expectLoaded,
     expectEditorLoaded,
     layerNumbers,
@@ -1518,15 +1963,17 @@ module.exports = {
     labelsToggle,
     pickColor,
     layerNameBox,
+    openViewSettings,
     selectBackground,
     selectView,
+    saveImage,
     selectExample,
     svgCounts,
     fillsDrawn,
     shapesDrawn,
     shapesMarked,
     shapesAndLabels,
-    previewShapeCount,
+    previewPicture,
     shapeCount,
     shapePoints,
     shapeBox,
@@ -1543,5 +1990,9 @@ module.exports = {
     editorSaveFailed,
     captureScene,
     cameraPosition,
-    downloadBytes
+    stackOnScreen,
+    onScreenSaid,
+    downloadBytes,
+    onOtherLayers,
+    MOSFET_ELSEWHERE
 };

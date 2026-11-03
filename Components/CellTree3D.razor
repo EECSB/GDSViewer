@@ -1,0 +1,623 @@
+@using System.Globalization;
+@using System.Text;
+
+@using GdsII;
+@using GDSViewer.Models;
+
+@using Layer = GdsII.Layer;
+
+@inject IJSRuntime js
+
+@*
+    The 3D view's cell tree: the 2D tree's rows beside the scene - the cells, where each one is placed, and what each
+    placement draws - from the same Hierarchy.Tree, in the same words (CellTreeText) and in the same look.
+
+    **Read rather than worked on.** Nothing is edited in 3D, so a row has nothing to choose, rename, copy, delete or
+    carry. A press on a placement or on a shape puts the camera on it and flashes a frame round it - see goTo - and a
+    press on a cell or a layer opens or shuts it, as its twisty does. Pointing at a cell or a placement draws the cell
+    under the rows, as in 2D.
+
+    Its own component rather than the 2D view's tree, whose rows are half editing - the call the text view's list of
+    cells made too. A column of the 3D view's wrapper, beside the box the scene is in: see Viewer3D.razor. The ids are
+    the 2D tree's, since only one of the two is ever on the page, so what the stylesheet says of one it says of both.
+*@
+<div id="cellTree" class="cellTree cellTree3D" @onmouseleave="forgetCellPreview">
+    @*The 2D tree's edge, applied to this view's wrapper - see sidebars.js.*@
+    <div class="sidebarGrabber sidebarGrabberRight"
+         data-sidebar-grab="cellTree"
+         data-sidebar-apply="threeWrapper"
+         data-sidebar-variable="--cell-tree"
+         data-sidebar-towards="right"
+         role="separator" aria-orientation="vertical"
+         title="Drag to resize"></div>
+
+    <div class="sidebarTitle">
+        <b>Cells</b>
+
+        <button id="cellTreeClose" class="cellListClose"
+                @onclick="OnClosed"
+                aria-label="Close the cell tree"
+                title="Close">&#128473;</button>
+    </div>
+
+    <div class="cellTreeRows">
+        @if (Gds is null)
+        {
+            <div class="cellTreeNone">No file open</div>
+        }
+        else
+        {
+            @*Drawn again only when something they show has changed - see rowsLook.*@
+            <KeptUntilChanged Stamp="@rowsLook()">
+                @foreach (var row in rows())
+                {
+                    @treeRow(row)
+                }
+            </KeptUntilChanged>
+        }
+    </div>
+
+    @*
+        The cell pointed at, drawn - the 2D tree's frame, a square that keeps its place whether or not anything is pointed
+        at. A picture drawn at a pace, with the one before it kept while it is, as the 2D tree's is.
+    *@
+    @*The edge over the picture, to drag it taller or shorter against the rows - asked for 2026-10-19. See sidebars.js.*@
+    <div class="previewGrabber" data-sidebar-grab="cellTreePreview" data-sidebar-apply="cellTree" data-sidebar-variable="--cell-preview"
+         data-sidebar-axis="y" data-sidebar-towards="up" role="separator" aria-orientation="horizontal" title="Drag to resize the picture"></div>
+
+    <div id="cellTreePreview" class="cellTreePreviewFrame @(cellPreviewDrawing ? "isDrawing" : "")">
+        @if (cellPreviewFor.Length == 0)
+        {
+            <span class="cellPreviewEmpty">Point at a cell</span>
+        }
+        else if (cellPreviewPicture.Length > 0)
+        {
+            <img class="cellPreview" src="@cellPreviewPicture" alt="Drawing of @cellPreviewShownFor" />
+        }
+        else if (!cellPreviewDrawn && !cellPreviewDrawing)
+        {
+            @*Auto-generate preview is off, so the cell pointed at waits for this press - see AutoPreview.*@
+            <button id="cellPreviewGenerate" class="previewGenerate" @onclick="generateCellPreview"
+                    title="Draw @cellPreviewFor">
+                <span class="previewGenerateSays">Generate preview</span>
+                <span class="previewGenerateName">@cellPreviewFor</span>
+            </button>
+        }
+        else if (!cellPreviewDrawing)
+        {
+            <span class="cellPreviewEmpty">@cellPreviewFor is empty</span>
+        }
+
+        @if (cellPreviewDrawing)
+        {
+            <span class="previewDrawing" role="status">
+                <span class="viewLoadingSpinner" aria-hidden="true"></span>
+                <span>Drawing @cellPreviewFor</span>
+            </span>
+        }
+    </div>
+
+    @*One switch with the 2D tree, the text's list and the History and Examples previews, which the shell keeps.*@
+    <label class="previewAuto cellPreviewAuto" title="@AutoPreviewSwitch.Title">
+        <input id="cellTreeAutoPreview" type="checkbox" checked="@AutoPreview" @onchange="autoPreviewToggled" />
+        Auto-generate preview
+    </label>
+</div>
+
+@code {
+    #region What it is given *********************************
+
+    [Parameter]
+    public GDS? Gds { get; set; }
+
+    ///
+    ///The layout the scene was built from, which is what a press goes to a placement or a shape in - see goTo. A new
+    ///one is a file changed or another opened, so the rows are built again and the pictures drawn again.
+    ///
+    [Parameter]
+    public FlattenedLayout? Layout { get; set; }
+
+    ///<summary>The cross on the panel, which is the shell's switch reached from where the panel is.</summary>
+    [Parameter]
+    public EventCallback OnClosed { get; set; }
+
+    ///<summary>Where a press on a placement or a shape goes: a box of the layout, in its own units, for the camera.</summary>
+    [Parameter]
+    public EventCallback<Bounds> OnGoTo { get; set; }
+
+    ///<summary>**Auto-generate preview** - the shell's one switch for every preview; see AutoPreviewSwitch.</summary>
+    [Parameter]
+    public bool AutoPreview { get; set; } = true;
+
+    [Parameter]
+    public EventCallback<bool> OnAutoPreviewChanged { get; set; }
+
+    #endregion ***********************************************
+
+
+
+    #region The rows *****************************************
+
+    ///<summary>Cells at the top whose twisty is shut, and everything else whose twisty is open - see Hierarchy.TreeRow.StartsOpen.</summary>
+    private readonly HashSet<string> folded = new HashSet<string>();
+
+    private readonly HashSet<string> opened = new HashSet<string>();
+
+    private List<Hierarchy.TreeRow> built = new List<Hierarchy.TreeRow>();
+
+    ///<summary>The file and the layout the rows were built from, and the folds they were built with.</summary>
+    private GDS? builtFor = null;
+
+    private FlattenedLayout? builtFrom = null;
+
+    private int foldsMoved = 0;
+
+    private int builtAtFolds = -1;
+
+    ///<summary>How many times the rows have been built, so rows built again are told from the ones drawn.</summary>
+    private int builds = 0;
+
+    ///
+    ///The tree's rows, built again only with the file, its layout or a fold: building them walks every cell of the
+    ///library, and the panel is drawn again with every render of the view.
+    ///
+    private List<Hierarchy.TreeRow> rows()
+    {
+        if (Gds is null)
+            return new List<Hierarchy.TreeRow>();
+
+        if (ReferenceEquals(builtFor, Gds) && ReferenceEquals(builtFrom, Layout) && builtAtFolds == foldsMoved)
+            return built;
+
+        built = Hierarchy.Tree(Gds, folded, opened);
+        builtFor = Gds;
+        builtFrom = Layout;
+        builtAtFolds = foldsMoved;
+        builds++;
+
+        return built;
+    }
+
+    ///
+    ///Everything the rows are drawn from, as one string - the rows themselves, and each layer's name and look - so they
+    ///are drawn again only when it changes. See KeptUntilChanged, and the 2D view's treeLooks for why it matters.
+    ///
+    ///The looks are gathered here, once a render, for the rows to read as they are drawn.
+    ///
+    private string rowsLook()
+    {
+        var said = new StringBuilder();
+
+        rows();
+
+        said.Append(builds.ToString(CultureInfo.InvariantCulture));
+
+        looks.Clear();
+
+        if (Gds is null)
+            return said.ToString();
+
+        foreach (var entry in Gds.AdditionalInformation.OrderedLayers())
+        {
+            var layer = entry.Value;
+
+            looks[layer.Key] = layer;
+
+            said.Append('|');
+            said.Append(layer.Key.ToString());
+            said.Append(',');
+            said.Append(layer.DisplayName);
+            said.Append(',');
+            said.Append(layer.Color);
+            said.Append(',');
+            said.Append(layer.Fill.ToString());
+            said.Append(',');
+            said.Append(layer.PatternColor);
+            said.Append(',');
+            said.Append(layer.PatternPixels?.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return said.ToString();
+    }
+
+    ///<summary>Each layer of the file, by its pair, as the rows are drawn - see rowsLook.</summary>
+    private readonly Dictionary<LayerKey, Layer> looks = new Dictionary<LayerKey, Layer>();
+
+    ///<summary>Opens or shuts what is under a row - see the 2D view's toggleTreeRow for why there are two sets.</summary>
+    private void toggle(Hierarchy.TreeRow row)
+    {
+        if (!row.Folds)
+            return;
+
+        if (row.StartsOpen)
+        {
+            if (!folded.Remove(row.Key))
+                folded.Add(row.Key);
+        }
+        else
+        {
+            if (!opened.Remove(row.Key))
+                opened.Add(row.Key);
+        }
+
+        foldsMoved++;
+    }
+
+    ///
+    ///Puts the camera on what a placement row or a shape row stands for: every shape drawn through the placement, or
+    ///the one shape drawn under the placements above the row - see Hierarchy.DrawnFor, which the 2D tree asks too.
+    ///
+    private async Task goTo(Hierarchy.TreeRow row)
+    {
+        if (Layout is null)
+            return;
+
+        var covers = Bounds.Empty;
+
+        foreach (int at in Hierarchy.DrawnFor(Layout, row))
+            covers = covers.Union(Layout.Elements[at].Box);
+
+        if (covers.IsEmpty)
+            return;
+
+        await OnGoTo.InvokeAsync(covers);
+    }
+
+    private string nameOf(LayerKey key)
+    {
+        if (looks.TryGetValue(key, out var layer))
+            return layer.DisplayName;
+
+        return key.ToString();
+    }
+
+    private string colorOf(LayerKey key)
+    {
+        if (looks.TryGetValue(key, out var layer))
+            return layer.Color;
+
+        return "transparent";
+    }
+
+    private LayerFill fillOf(LayerKey key)
+    {
+        if (looks.TryGetValue(key, out var layer))
+            return layer.Fill;
+
+        return LayerFill.None;
+    }
+
+    private string? patternColorOf(LayerKey key)
+    {
+        if (looks.TryGetValue(key, out var layer))
+            return layer.PatternColor;
+
+        return null;
+    }
+
+    private int patternPixelsOf(LayerKey key)
+    {
+        if (looks.TryGetValue(key, out var layer))
+            return layer.PatternPixels ?? Layer.DefaultPatternPixels;
+
+        return Layer.DefaultPatternPixels;
+    }
+
+    ///
+    ///One row, at whichever level it is: the 2D tree's markup, less what edits - see the 2D view's treeRow for why each
+    ///part is drawn the way it is.
+    ///
+    private RenderFragment<Hierarchy.TreeRow> treeRow => row =>
+    @<div class="cellRowPair treeRow@(row.Kind)" style="--indent: @(row.Depth * 14)px;" data-depth="@row.Depth" data-kind="@row.Kind.ToString().ToLowerInvariant()">
+        @if (row.Folds)
+        {
+            <button class="cellRowTwisty cellRowFold @(row.Open ? "cellRowFoldOpen" : "")"
+                    data-fold="@row.Key"
+                    @onclick="() => toggle(row)"
+                    aria-expanded="@(row.Open ? "true" : "false")"
+                    aria-label="@(row.Open ? "Collapse" : "Expand")"
+                    title="@CellTreeText.Fold(row)">
+                <svg viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M4.5 2.5 L8 6 L4.5 9.5" fill="none" stroke="currentColor"
+                          stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        }
+        else
+        {
+            <span class="cellRowTwisty" aria-hidden="true">@(row.Repeats ? "↳" : "")</span>
+        }
+
+        @if (row.Kind == Hierarchy.TreeRowKind.Cell)
+        {
+            @*A cell opens or shuts, as its twisty does: in 3D there is no cell to be inside.*@
+            <button class="cellRow"
+                    @onclick="() => toggle(row)"
+                    @onmouseenter="() => previewCell(row.Cell!.Name)"
+                    @onfocus="() => previewCell(row.Cell!.Name)"
+                    title="@CellTreeText.About(row.Cell!)">
+                <span class="cellRowName">@row.Cell!.Name</span>
+                <span class="cellRowCounts">@CellTreeText.Counts(row.Cell!)</span>
+            </button>
+        }
+        else if (row.Kind == Hierarchy.TreeRowKind.Placement)
+        {
+            <button class="cellRow cellRowPlacement"
+                    @onclick="() => goTo(row)"
+                    @onmouseenter="() => previewCell(row.Structure)"
+                    @onfocus="() => previewCell(row.Structure)"
+                    title="Go to this placement of @row.Structure in @row.Inside">
+                <span class="cellRowName">@Hierarchy.DescribePlacement(row.Placement!)</span>
+            </button>
+        }
+        else if (row.Kind == Hierarchy.TreeRowKind.Layer)
+        {
+            <button class="cellRow cellRowLayer"
+                    @onclick="() => toggle(row)"
+                    title="@CellTreeText.Layer(row, nameOf(row.Layer))">
+                @if (fillOf(row.Layer) == LayerFill.None)
+                {
+                    <span class="layerSwatch" style="background-color: @colorOf(row.Layer);"></span>
+                }
+                else
+                {
+                    <svg class="layerSwatch layerSwatchFilled" viewBox="0 0 16 16" aria-hidden="true">
+                        @((MarkupString)SvgWriter.SwatchFor(fillOf(row.Layer), colorOf(row.Layer), $"treeFill_{SvgWriter.ClassFor(row.Layer)}", 16, patternColorOf(row.Layer), patternPixelsOf(row.Layer)))
+                    </svg>
+                }
+                <span class="cellRowName">@nameOf(row.Layer)</span>
+                <span class="cellRowCounts">@row.Count</span>
+            </button>
+        }
+        else if (row.Kind == Hierarchy.TreeRowKind.Shape)
+        {
+            <button class="cellRow cellRowShape"
+                    @onclick="() => goTo(row)"
+                    title="Go to this shape">
+                <span class="cellRowName">@CellTreeText.Shape(row)</span>
+            </button>
+        }
+        else
+        {
+            @*What a cap left out, said rather than silently dropped. See Hierarchy.MostShapesListed and MostPlacementsListed.*@
+            <span class="cellRow cellRowRest">@row.Count.ToString("N0", CultureInfo.InvariantCulture) more</span>
+        }
+    </div>;
+
+    #endregion ***********************************************
+
+
+
+    #region The cell pointed at ******************************
+
+    ///<summary>Which cell the pointer is on, or empty when it is on none.</summary>
+    private string cellPreviewFor = "";
+
+    ///<summary>The picture in the frame - a PNG's or an SVG's address, or empty - and whose: it stays while the next is drawn.</summary>
+    private string cellPreviewPicture = "";
+
+    private string cellPreviewShownFor = "";
+
+    ///<summary>Whether that cell has been drawn - a cell may be drawn and hold nothing. False while it waits for Generate preview.</summary>
+    private bool cellPreviewDrawn = false;
+
+    ///<summary>Whether the cell pointed at is being drawn, which the frame shows once that has taken a moment.</summary>
+    private bool cellPreviewDrawing = false;
+
+    ///<summary>The 2D tree's pause before a hover counts as a look, and for the same reason - see its CellPreviewDelayMs.</summary>
+    private const int CellPreviewDelayMs = 160;
+
+    private const int MostCachedCellPreviews = 40;
+
+    ///<summary>The 2D tree's: solid enough to read as a shape at this size.</summary>
+    private const float CellPreviewOpacity = 0.85f;
+
+    ///<summary>The cells drawn for the tree, kept until the layout is made again, and the one being drawn - see OnParametersSet and PreviewPictures.</summary>
+    private readonly PreviewPictures cellPictures = new PreviewPictures(MostCachedCellPreviews);
+
+    private CancellationTokenSource? cellPreviewWait;
+
+    ///<summary>The layout the pictures were drawn from - a new one throws them away, since a cell's picture has every cell it places in it.</summary>
+    private FlattenedLayout? previewsFrom = null;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(previewsFrom, Layout))
+            return;
+
+        previewsFrom = Layout;
+
+        forgetCellPreviews();
+    }
+
+    ///<summary>A row pointed at - or reached by the keyboard - drawn, after the pause a look waits. Nothing to do for the one showing.</summary>
+    private async Task previewCell(string name)
+    {
+        if (name == cellPreviewFor)
+            return;
+
+        await drawCellPreview(name);
+    }
+
+    ///
+    ///**Draws the cell under the pointer, after a pause** - the 2D tree's drawCellPreview, for the same picture: the cell
+    ///flattened from itself rather than from the file's top, so a cell placed four hundred times is drawn once, at its
+    ///own size. Kept, forty at a time, until the layout is made again.
+    ///
+    ///With Auto-generate preview off, a cell not drawn yet waits for a press on the frame instead - see AutoPreview.
+    ///
+    private async Task drawCellPreview(string name)
+    {
+        cellPreviewWait?.Cancel();
+
+        var waiting = new CancellationTokenSource();
+        cellPreviewWait = waiting;
+
+        try
+        {
+            await Task.Delay(CellPreviewDelayMs, waiting.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            //The pointer moved on. Whichever row it moved to is the one being waited for now.
+            return;
+        }
+
+        if (Gds is null)
+            return;
+
+        //A cell taken away or renamed by the assistant while it was being looked at.
+        if (Hierarchy.Named(Gds, name) is null)
+        {
+            forgetCellPreview();
+
+            return;
+        }
+
+        cellPreviewFor = name;
+
+        if (cellPictures.TryGet(name, out string drawn))
+        {
+            cellPictures.Stop();
+
+            cellPreviewPicture = drawn;
+            cellPreviewShownFor = name;
+            cellPreviewDrawn = true;
+            cellPreviewDrawing = false;
+
+            StateHasChanged();
+
+            return;
+        }
+
+        if (!AutoPreview)
+        {
+            cellPictures.Stop();
+
+            cellPreviewPicture = "";
+            cellPreviewShownFor = "";
+            cellPreviewDrawn = false;
+            cellPreviewDrawing = false;
+
+            StateHasChanged();
+
+            return;
+        }
+
+        await buildCellPreview(name);
+    }
+
+    ///<summary>Generate preview, pressed: the cell pointed at, drawn now - no pause, since this is the look being asked for.</summary>
+    private async Task generateCellPreview()
+    {
+        cellPreviewWait?.Cancel();
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        await buildCellPreview(cellPreviewFor);
+    }
+
+    ///
+    ///Draws a cell for the tree now, keeps it, and shows it - **at a pace, and given up when the pointer moves on**, as
+    ///the 2D tree's is: see PreviewPictures, and the 2D tree's buildCellPreview for why a change between two pauses
+    ///cannot leave a picture of half of each.
+    ///
+    private async Task buildCellPreview(string name)
+    {
+        if (Gds is null)
+            return;
+
+        var gds = Gds;
+
+        cellPreviewDrawing = true;
+        cellPreviewDrawn = false;
+
+        StateHasChanged();
+
+        var pixels = await PreviewPictures.PixelsFor(js, "#cellTreePreview");
+
+        //The pointer gone from the tree while the frame was measured, or on another cell, which draws its own.
+        if (cellPreviewFor != name)
+            return;
+
+        string? picture = await cellPictures.DrawAsync(
+            name,
+            async pacer => await GdsFlattener.FlattenAsync(gds, name, pacer.Pause),
+            pixels,
+            CellPreviewOpacity);
+
+        //Given up, for another cell or for none.
+        if (picture is null)
+        {
+            cellPreviewDrawing = cellPictures.Drawing;
+
+            return;
+        }
+
+        if (cellPreviewFor != name)
+            return;
+
+        cellPreviewPicture = picture;
+        cellPreviewShownFor = name;
+        cellPreviewDrawn = true;
+        cellPreviewDrawing = false;
+
+        StateHasChanged();
+    }
+
+    ///<summary>The box under the frame: the shell told, and a cell already waiting for its press drawn now, as it would have been.</summary>
+    private async Task autoPreviewToggled(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool ticked && ticked;
+
+        await OnAutoPreviewChanged.InvokeAsync(on);
+
+        if (on && cellPreviewFor.Length > 0 && !cellPreviewDrawn)
+            await generateCellPreview();
+    }
+
+    ///<summary>The pointer has left the panel, so there is nothing being looked at - and nothing worth drawing on.</summary>
+    private void forgetCellPreview()
+    {
+        cellPreviewWait?.Cancel();
+        cellPictures.Stop();
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        cellPreviewFor = "";
+        cellPreviewPicture = "";
+        cellPreviewShownFor = "";
+        cellPreviewDrawn = false;
+        cellPreviewDrawing = false;
+
+        StateHasChanged();
+    }
+
+    ///
+    ///Throws away every cell drawn for the tree, because the layout they were drawn from has been made again - another
+    ///file, or a change from the assistant or the MCP server. **All of them**, since a cell's picture has every cell it
+    ///places drawn into it. The one being looked at is drawn again after the pause, or waits for its press; one being
+    ///drawn is given up at its next pause.
+    ///
+    private void forgetCellPreviews()
+    {
+        cellPictures.ForgetAll();
+        cellPreviewDrawing = false;
+
+        if (cellPreviewFor.Length == 0)
+            return;
+
+        string looking = cellPreviewFor;
+
+        cellPreviewFor = "";
+        cellPreviewPicture = "";
+        cellPreviewShownFor = "";
+        cellPreviewDrawn = false;
+
+        _ = drawCellPreview(looking);
+    }
+
+    #endregion ***********************************************
+}

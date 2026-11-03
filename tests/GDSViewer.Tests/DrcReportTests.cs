@@ -98,6 +98,43 @@ rule poly.1a width poly 2000 ""Poly minimum width""";
         Assert.DoesNotContain("polygon: (-300,", xml);
     }
 
+    ///<summary>
+    ///A fault somebody waived is written with KLayout's own tag, declared the way KLayout declares it - and the
+    ///tag is declared only then, since a database nobody has tagged declares none.
+    ///</summary>
+    [Fact]
+    public void A_waived_fault_carries_klayouts_own_tag()
+    {
+        var run = Run(ThreeFaults, Mosfet());
+        var waived = new HashSet<string> { run.Result.Violations[0].Key };
+
+        string tagged = DrcReport.Write(run.Result, run.Deck, run.Gds, "mosfet", "GDS Viewer", waived);
+        string plain = DrcReport.Write(run.Result, run.Deck, run.Gds, "mosfet");
+
+        Assert.Single(tagged.Split("<tags>waived</tags>").Skip(1));
+        Assert.Contains("<tag>\n   <name>waived</name>", tagged);
+        Assert.DoesNotContain("waived", plain);
+    }
+
+    ///<summary>And read back here, the same fault is waived and the others are not: nothing of it is lost on the way.</summary>
+    [Fact]
+    public void A_waived_fault_reads_back_waived()
+    {
+        var run = Run(ThreeFaults, Mosfet());
+        var waived = new HashSet<string> { run.Result.Violations[1].Key };
+
+        string tagged = DrcReport.Write(run.Result, run.Deck, run.Gds, "mosfet", "GDS Viewer", waived);
+        var read = DrcReport.Read(System.Text.Encoding.UTF8.GetBytes(tagged), run.Gds, GdsFlattener.Flatten(run.Gds));
+
+        Assert.Equal(3, read.Items.Count);
+        Assert.Equal(1, read.Waived);
+        Assert.True(read.Items[1].Waived);
+    }
+
+    ///<summary>Three li1 faults on the bundled transistor, under a width nothing meets - one to waive and two to keep.</summary>
+    private const string ThreeFaults = @"layer li1 67/20
+rule li1.1 width li1 100000 ""Absurd li1 width""";
+
     [Fact]
     public void A_run_that_found_nothing_still_writes_a_readable_report()
     {
@@ -138,6 +175,34 @@ rule poly.1a width poly 2000 ""Poly minimum width""";
             Assert.Equal(run.Result.Violations.Count, read.Items);
             Assert.Contains("poly.1a", read.Categories);
             Assert.StartsWith("polygon:", read.FirstValue);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch { }
+        }
+    }
+
+    ///<summary>And KLayout's own marker browser takes a fault waived here as waived - which is the point of using its tag.</summary>
+    [Fact]
+    [Trait("Needs", "KLayout")]
+    public void KLayout_reads_a_fault_waived_here_as_waived()
+    {
+        Assert.True(OasisTestData.Available, "KLayout is needed to read this back.");
+
+        var run = Run(ThreeFaults, Mosfet());
+        var waived = new HashSet<string> { run.Result.Violations[2].Key };
+
+        string path = Path.Combine(Path.GetTempPath(), $"gdsdrc-{Guid.NewGuid():N}.lyrdb");
+
+        try
+        {
+            File.WriteAllText(path, DrcReport.Write(run.Result, run.Deck, run.Gds, "mosfet", "GDS Viewer", waived));
+
+            Assert.Equal((3, 1), OasisTestData.WaivedInReport(path));
         }
         finally
         {

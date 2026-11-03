@@ -107,6 +107,26 @@ public class CliDrcTests : IDisposable
         Assert.Contains("No violations", Output);
     }
 
+    ///
+    ///**Where a fault is, written the same in any culture** - Mosfet's poly sits at negative coordinates, and a culture
+    ///whose minus is not a hyphen (Swedish, Finnish and Norwegian on .NET 10 write U+2212) printed numbers the tool's
+    ///own --at would not take back. Found by the 2026-10-21 audit.
+    ///
+    [Fact]
+    public void Where_a_fault_is_reads_the_same_in_any_culture()
+    {
+        string deck = DeckFile("layer poly 66/20\nrule poly.1a width poly 100000 \"Absurd width\"\n");
+
+        Run("drc", Mosfet, "--deck", deck, "--markers");
+
+        var hostile = new StringWriter();
+
+        GdsTestData.UnderHostileCulture(() => Cli.Run(new[] { "drc", Mosfet, "--deck", deck, "--markers" }, hostile, new StringWriter()));
+
+        Assert.Contains("-300,0 to 150,1500", Output);
+        Assert.Equal(Output, hostile.ToString());
+    }
+
     [Fact]
     public void A_layout_that_breaks_a_rule_exits_three()
     {

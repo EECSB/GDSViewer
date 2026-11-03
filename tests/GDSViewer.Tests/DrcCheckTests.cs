@@ -192,6 +192,51 @@ public class DrcCheckTests
             "the round trip is exact now, so the compensation in Width and Space is no longer needed");
     }
 
+    ///<summary>
+    ///A 2 by 1 µm rectangle with its corners rounded to 0.3 µm and put on sky130's grid, the way the assistant draws one.
+    ///
+    ///Convex, and nowhere near 140 across. The second shape that exposed the round trip: short slanted edges, every
+    ///corner on the grid, and turns that alternate sharp and shallow where a curve worked out on the unit turns evenly.
+    ///</summary>
+    private static List<Element.Point> RoundedOnTheGrid()
+    {
+        return new List<Element.Point>
+        {
+            At(30000, 300), At(30005, 240), At(30025, 185), At(30050, 135), At(30090, 90), At(30135, 50), At(30185, 25),
+            At(30240, 5), At(30300, 0), At(31700, 0), At(31760, 5), At(31815, 25), At(31865, 50), At(31910, 90),
+            At(31950, 135), At(31975, 185), At(31995, 240), At(32000, 300), At(32000, 700), At(31995, 760), At(31975, 815),
+            At(31950, 865), At(31910, 910), At(31865, 950), At(31815, 975), At(31760, 995), At(31700, 1000), At(30300, 1000),
+            At(30240, 995), At(30185, 975), At(30135, 950), At(30090, 910), At(30050, 865), At(30025, 815), At(30005, 760),
+            At(30000, 700), At(30000, 300)
+        };
+    }
+
+    ///<summary>
+    ///A curve put on the grid is not too narrow - which the opening said it was, at one corner in four, while its two
+    ///grows were each rounded to whole units.
+    ///
+    ///The second offset was taken from edges the first rounding had turned, and seventy units out that was two units
+    ///off: a sliver the one unit of slack does not cover. The opening is one pass now, rounded once.
+    ///</summary>
+    [Fact]
+    public void A_curve_put_on_the_grid_is_not_too_narrow()
+    {
+        Assert.Empty(DrcChecks.Width(One(RoundedOnTheGrid()), Limit));
+    }
+
+    ///<summary>
+    ///Why, pinned both ways: shrunk and grown back a unit further in one pass the curve is all there, and in two
+    ///grows it is not. The day two grows stop losing it, the second half says the one pass is no longer needed.
+    ///</summary>
+    [Fact]
+    public void Shrunk_and_grown_back_in_one_pass_the_curve_is_all_there()
+    {
+        var curve = Booleans.Merge(One(RoundedOnTheGrid()));
+
+        Assert.Empty(Booleans.Combine(curve, Booleans.Grow(curve, -69, 70), BooleanOperation.Not));
+        Assert.NotEmpty(Booleans.Combine(curve, Booleans.Grow(Booleans.Grow(curve, -69), 70), BooleanOperation.Not));
+    }
+
     ///<summary>An odd limit halves exactly, so there is no gap at all.</summary>
     [Fact]
     public void An_odd_limit_catches_everything_below_it()
@@ -237,6 +282,24 @@ public class DrcCheckTests
         };
 
         Assert.NotEmpty(DrcChecks.Space(shapes, Limit));
+    }
+
+    ///<summary>
+    ///A wire's round end put on sky130's grid has no gap in it - which the closing found at its tip while it was two
+    ///rounded grows, for the reason the opening found a neck in a rounded corner.
+    ///</summary>
+    [Fact]
+    public void A_round_end_put_on_the_grid_has_no_gap_in_it()
+    {
+        var end = new List<Element.Point>
+        {
+            At(50000, 10250), At(54000, 10250), At(54095, 10230), At(54175, 10175), At(54230, 10095), At(54250, 10000),
+            At(54230, 9905), At(54175, 9825), At(54095, 9770), At(54000, 9750), At(50000, 9750), At(49905, 9770),
+            At(49825, 9825), At(49770, 9905), At(49750, 10000), At(49770, 10095), At(49825, 10175), At(49905, 10230),
+            At(50000, 10250)
+        };
+
+        Assert.Empty(DrcChecks.Space(One(end), Limit));
     }
 
     #endregion **************************************************************************

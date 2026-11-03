@@ -5,7 +5,7 @@
 //is visible to a unit test - the tagging is covered in SvgWriterTests, and the way back from an element
 //to its cell in ProvenanceTests. What is only checkable here is that the two are wired to each other.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, MOSFET, SKY130_CELL, shapeCount, shapesDrawn, shapeBox, openedOnItsOwn, uploadFile } = require('./helpers');
+const { gotoExample, MOSFET, SKY130_CELL, shapeCount, shapesDrawn, shapeBox, openedOnItsOwn, uploadFile, viewSettled } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, MOSFET);
@@ -148,6 +148,9 @@ test('selecting does not pan the view', async ({ page }) => {
     await page.mouse.move(box.x + (box.width / 2) + 80, box.y + (box.height / 2), { steps: 8 });
     await page.mouse.up();
 
+    //Waited for, or a pan that did happen would not have reached the viewBox yet - see viewSettled.
+    await viewSettled(page);
+
     expect(await page.locator('#gdsSVG').getAttribute('viewBox')).toBe(before);
 });
 
@@ -181,11 +184,11 @@ test('a redraw puts the selection down rather than leaving it pointing at nothin
 ///The whole point of provenance: a shape drawn from a placed cell names the cell, and warns that editing
 ///it would change every instance.
 ///
-///**Needs a fixture, because the corpus cannot do this.** Not one of the 897 bundled files has a
+///**Needs a fixture, because the cells cannot do this.** Not one of the 897 bundled cells has a
 ///placement that resolves - the one file with SREFs in it references four cells that are not in it, so
-///they draw nothing. Checked with `gds info`, which reports them as unresolved. So there is no bundled
-///layout in which any shape is more than one level deep, and this path would go untested against all of
-///them. e2e/fixtures/placed.gds is a top-level square plus three placements of a leaf.
+///they draw nothing. Checked with `gds info`, which reports them as unresolved. The designs bundled since
+///are full of placements, but the smallest of them draws over eight thousand shapes, where this wants
+///four it can count. e2e/fixtures/placed.gds is a top-level square plus three placements of a leaf.
 ///
 test('a shape inside a placed cell names the cell and says so', async ({ page }) => {
     await uploadFile(page, 'e2e/fixtures/placed.gds');

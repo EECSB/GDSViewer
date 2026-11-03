@@ -39,6 +39,41 @@ namespace GdsII
         ///</summary>
         public abstract EditRecord? Describe();
 
+        ///
+        ///The elements this changed in place - their corners, their layer or their text - or null when it did
+        ///anything else.
+        ///
+        ///**What lets a drawing follow an edit without flattening the whole library again.** An edit that
+        ///moves a shape changes what that one element draws and nothing about any other: every element is
+        ///still where it was in the file, so the flattened layout is the one before with a few elements drawn
+        ///again. See <see cref="GdsFlattener.Reflatten"/>.
+        ///
+        ///Null for anything that adds or takes away an element, does anything to a cell, or has not run - all
+        ///of which change *what* is drawn, and only a flatten can say what that now is. Null is always safe:
+        ///it means "flatten it all", which is what every edit did before this existed.
+        ///
+        public virtual IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return null; }
+        }
+
+        ///
+        ///Whether every element in <see cref="Reshaped"/> is still on the layer it was on: true for a move, a
+        ///corner, a turn and a label retyped, false for a layer changed.
+        ///
+        ///**What lets a list of the library's contents stay as it was.** The cell tree says which cells there
+        ///are, what each one places, which layers it draws on and how many shapes are on each - and an edit
+        ///that keeps every element on its layer changes none of that. On the RGB mixer, building the tree's
+        ///1,246 rows again was 270 ms of every 450 ms a corner drop froze for.
+        ///
+        ///False unless an edit says otherwise, which is the safe answer: it means the lists are built again,
+        ///which is what every edit did before this existed.
+        ///
+        public virtual bool KeepsLayers
+        {
+            get { return false; }
+        }
+
         ///<summary>
         ///Builds an edit back from what was written down, against a library that has just been opened.
         ///
@@ -243,6 +278,18 @@ namespace GdsII
 
             return structure.Elements[at];
         }
+
+        ///<summary>
+        ///The element this acted on, as the answer to <see cref="Reshaped"/> for an edit that changes it where
+        ///it stands - or null when it has not run, or found nothing to act on.
+        ///</summary>
+        protected IReadOnlyCollection<ElementModel>? ActedOn()
+        {
+            if (Current() is ElementModel model)
+                return new[] { model };
+
+            return null;
+        }
     }
 
     ///<summary>
@@ -274,6 +321,16 @@ namespace GdsII
         public override string Description
         {
             get { return "Move"; }
+        }
+
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return ActedOn(); }
+        }
+
+        public override bool KeepsLayers
+        {
+            get { return true; }
         }
 
         public override void Apply()
@@ -363,6 +420,16 @@ namespace GdsII
         public override string Description
         {
             get { return "Move corner"; }
+        }
+
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return ActedOn(); }
+        }
+
+        public override bool KeepsLayers
+        {
+            get { return true; }
         }
 
         public override void Apply()
@@ -479,6 +546,16 @@ namespace GdsII
         public override string Description
         {
             get { return description; }
+        }
+
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return ActedOn(); }
+        }
+
+        public override bool KeepsLayers
+        {
+            get { return true; }
         }
 
         public override void Apply()
@@ -690,8 +767,17 @@ namespace GdsII
 
             structure.STRNAME.Data = new AsciiData(becomes);
 
-            //Every reference in the library, not only the ones in cells this happens to have looked at.
-            foreach (var other in gds.StreamFormat.Structures)
+            //
+            //Every reference in the library, not only the ones in cells this happens to have looked at - and in
+            //KLayout's context, whose SREF of a cell made from a PCell is how KLayout knows which cell that was. Left
+            //on the old name, KLayout would read the cell back as plain shapes. See StreamFormatModel.Context.
+            //
+            var holders = new List<StructureModel>(gds.StreamFormat.Structures);
+
+            if (gds.StreamFormat.Context is StructureModel context)
+                holders.Add(context);
+
+            foreach (var other in holders)
             {
                 foreach (var element in other.Elements)
                 {
@@ -867,6 +953,11 @@ namespace GdsII
             get { return "Change layer"; }
         }
 
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return ActedOn(); }
+        }
+
         public override void Apply()
         {
             if (Locate() is not ElementModel model)
@@ -939,6 +1030,16 @@ namespace GdsII
         public override string Description
         {
             get { return "Retype label"; }
+        }
+
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get { return ActedOn(); }
+        }
+
+        public override bool KeepsLayers
+        {
+            get { return true; }
         }
 
         public override void Apply()
@@ -1099,9 +1200,9 @@ namespace GdsII
         ///<summary>The same, for an edit that knows the layer without having an element to read it off.</summary>
         public static void Register(GDS gds, LayerKey key)
         {
-            //One place decides what a layer arriving late looks like - see AdditionalGDSInformation.AddLayer,
-            //which the layer sidebar reaches for the same reason a drawn shape reaches this.
-            gds.AdditionalInformation.AddLayer(key);
+            //One place decides what a layer arriving late looks like - see GDS.AddLayer, which the layer panel's Add
+            //layer reaches for the same reason a drawn shape reaches this.
+            gds.AddLayer(key);
         }
 
         ///
@@ -1157,6 +1258,30 @@ namespace GdsII
             //Past the last element is in front of the structure's own ENDSTR, which is where its last
             //element already is.
             return gds.Records.IndexOf(structure.ENDSTR);
+        }
+
+        ///
+        ///A copy of an element's records, to go somewhere else - another place in its cell, another cell, or a
+        ///placement rebuilt with a different transform. Null for an element whose records are not in this
+        ///library.
+        ///
+        ///**Through the bytes**, which is the one way to copy a record without knowing what it holds - and a
+        ///copy rather than the records themselves, since those are the element still in the file.
+        ///
+        public static List<Record>? Copied(GDS gds, ElementModel model)
+        {
+            int start = gds.Records.IndexOf(model.Element.Opening);
+            int end = gds.Records.IndexOf(model.ENDEL);
+
+            if (start < 0 || end < start)
+                return null;
+
+            var copied = new List<Record>();
+
+            foreach (var record in gds.Records.GetRange(start, end - start + 1))
+                copied.Add(new Record((short)record.Type, record.Data?.Encode() ?? Array.Empty<byte>()));
+
+            return copied;
         }
 
         ///<summary>Records as they go into a session: a type and the bytes, which is all a record is.</summary>
@@ -1340,23 +1465,13 @@ namespace GdsII
         ///
         public static AddElement? CopyOf(GDS gds, StructureModel structure, ElementModel model, int dx, int dy)
         {
-            int start = gds.Records.IndexOf(model.Element.Opening);
-            int end = gds.Records.IndexOf(model.ENDEL);
-
-            if (start < 0 || end < start)
+            if (ElementRecords.Copied(gds, model) is not List<Record> copied)
                 return null;
 
-            var copied = new List<Record>();
-
-            foreach (var record in gds.Records.GetRange(start, end - start + 1))
+            foreach (var made in copied)
             {
-                //Through the bytes, which is the one way to copy a record without knowing what it holds.
-                var made = new Record((short)record.Type, record.Data?.Encode() ?? Array.Empty<byte>());
-
-                if (record.Type == RecordType.XY && made.Data is Int4Data xy)
+                if (made.Type == RecordType.XY && made.Data is Int4Data xy)
                     made.Data = new Int4Data(shifted(xy.Values, dx, dy));
-
-                copied.Add(made);
             }
 
             return new AddElement(gds, structure, copied, "Copy");
@@ -1628,6 +1743,31 @@ namespace GdsII
             get { return edits.Count; }
         }
 
+        ///<summary>Every part's, when every part changed its element in place; null as soon as one did not.</summary>
+        public override IReadOnlyCollection<ElementModel>? Reshaped
+        {
+            get
+            {
+                var all = new List<ElementModel>();
+
+                foreach (var edit in edits)
+                {
+                    if (edit.Reshaped is not IReadOnlyCollection<ElementModel> part)
+                        return null;
+
+                    all.AddRange(part);
+                }
+
+                return all;
+            }
+        }
+
+        ///<summary>When every part kept its elements on their layers; false as soon as one did not, or for nothing.</summary>
+        public override bool KeepsLayers
+        {
+            get { return edits.Count > 0 && edits.All(edit => edit.KeepsLayers); }
+        }
+
         public override void Apply()
         {
             foreach (var edit in edits)
@@ -1665,9 +1805,9 @@ namespace GdsII
     ///<summary>
     ///What has been done and what has been taken back.
     ///
-    ///Two stacks, which is the whole of it. Doing something new clears the redo stack, because a history
+    ///Two stacks, which is nearly the whole of it. Doing something new clears the redo stack, because a history
     ///that let you redo your way into a future that no longer follows from the present is worse than one
-    ///that forgets.
+    ///that forgets. The rest is the journal of steps a save writes instead of the file - see <see cref="Journal"/>.
     ///</summary>
     public sealed class EditHistory
     {
@@ -1717,6 +1857,17 @@ namespace GdsII
             get { return undone.Count; }
         }
 
+        ///
+        ///Counts every step taken, done, undone, redone or cleared.
+        ///
+        ///So a drawing can tell whether exactly one step has been taken since it last looked - and only then
+        ///trust <see cref="LastStep"/> to say everything that changed. Two steps, or a Clear, and it flattens.
+        ///
+        public int Version { get; private set; }
+
+        ///<summary>The edit the last step applied or took back, or null when the last step was a Clear or a Restore.</summary>
+        public LayoutEdit? LastStep { get; private set; }
+
         ///<summary>Applies an edit and remembers it.</summary>
         public void Do(LayoutEdit edit)
         {
@@ -1724,6 +1875,23 @@ namespace GdsII
 
             done.Add(edit);
             undone.Clear();
+
+            stepped(edit);
+        }
+
+        ///
+        ///Remembers an edit that has already been applied, as though <see cref="Do"/> had applied it.
+        ///
+        ///For a caller that applies the parts of a change one at a time, so that a part that fails can take
+        ///back the ones before it. Do cannot: it hears of the failure with half the change made and none of it
+        ///on the stack, which is a layout that has changed with nothing to undo it by.
+        ///
+        internal void Record(LayoutEdit applied)
+        {
+            done.Add(applied);
+            undone.Clear();
+
+            stepped(applied);
         }
 
         public bool Undo()
@@ -1737,6 +1905,8 @@ namespace GdsII
 
             edit.Revert();
             undone.Add(edit);
+
+            stepped(edit, undone: true);
 
             return true;
         }
@@ -1753,6 +1923,108 @@ namespace GdsII
             edit.Apply();
             done.Add(edit);
 
+            stepped(edit);
+
+            return true;
+        }
+
+        private void stepped(LayoutEdit? edit, bool undone = false)
+        {
+            Version++;
+            LastStep = edit;
+
+            note(edit, undone);
+        }
+
+        ///
+        ///Every step taken since the file was last written out whole, each written down as it was taken - or
+        ///null when one could not be written down, or nothing has said where the journal starts.
+        ///
+        ///**What lets a save write a few numbers rather than the file.** Saving after an edit wrote the whole
+        ///library: on the RGB mixer, 100 - 140 ms of every corner dropped, to store one corner. The file as it was
+        ///last written whole, and these steps taken again in order, is the file as it is now - see
+        ///<see cref="Replay"/> - and a step is a few numbers.
+        ///
+        ///**Steps, not the undo stack.** The stack says where the file can go from here; this says how it got
+        ///here. They part company at the first undo: a step taken back is a step of its own, and a new edit after
+        ///it clears the redo stack while the steps that led there stay.
+        ///
+        ///**Written down at the moment of the step.** An edit's record says where it acted the last time it ran,
+        ///and a redo runs it again and asks again - so what a step leaves is what was true at that point, which is
+        ///what taking the steps again in order needs.
+        ///
+        ///Kept only once somebody has said where it starts - see <see cref="Written"/> - so a history that is
+        ///never saved, the command line's, pays nothing for it. A Clear, a Restore or a step that cannot be
+        ///written down ends it until it is started again.
+        ///
+        public IReadOnlyList<SavedStep>? Journal
+        {
+            get { return journal; }
+        }
+
+        ///<summary>
+        ///How much the journal carries, the way <see cref="MostPayload"/> counts it: a deletion holds the shapes it
+        ///took out, so a few large ones can outweigh the file they came from.
+        ///</summary>
+        public long JournalWeight { get; private set; }
+
+        private List<SavedStep>? journal = null;
+
+        ///<summary>The file has just been written out whole, so the journal starts again from here, empty.</summary>
+        public void Written()
+        {
+            journal = new List<SavedStep>();
+            JournalWeight = 0;
+        }
+
+        private void note(LayoutEdit? edit, bool undone)
+        {
+            if (journal is null)
+                return;
+
+            if (edit?.Describe() is not EditRecord written)
+            {
+                journal = null;
+                JournalWeight = 0;
+
+                return;
+            }
+
+            journal.Add(new SavedStep { Undone = undone, Edit = written });
+            JournalWeight += weigh(written);
+        }
+
+        ///
+        ///Takes a journal's steps again, in order, against the file they were taken on as it was last written
+        ///whole - and says whether every one of them went back on.
+        ///
+        ///**False leaves the library part way there**, so a caller that gets it opens the file again from its
+        ///bytes rather than going on with this one. A step that does not fit the file - a structure it names that
+        ///is not there - is a journal that does not belong to these bytes, and the one thing replaying must never
+        ///do is carry on and put the rest of it onto the wrong shapes.
+        ///
+        public static bool Replay(GDS gds, IReadOnlyList<SavedStep> steps)
+        {
+            foreach (var step in steps)
+            {
+                if (LayoutEdit.Rebuild(step.Edit, gds) is not LayoutEdit edit)
+                    return false;
+
+                //Anything at all: an edit that throws here is one acting on something the file does not have, which
+                //is this journal not belonging to these bytes whatever the exception happens to be called.
+                try
+                {
+                    if (step.Undone)
+                        edit.Revert();
+                    else
+                        edit.Apply();
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -1764,6 +2036,8 @@ namespace GdsII
         {
             done.Clear();
             undone.Clear();
+
+            stepped(null);
         }
 
         ///<summary>
@@ -1851,6 +2125,8 @@ namespace GdsII
 
             done.AddRange(rebuild(gds, saved.Done));
             undone.AddRange(rebuild(gds, saved.Undone));
+
+            stepped(null);
         }
 
         private static List<LayoutEdit> rebuild(GDS gds, List<EditRecord> written)

@@ -10,7 +10,7 @@
 //It replaced a popup under a book in the toolbar, whose specs were cell-list.spec - three of them are here,
 //marked, because they covered cases nothing else does.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, shapeCount, shapeBox } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, shapeCount, shapeBox, openLayerSettings, chosenLayer, chooseLayer, layersOffered, previewPicture } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, 'Mosfet', 'View2DSvg', true);
@@ -97,22 +97,55 @@ test.describe('the button', () => {
     });
 
     ///
-    ///Off in the 3D view, because the tree is the 2D view's to draw.
+    ///**Beside the 3D view too**, which draws the tree next to the scene since 2026-10-17 - the switch was grayed out
+    ///there, the tree being the 2D view's to draw. The scene gives it its width, as the drawing does in 2D, and the
+    ///canvas follows its box - and has the width back when the tree is put away.
     ///
-    ///Greyed rather than taken away: a button that vanishes leaves somebody wondering whether the app can do
-    ///the thing at all, and it would leave a single button where the pair beside it was.
-    ///
-    test('it is greyed out in the 3D view, and the layer switch is not', async ({ page }) => {
+    test('it is beside the 3D view too, taking its width from the scene', async ({ page }) => {
         await page.locator('[data-view="View3D"]').click();
 
-        await expect(page.locator('#cellTreeButton')).toBeDisabled();
-
-        //Still there, and still saying why.
-        await expect(page.locator('#cellTreeButton')).toBeVisible();
-        await expect(page.locator('#cellTreeButton')).toHaveAttribute('title', /2D view/);
-
-        //The layer list stands beside the 3D view, so its switch keeps working.
+        await expect(page.locator('#threeWrapper #cellTree')).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('#cellTreeButton')).toBeEnabled();
         await expect(page.locator('#layersToggle')).toBeEnabled();
+
+        const placed = async () => page.evaluate(() => {
+            const box = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+            const wrapper = box('#threeWrapper');
+            const tree = box('#threeWrapper #cellTree');
+            const scene = box('#threeWrapper > .viewCanvas');
+            const canvas = box('#container canvas');
+
+            return {
+                wrapper: Math.round(wrapper.width),
+                tree: Math.round(tree?.width ?? 0),
+                treeLeft: Math.round((tree?.left ?? wrapper.left) - wrapper.left),
+                sceneLeft: Math.round(scene.left - wrapper.left),
+                scene: Math.round(scene.width),
+                canvas: Math.round(canvas?.width ?? 0)
+            };
+        });
+
+        //The tree at the left, the scene beside it with what is left, and the canvas as wide as the scene.
+        await expect.poll(async () => {
+            const at = await placed();
+
+            return at.tree > 0
+                && at.treeLeft === 0
+                && Math.abs(at.sceneLeft - at.tree) <= 1
+                && Math.abs(at.scene - (at.wrapper - at.tree)) <= 1
+                && Math.abs(at.canvas - at.scene) <= 1;
+        }, { timeout: 15000 }).toBe(true);
+
+        await page.locator('#cellTreeButton').click();
+
+        await expect(page.locator('#cellTree')).toHaveCount(0);
+
+        //The whole width back, and the canvas with it - three.js sizes itself to the box it is in.
+        await expect.poll(async () => {
+            const at = await placed();
+
+            return Math.abs(at.scene - at.wrapper) <= 1 && Math.abs(at.canvas - at.wrapper) <= 1;
+        }, { timeout: 15000 }).toBe(true);
     });
 
     ///
@@ -255,8 +288,9 @@ test.describe('what it shows', () => {
         //Drawn as an indent, not only recorded as an attribute.
         expect(shape[1].indent).toBeGreaterThan(shape[0].indent);
 
-        //And both say what is under them: the top places a cell, the cell below draws on a layer. A
-        //chevron that turns rather than a character, so what is checked is that the control is there.
+        //And both say what is under them: the top places a cell, and the cell below is placed there, which
+        //it opens to. A chevron that turns rather than a character, so what is checked is that the control
+        //is there.
         expect(shape[0].folds).toBe(true);
         expect(shape[1].folds).toBe(true);
 
@@ -281,10 +315,11 @@ test.describe('what it shows', () => {
 
         await page.locator('#cellTree .cellRow').first().hover();
 
-        await expect(page.locator('#cellTreePreview svg.cellPreview')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('#cellTreePreview img.cellPreview')).toBeVisible({ timeout: 15000 });
 
-        //A drawing of the cell, not an empty frame.
-        await expect.poll(async () => page.locator('#cellTreePreview svg.cellPreview path, #cellTreePreview svg.cellPreview polygon').count(),
+        //A drawing of the cell, not an empty frame - a picture since 2026-10-17, so its pixels are what say so.
+        await expect.poll(
+            async () => (await previewPicture(page, '#cellTreePreview img.cellPreview'))?.drawn ?? 0,
             { timeout: 15000 }).toBeGreaterThan(0);
 
         const fits = await page.evaluate(() => {
@@ -327,10 +362,17 @@ test.describe('what it shows', () => {
             const small = document.querySelector('#cellTreePreview').getBoundingClientRect();
             const tree = document.querySelector('#cellTree').getBoundingClientRect();
 
+            //The same picture, which is drawn the size of this one rather than the thumbnail's - so it is as sharp
+            //here as the markup it replaced was: at least as many pixels as it is shown across, on its fitted side.
+            const picture = document.querySelector('#cellPreviewLarge img.cellPreview');
+            const shown = picture.getBoundingClientRect();
+            const fitted = Math.min(shown.width / picture.naturalWidth, shown.height / picture.naturalHeight);
+
             return {
                 times: (big.width * big.height) / (small.width * small.height),
                 pastThePanel: big.left - tree.right,
-                drawn: document.querySelectorAll('#cellPreviewLarge path, #cellPreviewLarge polygon').length,
+                drawn: picture.naturalWidth,
+                sharp: fitted * window.devicePixelRatio,
 
                 //Whether it is still on screen, which is the whole reason its size is a min() of three
                 //things rather than a number.
@@ -351,8 +393,9 @@ test.describe('what it shows', () => {
         //offset is measured off a border and comes out a fraction either side of it.
         expect(bigger.pastThePanel).toBeGreaterThan(-2);
 
-        //And it is the cell, not an empty frame.
+        //And it is the cell, not an empty frame - and not a thumbnail stretched to fill it.
         expect(bigger.drawn).toBeGreaterThan(0);
+        expect(bigger.sharp).toBeLessThan(1.05);
 
         //Inside the window on all three sides it could leave by. It is sized off the viewport for exactly
         //this, and a fixed number would have run off the bottom of a short one.
@@ -377,7 +420,50 @@ test.describe('what it shows', () => {
         await expect(page.locator('#cellPreviewLarge')).toHaveCount(0);
 
         //The thumbnail it came out of is still there.
-        await expect(page.locator('#cellTreePreview svg.cellPreview')).toBeVisible();
+        await expect(page.locator('#cellTreePreview img.cellPreview')).toBeVisible();
+    });
+
+    ///
+    ///**The picture is of the cell as it is now**, not as it was when it was first pointed at.
+    ///
+    ///A cell's picture is kept, so pointing at it again costs nothing - and it was kept for good: a shape
+    ///deleted from a cell went on being drawn in its picture, and in every look after, until the page was
+    ///reloaded. See forgetCellPreviews in Viewer2DSvg. The pointer stays on the tree throughout, as it does
+    ///for somebody choosing a shape from a row and pressing Delete, so no new look is what draws it again.
+    ///
+    test('the picture follows an edit to the cell', async ({ page }) => {
+        await openTree(page);
+
+        //
+        //The picture itself, as its address: an image's since 2026-10-17, and drawn the same way every time from the same
+        //cell - so a different one is a different cell, and the one from before is the cell as it was before.
+        //
+        const picture = async () => (await previewPicture(page, '#cellTreePreview img.cellPreview'))?.source ?? '';
+
+        await rows(page).first().locator('.cellRow').hover();
+
+        await expect.poll(picture, { timeout: 15000 }).not.toBe('');
+
+        const before = await picture();
+
+        const layers = page.locator('#cellTree .cellRowPair[data-kind="layer"]');
+
+        for (let nth = 0; nth < await layers.count(); nth++)
+            await layers.nth(nth).locator('.cellRowFold').click();
+
+        await page.locator('#cellTree .cellRowPair[data-kind="shape"]').filter({ hasText: 'boundary' }).first().locator('.cellRow').click();
+
+        await expect(page.locator('#selectionPanel')).toBeVisible({ timeout: 15000 });
+
+        await page.keyboard.press('Delete');
+
+        await expect(page.locator('#undoEdit')).toHaveAttribute('title', /Undo Delete/, { timeout: 15000 });
+        await expect.poll(picture, { timeout: 15000 }).not.toBe(before);
+        expect(await picture()).not.toBe('');
+
+        await page.keyboard.press('Control+z');
+
+        await expect.poll(picture, { timeout: 15000 }).toBe(before);
     });
 
     ///
@@ -400,6 +486,41 @@ test.describe('what it shows', () => {
     });
 
     ///
+    ///**The edge over the picture drags it taller or shorter** - asked for 2026-10-19 - the rows giving up or taking
+    ///back the space, the panel one height throughout, and held at both ends: a picture still worth having, and rows
+    ///still worth scrolling.
+    ///
+    test('the picture is dragged taller and shorter by the edge over it', async ({ page }) => {
+        await openTree(page);
+
+        const frame = page.locator('#cellTreePreview');
+        const panelBefore = await page.locator('#cellTree').boundingBox();
+        const before = (await frame.boundingBox()).height;
+
+        async function dragBy(by) {
+            const edge = await page.locator('.previewGrabber').boundingBox();
+            const x = edge.x + (edge.width / 2);
+            const y = edge.y + (edge.height / 2);
+
+            await page.mouse.move(x, y);
+            await page.mouse.down();
+            await page.mouse.move(x, y + by, { steps: 6 });
+            await page.mouse.up();
+
+            return (await frame.boundingBox()).height;
+        }
+
+        expect(await dragBy(-120)).toBeCloseTo(before + 120, 0);
+        expect(await dragBy(2000)).toBe(60);
+
+        const rows = await page.locator('.cellTreeRows').boundingBox();
+
+        expect(await dragBy(-3000)).toBeLessThan(panelBefore.height);
+        expect((await page.locator('.cellTreeRows').boundingBox()).height).toBeLessThan(rows.height);
+        expect((await page.locator('#cellTree').boundingBox()).height).toBeCloseTo(panelBefore.height, 0);
+    });
+
+    ///
     ///And the panel is one height whether or not anything is under the pointer.
     ///
     ///A picture that pushed the rows down would be the pointer moving the thing it is pointing at - point at
@@ -416,7 +537,7 @@ test.describe('what it shows', () => {
 
         await page.locator('#cellTree .cellRow').first().hover();
 
-        await expect(page.locator('#cellTreePreview svg.cellPreview')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('#cellTreePreview img.cellPreview')).toBeVisible({ timeout: 15000 });
 
         const after = {
             panel: await page.locator('#cellTree').boundingBox(),
@@ -443,26 +564,27 @@ test.describe('what it shows', () => {
     ///
     ///Two cells are drawn as themselves, not as one picture reused.
     ///
-    ///Which is the whole claim of a preview: the frame is a fixed square and the drawing fits itself to it,
-    ///so what says the two are different is the viewBox each one brings.
+    ///Which is the whole claim of a preview: the frame is a fixed square and the drawing fits itself to it, so
+    ///what says the two are different is the picture each one brings - its own size and its own pixels.
     ///
     test('two cells are drawn differently', async ({ page }) => {
         await openTree(page);
 
         await makeALevel(page);
 
-        const frames = [];
+        const pictures = [];
 
         for (const name of ['mosfet', 'CELL']) {
             await rows(page).filter({ hasText: name }).first().locator('.cellRow').hover();
 
-            await expect(page.locator('#cellTreePreview svg.cellPreview')).toHaveAttribute('aria-label', `Drawing of ${name}`,
-                { timeout: 15000 });
+            await expect.poll(
+                async () => (await previewPicture(page, '#cellTreePreview img.cellPreview'))?.alt,
+                { timeout: 15000 }).toBe(`Drawing of ${name}`);
 
-            frames.push(await page.locator('#cellTreePreview svg.cellPreview').getAttribute('viewBox'));
+            pictures.push((await previewPicture(page, '#cellTreePreview img.cellPreview')).source);
         }
 
-        expect(frames[0]).not.toBe(frames[1]);
+        expect(pictures[0]).not.toBe(pictures[1]);
     });
 
     ///
@@ -479,7 +601,8 @@ test.describe('what it shows', () => {
         //Into CELL, and take everything out of it.
         await rows(page).filter({ hasText: 'CELL' }).first().locator('.cellRow').click();
 
-        await expect.poll(async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
+        await expect.poll(
+            async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
             { timeout: 15000 }).toBe('CELL');
 
         const view = await page.locator('#gdsSVG').boundingBox();
@@ -503,7 +626,8 @@ test.describe('what it shows', () => {
 
         await empty.locator('.cellRow').click();
 
-        await expect.poll(async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
+        await expect.poll(
+            async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
             { timeout: 15000 }).toBe('CELL');
 
         //And it can be drawn into, which is the whole reason to be able to open it.
@@ -526,7 +650,8 @@ test.describe('what it shows', () => {
 
         await page.locator('#cellTree .cellRow').filter({ hasText: 'CELL' }).click();
 
-        await expect.poll(async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
+        await expect.poll(
+            async () => (await page.locator('.contextCrumbOn').first().textContent()).trim(),
             { timeout: 15000 }).toBe('CELL');
 
         const lit = page.locator('#cellTree .cellRowOn .cellRowName');
@@ -643,7 +768,8 @@ test.describe('layers and shapes', () => {
         //The panel opens on it, and one shape is marked in the view.
         await expect(page.locator('#selectionPanel')).toBeVisible({ timeout: 15000 });
 
-        await expect.poll(async () => page.locator('#gdsSVG .shapeSelected, #gdsSVG #chosenShapes *').count(),
+        await expect.poll(
+            async () => page.locator('#gdsSVG .shapeSelected, #gdsSVG #chosenShapes *').count(),
             { timeout: 15000 }).toBeGreaterThan(0);
     });
 
@@ -673,6 +799,133 @@ test.describe('layers and shapes', () => {
 
         await expect(page.locator('#cellTree .cellRowPair')).toHaveCount(before);
         await expect(cell.locator('.cellRowFold')).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    ///
+    ///**A layer's new look reaches its rows here too.**
+    ///
+    ///The rows are drawn again only when something they show has changed - see treeLooks in Viewer2DSvg, which
+    ///took a quarter of a second of tree off every render of the RGB mixer. A layer's swatch is one of those
+    ///things and the easiest to leave out, since a pattern is set on the layer rather than on anything the tree
+    ///holds - and a row left out would go on showing the old one, saying nothing.
+    ///
+    test('a layer given a pattern shows it on its rows', async ({ page }) => {
+        await openTree(page);
+
+        await expect(ofKind(page, 'layer').first()).toBeVisible();
+        await expect(page.locator('#cellTree svg.layerSwatchFilled')).toHaveCount(0);
+
+        await openLayerSettings(page, 0);
+        await page.locator('.layerFillChoice[data-fill="Diagonal"]').click();
+
+        await expect(page.locator('.layerFillChoice[data-fill="Diagonal"]')).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('#cellTree svg.layerSwatchFilled').first()).toBeVisible();
+    });
+
+    ///Opens every layer, and chooses the first boundary from its row. Says which shape row it was and what it said.
+    async function chooseABoundary(page) {
+        await openTree(page);
+
+        const layers = ofKind(page, 'layer');
+
+        for (let nth = 0; nth < await layers.count(); nth++)
+            await layers.nth(nth).locator('.cellRowFold').click();
+
+        const says = await ofKind(page, 'shape').evaluateAll(rows => rows.map(row => row.textContent.trim()));
+        const nth = says.findIndex(text => text.startsWith('boundary at '));
+
+        expect(nth).toBeGreaterThanOrEqual(0);
+
+        await ofKind(page, 'shape').nth(nth).locator('.cellRow').click();
+
+        await expect(page.locator('#selectionPanel')).toBeVisible({ timeout: 15000 });
+
+        return { nth: nth, says: says[nth] };
+    }
+
+    ///Where a shape row says its shape starts, as two numbers.
+    function startOf(says) {
+        const found = says.match(/at (-?\d+), (-?\d+)/);
+
+        return [Number(found[1]), Number(found[2])];
+    }
+
+    ///
+    ///**A shape moved says where it went, while its row is showing.**
+    ///
+    ///The rows are kept across an edit that leaves every shape on its layer - see treeStillSays in Viewer2DSvg,
+    ///which took 270 ms of tree off every corner dropped on the RGB mixer. A shape row says where its shape
+    ///starts, so a move is the one such edit its row has to be drawn again for, and a row left out would go on
+    ///giving the old place. Undoing is the same edit run backwards, so it is held to the same.
+    ///
+    test('a shape row follows its shape when it is moved, and back', async ({ page }) => {
+        const chosen = await chooseABoundary(page);
+        const [x, y] = startOf(chosen.says);
+        const row = ofKind(page, 'shape').nth(chosen.nth);
+
+        await page.keyboard.press('ArrowRight');
+
+        await expect.poll(async () => startOf(await row.textContent())[0], { timeout: 15000 }).toBeGreaterThan(x);
+
+        expect(startOf(await row.textContent())[1]).toBe(y);
+
+        await page.keyboard.press('Control+z');
+
+        await expect.poll(async () => (await row.textContent()).trim(), { timeout: 15000 }).toBe(chosen.says);
+    });
+
+    ///
+    ///**A shape put on another layer is counted on its new one.**
+    ///
+    ///The edit those kept rows are not kept for: the shape leaves one layer's count and joins another's, so the
+    ///rows are built again as every edit's were. With every layer shut again first, so it is the layer changing
+    ///that has to say so - a row of the shape itself showing would have the rows built again regardless.
+    ///
+    test('a shape put on another layer moves between the layers\' counts', async ({ page }) => {
+        await chooseABoundary(page);
+
+        const open = ofKind(page, 'layer').locator('.cellRowFold[aria-expanded="true"]');
+
+        while (await open.count() > 0)
+            await open.first().click();
+
+        await expect(ofKind(page, 'shape')).toHaveCount(0);
+        await expect(page.locator('#selectionPanel')).toBeVisible();
+
+        //Every cell's rows added up by layer, since more than one cell can draw on the same one.
+        const counts = async () => ofKind(page, 'layer').evaluateAll(rows => {
+            const said = {};
+
+            for (const row of rows) {
+                const name = row.querySelector('.cellRowName').textContent.trim();
+
+                said[name] = (said[name] || 0) + Number(row.querySelector('.cellRowCounts').textContent.trim());
+            }
+
+            return said;
+        });
+
+        //A row reads the layer's name where it has one, with the pair after it - see chosenLayer.
+        const named = (said, pair) => Object.keys(said).find(name => name === pair || name.endsWith(`(${pair})`));
+        const total = said => Object.values(said).reduce((sum, count) => sum + count, 0);
+
+        const before = await counts();
+        const from = await chosenLayer(page);
+        const onto = (await layersOffered(page)).find(pair => pair !== from);
+        const fromRow = named(before, from);
+
+        expect(before[fromRow]).toBeGreaterThan(0);
+
+        await chooseLayer(page, onto);
+
+        await expect.poll(async () => chosenLayer(page), { timeout: 15000 }).toBe(onto);
+        await expect.poll(async () => (await counts())[fromRow] ?? 0, { timeout: 15000 }).toBe(before[fromRow] - 1);
+
+        const after = await counts();
+        const ontoRow = named(after, onto);
+
+        expect(after[ontoRow]).toBe((before[ontoRow] ?? 0) + 1);
+        expect(total(after)).toBe(total(before));
     });
 });
 
@@ -761,6 +1014,38 @@ test.describe('dragging a sidebar', () => {
 
         expect(wide.now).toBeLessThan(800);
     });
+});
+
+///
+///**Auto-generate preview**, under the picture: ticked to begin with, and unticked, a row pointed at is not drawn until
+///the frame is pressed - for a file whose cells are slow to draw. One switch with the text's cell list and the History
+///and Examples previews, kept in this browser.
+///
+test('with Auto-generate preview off, a row waits for a press on the frame, and the switch is kept and shared', async ({ page }) => {
+    await openTree(page);
+
+    const box = page.locator('#cellTreeAutoPreview');
+
+    await expect(box).toBeChecked();
+
+    await box.uncheck();
+    await page.locator('#cellTree .cellRow').first().hover();
+
+    const generate = page.locator('#cellPreviewGenerate');
+
+    await expect(generate).toBeVisible({ timeout: 15000 });
+    await expect(generate).toContainText('Generate preview');
+    await expect(generate).toContainText('mosfet');
+    await expect(page.locator('#cellTreePreview .cellPreview')).toHaveCount(0);
+
+    await generate.click();
+
+    await expect(page.locator('#cellTreePreview img.cellPreview')).toBeVisible({ timeout: 15000 });
+
+    //Kept in this browser, and the same switch beside the text.
+    await gotoExample(page, 'Mosfet', 'text', true);
+
+    await expect(page.locator('#textCellsAutoPreview')).not.toBeChecked();
 });
 
 ///

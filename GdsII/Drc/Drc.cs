@@ -57,6 +57,20 @@ namespace GdsII
         ///</summary>
         public ElementSource? Source { get; init; }
 
+        ///<summary>
+        ///What makes this the same fault as one found before: the rule, and exactly the ground it covers.
+        ///
+        ///**What a waiver is kept by.** A waiver is somebody having looked at a fault and let it stand, and a
+        ///check run again tomorrow finds the same rule broken on the same ground - the same fault, still
+        ///waived. Moved by a unit, or measured differently because something beside it changed, it is a
+        ///different fault and comes back to be looked at, which is the direction for a waiver to fail in: a
+        ///fault nobody has seen is never hidden by one somebody saw before.
+        ///
+        ///The box rather than the outline, which a merge can start at any corner of. Written invariant, since
+        ///it is stored and compared as text.
+        ///</summary>
+        public string Key => FormattableString.Invariant($"{RuleId}@{Bounds.Left},{Bounds.Bottom},{Bounds.Right},{Bounds.Top}");
+
         public override string ToString()
         {
             return $"{RuleId} at {Bounds}";
@@ -87,10 +101,23 @@ namespace GdsII
         ///</summary>
         public List<string> Problems { get; } = new List<string>();
 
-        ///<summary>Whether every rule in the deck was read, understood and measured.</summary>
+        ///
+        ///What of the layout the rules never saw, and why - empty when they saw all of it.
+        ///
+        ///**The other way a check measures less than it was asked to.** <see cref="NotRun"/> and <see cref="Problems"/>
+        ///are about the deck, a rule that could not be measured; this is about the layout. A flatten that stopped at
+        ///its ceiling hands over the first part of the file and no more, and a cell that contains itself has its
+        ///nesting cut short - either way what is missing was not checked, and where it would have met what is there,
+        ///the rest of a wire or the metal over a via, a fault is found that is not in the file. IHP's 1024x16 SRAM
+        ///macro, stopped at the app's ceiling with 1,500,532 of its 2,639,671 elements, gave 138 M3.b spacings and 3
+        ///V2.c enclosures that way, and nothing said it had been checked in part.
+        ///
+        public List<string> NotChecked { get; } = new List<string>();
+
+        ///<summary>Whether every rule in the deck was read, understood and measured, over the whole layout.</summary>
         public bool Complete
         {
-            get { return NotRun.Count == 0 && Problems.Count == 0; }
+            get { return NotRun.Count == 0 && Problems.Count == 0 && NotChecked.Count == 0; }
         }
 
         ///<summary>
@@ -107,7 +134,17 @@ namespace GdsII
         ///<summary>The violations grouped by the rule that found them, in the order the deck lists them.</summary>
         public List<IGrouping<string, DrcViolation>> ByRule()
         {
-            return Violations.GroupBy(violation => violation.RuleId).ToList();
+            return ByRule(Violations);
+        }
+
+        ///
+        ///The same for any run of violations - the ones left after an area or the waivers have been taken out,
+        ///say - grouped by rule in the order the first of each was found, which is the deck's. One grouping,
+        ///since the CLI's report and the assistant's answer each had one of their own beside this.
+        ///
+        public static List<IGrouping<string, DrcViolation>> ByRule(IEnumerable<DrcViolation> violations)
+        {
+            return violations.GroupBy(violation => violation.RuleId).ToList();
         }
     }
 
@@ -127,10 +164,17 @@ namespace GdsII
         ///Everything a rule needs is in the deck and the layout, the manufacturing grid included - an
         ///off-grid rule states it rather than reading it back off the file, for the reason given on
         ///<see cref="DrcCheck.OffGrid"/>.
+        ///
+        ///<paramref name="switchedOff"/> names rules by id that are not to run at all - somebody has put them
+        ///aside, the way a layer is hidden. Left out rather than reported as not run: a rule nobody asked for
+        ///is not a gap in the answer, where one that was asked for and could not be measured is.
         ///</summary>
-        public static DrcResult Check(DrcDeck deck, FlattenedLayout layout)
+        public static DrcResult Check(DrcDeck deck, FlattenedLayout layout, IReadOnlySet<string>? switchedOff = null)
         {
             var result = new DrcResult();
+
+            //What the layout is missing, said before anything is measured over it - see DrcResult.NotChecked.
+            result.NotChecked.AddRange(NotCheckedOf(layout));
 
             foreach (string refused in deck.Refused)
                 result.NotRun.Add(refused);
@@ -146,9 +190,38 @@ namespace GdsII
             var unmeasurable = new HashSet<string>(layers.RulesLeftUnmeasurable());
 
             foreach (var rule in deck.Rules)
+            {
+                if (switchedOff is not null && switchedOff.Contains(rule.Id))
+                    continue;
+
                 run(rule, deck, layers, layout, unmeasurable, result);
+            }
 
             return result;
+        }
+
+        ///
+        ///What a check over this layout cannot see of the file it came from, a sentence each - see
+        ///<see cref="DrcResult.NotChecked"/>. Empty for a layout flattened whole.
+        ///
+        ///**Asked of the flatten, not of a window cut out of it.** A check over an area is handed the elements within
+        ///reach of the area, and their count is not where the flatten stopped - said as one, it put the stop at however
+        ///many shapes the window held. A caller that checks a window adds this for the layout the window was cut from.
+        ///
+        public static List<string> NotCheckedOf(FlattenedLayout layout)
+        {
+            var missing = new List<string>();
+
+            if (layout.Stopped)
+            {
+                missing.Add(FormattableString.Invariant(
+                    $"Only the first {layout.Elements.Count:N0} elements of the layout were checked: flattening it stopped there, so the rest was not, and a fault where the two meet may be nothing but the rest missing."));
+            }
+
+            if (layout.DepthLimitReached)
+                missing.Add("A cell in this file contains itself, so its nesting was cut short and what lies past the cut was not checked.");
+
+            return missing;
         }
 
         private static void run(
@@ -168,7 +241,7 @@ namespace GdsII
 
             if (rule.Check == DrcCheck.OffGrid)
             {
-                offGrid(rule, layers, deck, layout, result);
+                offGrid(rule, deck, layout, result);
 
                 return;
             }
@@ -188,7 +261,7 @@ namespace GdsII
                 regions = measure(rule, layers);
 
             if (rule.Except is string except)
-                regions = DrcChecks.Outside(regions, layers.Of(except));
+                regions = DrcChecks.Outside(regions, layers.RingsOf(except));
 
             if (regions.Count == 0)
                 return;
@@ -224,13 +297,14 @@ namespace GdsII
         ///the whole point of naming a metric is that the answer differs, so silently giving the sizing
         ///answer would be the one outcome nobody asked for.
         ///
-        ///The marker is the ground between the two edges. For a projected pair that is the run over which
-        ///they face, which is a real quadrilateral; for a Euclidean one it is the nearest approach, which is
-        ///a line and has no area - correct, and something anything drawing these has to expect.
+        ///The marker is the ground between the two edges: the part of each that is too close to the other, as
+        ///KLayout reports a pair. Two parts alongside each other make a real quadrilateral; two that meet at a
+        ///point close to a triangle, and a part that is a single point leaves a line with no area - correct, and
+        ///something anything drawing these has to expect.
         ///</summary>
         private static List<List<Element.Point>> byEdges(DrcRule rule, DrcLayers layers, DrcMetric metric)
         {
-            var first = layers.Of(rule.Operands[0]);
+            var first = layers.RingsOf(rule.Operands[0]);
 
             var pairs = rule.Check switch
             {
@@ -262,9 +336,14 @@ namespace GdsII
             return false;
         }
 
+        ///<summary>
+        ///A rule measured by sizing, over its layers as rings - every hole still a hole, which is what keeps a
+        ///layer that merges into one outline with thousands of them from taking minutes. See
+        ///<see cref="DrcLayers.RingsOf"/>.
+        ///</summary>
         private static List<List<Element.Point>> measure(DrcRule rule, DrcLayers layers)
         {
-            var first = layers.Of(rule.Operands[0]);
+            var first = layers.RingsOf(rule.Operands[0]);
 
             switch (rule.Check)
             {
@@ -275,13 +354,13 @@ namespace GdsII
                     if (rule.Operands.Count == 1)
                         return DrcChecks.Space(first, rule.Value);
 
-                    return DrcChecks.Space(first, layers.Of(rule.Operands[1]), rule.Value);
+                    return DrcChecks.Space(first, layers.RingsOf(rule.Operands[1]), rule.Value);
 
                 case DrcCheck.Notch:
                     return DrcChecks.Notch(first, rule.Value);
 
                 case DrcCheck.Enclosure:
-                    return DrcChecks.Enclosure(first, layers.Of(rule.Operands[1]), rule.Value);
+                    return DrcChecks.Enclosure(first, layers.RingsOf(rule.Operands[1]), rule.Value);
 
                 case DrcCheck.Area:
                     return DrcChecks.Area(first, rule.Value);
@@ -301,9 +380,6 @@ namespace GdsII
 
         ///<summary>
         ///The off-grid rule, whose violations are points rather than regions.
-        ///</summary>
-        ///<summary>
-        ///The off-grid rule, whose violations are points rather than regions.
         ///
         ///Walked here rather than through <see cref="DrcChecks.OffGrid"/>, which answers with points alone.
         ///The element is in hand while walking, so the violation can name the cell it is in for nothing -
@@ -318,22 +394,11 @@ namespace GdsII
         ///names the layers that are made, so taking the set from the deck is both the narrower answer and
         ///the correct one.
         ///</summary>
-        private static void offGrid(DrcRule rule, DrcLayers layers, DrcDeck deck, FlattenedLayout layout, DrcResult result)
+        private static void offGrid(DrcRule rule, DrcDeck deck, FlattenedLayout layout, DrcResult result)
         {
             int grid = (int)rule.Value;
 
-            var keys = new HashSet<LayerKey>();
-
-            if (rule.Operands[0] == DrcDeck.EveryLayer)
-            {
-                foreach (var declared in deck.Layers.Values)
-                    keys.Add(declared);
-            }
-            else
-            {
-                foreach (var key in layers.DrawnBehind(rule.Operands[0]))
-                    keys.Add(key);
-            }
+            var keys = new HashSet<LayerKey>(deck.GriddedBy(rule));
 
             foreach (var element in layout.Elements)
             {
@@ -380,7 +445,7 @@ namespace GdsII
                 return;
             }
 
-            var gate = layers.Of(rule.Operands[1]);
+            var gate = layers.RingsOf(rule.Operands[1]);
 
             if (gate.Count == 0)
                 return;
@@ -418,8 +483,13 @@ namespace GdsII
                 //The gate this net actually reaches, rather than every gate in the file.
                 double gateArea = 0;
 
-                foreach (var piece in Booleans.Combine(gate, everything, BooleanOperation.And))
-                    gateArea += Measure.AreaOf(piece);
+                foreach (var piece in Booleans.Combine(gate, Booleans.AsRings(everything), BooleanOperation.And))
+                {
+                    gateArea += Measure.AreaOf(piece.Boundary);
+
+                    foreach (var hole in piece.Holes)
+                        gateArea -= Measure.AreaOf(hole);
+                }
 
                 //A net reaching no gate has no oxide to damage. Dividing by nothing would make every
                 //dangling wire the worst antenna in the file.

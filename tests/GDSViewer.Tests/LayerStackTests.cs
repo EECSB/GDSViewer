@@ -658,28 +658,24 @@ public class LayerStackTests
 
         if (setting == "fill")
             layer.Fill = LayerFill.Diagonal;
-
-        if (setting == "patterncolor")
+        else if (setting == "patterncolor")
         {
             layer.Fill = LayerFill.Dots;
             layer.PatternColor = "#123456";
         }
-
-        if (setting == "patternsize")
+        else if (setting == "patternsize")
         {
             layer.Fill = LayerFill.Dots;
             layer.PatternPixels = 24;
         }
-
-        if (setting == "stack")
+        else if (setting == "stack")
         {
             layer.Offset = 3000;
             layer.CustomHeight = 3000;
             layer.Depth = 250;
             layer.StackIsCustom = true;
         }
-
-        if (setting == "color")
+        else if (setting == "color")
         {
             layer.Color = "#abcdef";
             layer.ColorIsCustom = true;
@@ -695,17 +691,13 @@ public class LayerStackTests
 
         if (setting == "fill")
             Assert.Equal(LayerFill.Diagonal, back.Fill);
-
-        if (setting == "patterncolor")
+        else if (setting == "patterncolor")
             Assert.Equal("#123456", back.PatternColor);
-
-        if (setting == "patternsize")
+        else if (setting == "patternsize")
             Assert.Equal(24, back.PatternPixels);
-
-        if (setting == "stack")
+        else if (setting == "stack")
             Assert.Equal((3000, 250), (back.Offset, back.Depth));
-
-        if (setting == "color")
+        else if (setting == "color")
             Assert.Equal("#abcdef", back.Color);
     }
 

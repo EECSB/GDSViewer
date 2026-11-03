@@ -8,7 +8,7 @@ namespace GDSViewer.Tests;
 ///**The corpus test is the one that matters.** A binary format read from a specification is exactly the
 ///kind of thing that comes out plausible and wrong - a misread info byte puts every later element on the
 ///wrong layer, a misread delta bends every polygon by the same amount, and either produces a picture that
-///looks like a layout. So the same 897 files are converted to OASIS by KLayout and read back, and the
+///looks like a layout. So the same 1,220 files are converted to OASIS by KLayout and read back, and the
 ///geometry has to match what this reads out of the GDSII original. Nothing about that can pass by
 ///accident.
 ///
@@ -165,7 +165,7 @@ public class OasisTests
     ///<summary>
     ///Every bundled file, converted and read back.
     ///
-    ///897 layouts is what makes this worth more than any hand-written case: between them they exercise the
+    ///1,220 layouts is what makes this worth more than any hand-written case: between them they exercise the
     ///point-list forms, the modal carry-over across records and cells, and whatever KLayout's writer
     ///decides is the shortest way to say each shape. A reader that is wrong about any of it fails here and
     ///names the file.
@@ -202,4 +202,29 @@ public class OasisTests
     }
 
     #endregion ***********************************************************************
+
+    #region Modal variables ************************************************************
+
+    ///
+    ///Every file KLayout writes keeps to the modal rules as this reads them - no cell leans on the cell before, and
+    ///nothing leans on anything across a name record - which is what says the reading of the specification here is
+    ///KLayout's too. See OasisModalTests for what a file that does lean is read as.
+    ///
+    [Fact]
+    public void Nothing_klayout_writes_leans_on_the_cell_before()
+    {
+        var leaning = new List<string>();
+
+        foreach (string path in GdsTestData.AllSampleFiles())
+        {
+            OasisReader.Read(OasisTestData.Convert(path), out var problems);
+
+            if (problems.Count > 0)
+                leaning.Add($"{path}: {problems[0]}");
+        }
+
+        Assert.Empty(leaning);
+    }
+
+    #endregion **********************************************************************
 }

@@ -99,7 +99,7 @@ public class LayerSpacingTests
     ///
     ///**The step is the rung plus the spread**, not the spread alone. A layer nobody measured rests at its
     ///place in the even stack, which is DefaultLayerSpacing apart, and the slider opens its own gap on top
-    ///of that - so at a spread of 200 these step by 250 and at a spread of nought they step by the rung
+    ///of that - so at a spread of 200 these step by 250 and at a spread of zero they step by the rung
     ///they always had. The slider used to be read as the step itself, which is why it could not go below
     ///50: there was no way to say "add nothing" without also collapsing this stack.
     ///

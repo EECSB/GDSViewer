@@ -36,3 +36,14 @@
         width: 100%;
         height: auto;
     }
+
+/*
+    White round the code in the dark, since the popup's padding is the space round it and is dark there. The code's box
+    is the code now, edge to edge - see GenerateQRCode - and a code with no light round it is one a phone does not find:
+    its corner squares run into the page.
+*/
+:root[data-theme="dark"] .svgContainer {
+    padding: 12px;
+    border-radius: 4px;
+    background-color: #fff;
+}

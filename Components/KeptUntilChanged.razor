@@ -1,0 +1,41 @@
+﻿@*
+    Its content as it was last drawn, until what it is drawn from changes.
+
+    **For a part of a view that costs a lot to draw and seldom changes**, inside a component that renders all
+    the time. Blazor builds a component's whole markup on every render, and a child handed a fragment is built
+    again with it - a fragment is never the same parameter twice - so this decides for itself: it draws when the
+    stamp it is handed differs from the one it last drew with, and keeps what it drew otherwise. The stamp has
+    to say everything the content shows. Whatever it leaves out is what goes stale.
+
+    The handlers it keeps are the ones it last drew with, and they go on working: they belong to the component
+    the fragment came from, so a press on one renders that component, which hands this a new stamp - and the
+    content is drawn again if the stamp says so.
+*@
+@ChildContent
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    ///<summary>Everything the content is drawn from, as one string. A different one draws it again.</summary>
+    [Parameter]
+    public string Stamp { get; set; } = "";
+
+    private string drawnWith = "";
+
+    protected override void OnInitialized()
+    {
+        //The first render is never asked about, so the stamp it draws with is taken here.
+        drawnWith = Stamp;
+    }
+
+    protected override bool ShouldRender()
+    {
+        if (Stamp == drawnWith)
+            return false;
+
+        drawnWith = Stamp;
+
+        return true;
+    }
+}

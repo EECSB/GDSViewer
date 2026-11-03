@@ -355,7 +355,7 @@ public class ShapeBuilderTests
     ///
     ///**Because a cut that does not overlap is a dotted line.** Ending one piece where the next begins draws
     ///the same route in several elements; ending one *before* the next begins leaves the segment between
-    ///them undrawn, which on a wire is an open circuit that looks like a rendering artefact.
+    ///them undrawn, which on a wire is an open circuit that looks like a rendering artifact.
     ///
     [Fact]
     public void A_route_cut_into_elements_joins_at_the_cuts()

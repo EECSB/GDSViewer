@@ -1,0 +1,182 @@
+#gf180mcuD - a starter design-rule deck for GDS Viewer.
+#
+#NOT A SIGNOFF DECK, AND NOT AFFILIATED WITH GLOBALFOUNDRIES. This is a hand-transcribed subset for catching
+#obvious mistakes while looking at a layout. A design is signed off against the PDK's own decks - KLayout's in
+#gf180mcu_fd_pr/rules/klayout/drc, and Magic's in open_pdks - not against this.
+#
+#Layer numbers are from the drawn-layer table of the GF180MCU design manual, and every value from its rule
+#tables - docs/physical_verification/design_manual/tables_clear in github.com/google/gf180mcu-pdk, published at
+#https://gf180mcu-pdk.readthedocs.io/en/latest/physical_verification/design_manual/design_manual.html
+#
+#THREE THINGS TO KNOW BEFORE TRUSTING A NUMBER HERE
+#
+#**The values are the 3.3 V ones.** Most rules give a second, larger value for the 5 V and 6 V devices drawn
+#under Dualgate - COMP spacing is 0.28 at 3.3 V and 0.36 at 5 V and 6 V. The smaller is what is checked here,
+#everywhere, so a 6 V device drawn too close by its own rule passes; but nothing is reported that the manual
+#allows.
+#
+#**This is the five-metal stack, gf180mcuD**, whose top metal is Metal5, 11K Angstrom thick. In a five-metal stack
+#Metal5 "must comply with MetalTop rule" (design manual 2.8) - 0.44 wide and 0.46 apart at 9K and 11K (7.15), not
+#the 0.28 of the metals under it. The tech LEF the standard cells ship for this stack,
+#gf180mcu_5LM_1TM_11K_7t_tech.lef, says the same.
+#
+#Values are DATABASE UNITS, which for GF180 is nanometers: the micron figure in the manual times 1000. Areas are
+#square nanometers, so 0.1444 um2 is 144400. Nothing is scaled and nothing is rounded.
+
+#Drawn layers ***********************************************************************
+
+layer DNWELL    12/0
+layer Nwell     21/0
+layer LVPWELL  204/0
+layer COMP      22/0
+layer Dualgate  55/0
+layer Poly2     30/0
+layer Nplus     32/0
+layer Pplus     31/0
+layer SAB       49/0
+layer Contact   33/0
+layer Metal1    34/0
+layer Via1      35/0
+layer Metal2    36/0
+layer Via2      38/0
+layer Metal3    42/0
+layer Via3      40/0
+layer Metal4    46/0
+layer Via4      41/0
+layer Metal5    81/0
+
+#Derived layers *********************************************************************
+#
+#A contact lands on COMP or on Poly2, never on both - CO.10 forbids one on a gate - and each is enclosed by what
+#it lands on, by its own rule. Checked as one layer, every contact on poly would fail COMP's enclosure and every
+#contact on COMP would fail Poly2's.
+#
+#**Read by no rule below, for now.** CO.3 and CO.4, the two enclosures they are for, are in the list at the foot of
+#this file - see there for why. They are kept because they are right, and cost nothing while no rule reaches them.
+
+derive compcont = Contact and COMP
+derive polycont = Contact and Poly2
+
+#Rules ******************************************************************************
+#
+#id           check      operands            value   description
+
+#Wells. A space under the equipotential limit is always wrong - the manual says to merge the two - so that is the
+#limit checked; two wells at different potentials need more, which only a netlist can say.
+rule DN.1       width      DNWELL             1700   "DNWELL width"
+rule DN.2a      space      DNWELL             2500   "DNWELL spacing"
+rule NW.1a      width      Nwell               860   "Nwell width"
+rule NW.2a      space      Nwell               600   "Nwell spacing"
+rule LPW.1      width      LVPWELL             600   "LVPWELL width"
+rule LPW.2b     space      LVPWELL             860   "LVPWELL spacing"
+
+#COMP. DF.10's "field area" is the field COMP closes round, which is a hole in the merged layer.
+rule DF.1a      width      COMP                220   "COMP width"
+rule DF.3a      space      COMP                280   "COMP spacing"
+rule DF.9       area       COMP             202500   "COMP min area"
+rule DF.10      holearea   COMP             260000   "Field enclosed by COMP, min area"
+
+#The thick gate oxide
+rule DV.2       space      Dualgate            440   "Dualgate spacing"
+rule DV.5       width      Dualgate            700   "Dualgate width"
+
+#Poly2
+rule PL.1       width      Poly2               180   "Poly2 interconnect width"
+rule PL.3a      space      Poly2               240   "Poly2 spacing"
+
+#Implants
+rule NP.1       width      Nplus               400   "Nplus width"
+rule NP.2       space      Nplus               400   "Nplus spacing"
+rule NP.8a      area       Nplus            350000   "Nplus min area"
+rule PP.1       width      Pplus               400   "Pplus width"
+rule PP.2       space      Pplus               400   "Pplus spacing"
+rule PP.8a      area       Pplus            350000   "Pplus min area"
+
+#Salicide block
+rule SB.1       width      SAB                 420   "SAB width"
+rule SB.2       space      SAB                 420   "SAB spacing"
+
+#Contact. CO.6 is the least Metal1 may cover a contact by anywhere. The 0.06 the manual asks for at the end of a
+#narrow line, and beside a side covered by less than 0.04, depends on finding that end or that side, which a
+#region check cannot do.
+rule CO.1       width      Contact             220   "Contact size"
+rule CO.2a      space      Contact             250   "Contact spacing"
+rule CO.6       enclosure  Contact   Metal1      5   "Metal1 overlap of contact"
+
+#Metal stack
+rule M1.1       width      Metal1              230   "Metal1 width"
+rule M1.2a      space      Metal1              230   "Metal1 spacing"
+rule M1.3       area       Metal1           144400   "Metal1 min area"
+rule M2.1       width      Metal2              280   "Metal2 width"
+rule M2.2a      space      Metal2              280   "Metal2 spacing"
+rule M2.3       area       Metal2           144400   "Metal2 min area"
+rule M3.1       width      Metal3              280   "Metal3 width"
+rule M3.2a      space      Metal3              280   "Metal3 spacing"
+rule M3.3       area       Metal3           144400   "Metal3 min area"
+rule M4.1       width      Metal4              280   "Metal4 width"
+rule M4.2a      space      Metal4              280   "Metal4 spacing"
+rule M4.3       area       Metal4           144400   "Metal4 min area"
+
+#The top metal, by the MetalTop rules
+rule MT.1       width      Metal5              440   "Top metal (Metal5) width"
+rule MT.2a      space      Metal5              460   "Top metal (Metal5) spacing"
+rule MT.4       area       Metal5           562500   "Top metal (Metal5) min area"
+
+#Vias. The metal above a via covers it by 0.01 on every side, and so does the metal below it from Metal2 up.
+rule V1.1       width      Via1                260   "Via1 size"
+rule V1.2a      space      Via1                260   "Via1 spacing"
+rule V1.4       enclosure  Via1      Metal2     10   "Metal2 overlap of Via1"
+rule V2.1       width      Via2                260   "Via2 size"
+rule V2.2a      space      Via2                260   "Via2 spacing"
+rule V2.3       enclosure  Via2      Metal2     10   "Metal2 overlap of Via2"
+rule V2.4       enclosure  Via2      Metal3     10   "Metal3 overlap of Via2"
+rule V3.1       width      Via3                260   "Via3 size"
+rule V3.2a      space      Via3                260   "Via3 spacing"
+rule V3.3       enclosure  Via3      Metal3     10   "Metal3 overlap of Via3"
+rule V3.4       enclosure  Via3      Metal4     10   "Metal4 overlap of Via3"
+rule V4.1       width      Via4                260   "Via4 size"
+rule V4.2a      space      Via4                260   "Via4 spacing"
+rule V4.3       enclosure  Via4      Metal4     10   "Metal4 overlap of Via4"
+rule V4.4       enclosure  Via4      Metal5     10   "Metal5 overlap of Via4"
+
+#Every coordinate against the manufacturing grid, 5 nm on GF180: "Consistent layout all designs on a 0.005um grid"
+#(design manual 3.4), and the off-grid checks of the PDK's own KLayout deck. Stated rather than read back off the
+#file, for the reason sky130A.drc gives.
+rule grid.1     offgrid    *                     5   "Coordinate off the 5 nm manufacturing grid"
+
+#Rules deliberately NOT here *********************************************************
+#
+#Real GF180 rules this checker cannot express, or that are not transcribed yet - listed so their absence is a
+#decision on the record rather than an oversight.
+#
+#CO.3     Poly2 over a contact, 0.07, and
+#CO.4     COMP over a contact, 0.07. In this deck until they were run over the bundled GF180 cells, and taken out
+#         for what they reported there: three signed-off cells - mux2_1, oai22_1 and or2_1 - each failing by a sliver
+#         5 or 10 nm deep at an inside corner of the COMP or the poly. The geometry is fine. In mux2_1 the contact's corner
+#         is 71.6 nm from the COMP's inside corner, which a 70 nm rule passes measured as distance - the way the PDK's
+#         own KLayout deck measures it, `euclidian`. An enclosure here is measured by growing the contact as a
+#         square, and the square's corner reaches into the notch. The edge engine measures as distance, but width
+#         and spacing only, and refuses an enclosure that names a metric. Until it measures one, these would report
+#         the ordinary corners of GlobalFoundries' own cells - 48 of them in one eFPGA tile - so they are not run.
+#
+#V1.3     Metal1 over Via1. The least the manual allows is 0.00 - a via may sit flush with Metal1's edge - and
+#         a limit of zero measures nothing, so the deck refuses it. The 0.06 asked for at the end of a narrow
+#         line depends on finding the end, as CO.6's does.
+#PL.2     Gate length, 0.28 at 3.3 V. It is a width along the channel only, and the gate's other dimension, the
+#         channel width, may be as small as 0.22 - a width check of the gate would report every narrow
+#         transistor. DIRECTIONAL, like poly.7 and poly.8 in sky130A.drc.
+#PL.4     Poly2 end cap beyond COMP, 0.22, and
+#DF.6     COMP beyond the gate, 0.24. Both directional, the same way.
+#Mn.2b    Space to wide metal, 0.30, and MT.2b, 0.60: the limit depends on the width of the metal beside the gap,
+#         which neither engine measures.
+#NP.3 to NP.5, PP.3 to PP.5
+#         The implants' spaces and overlaps to COMP and the gates: two dozen cases conditioned on the wells and on
+#         how far a COMP sits from a well edge. Transcription work, not done.
+#DF.13, DF.14
+#         The furthest a transistor may be from a tap, 20 um at 3.3 V: a latch-up rule over distances, not shapes.
+#PL.8, Mn.4
+#         Poly2 at least 14% and each metal at least 30% of the die. Expressible as density, and wrong on anything
+#         smaller than a die - a cell fails it however it is drawn.
+#The 5 V and 6 V values
+#         Under Dualgate most limits are larger. Checking them takes the rule twice, once inside Dualgate and once
+#         outside, which `except` can say - and is not written yet.

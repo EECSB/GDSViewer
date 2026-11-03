@@ -1,0 +1,281 @@
+@using GDSViewer.Ai
+@implements IDisposable
+@inject IJSRuntime js
+
+@*
+    The live link: Claude, in Claude Desktop or Claude Code, working on the file open here through gds mcp - see LiveLink
+    for how the two ends find each other.
+
+    **A code, and the person saying it to Claude.** Start shows one; "link to my GDS Viewer tab, code 4821 7356" in the
+    chat is what links it. The code is the whole of the trust: the socket is to this computer only, and gds mcp sends
+    calls to no tab but the one whose code the model was given.
+
+    **A card in AI settings rather than a window of its own** (2026-11-03, asked for): it is one more way of letting an AI
+    at the layout, and it had a line of the settings menu to itself beside AI settings. The window is a floating one,
+    so the layout can still be watched changing beside it. Closing it leaves the link up - LiveLinkChip says so, and
+    opens AI settings again at this card.
+*@
+<div id="liveLinkCard" class="aiSettingsCard">
+    @*Named, as the other cards are not, since nothing in it says what it is until its first sentence. The menu's plug.*@
+    <div class="aiSettingsCardTitle">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M5.8 1.6v3M10.2 1.6v3M3.6 4.6h8.8v2.6a4.4 4.4 0 0 1-8.8 0zM8 11.6v2.8"
+                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        MCP server
+    </div>
+
+    <p class="aiLead liveLinkLead">
+        Lets Claude, in Claude Desktop or Claude Code, work on the layout open here through <code>gds mcp</code>. You watch
+        each change land, and each is a step you can undo.
+    </p>
+
+    @*
+        **Compact, since 2026-11-03** (asked for - it looked big and loose): one panel per state, the code and the buttons
+        that act on it on a single row, and the state as a dot and a short line under it rather than a paragraph of its own.
+        Start, Stop and Copy carry icons, as the rest of the app's buttons do.
+    *@
+    @if (Link is not null)
+    {
+        @if (Link.State == LiveLinkState.Waiting)
+        {
+            @*
+                Copy beside the code (2026-11-03, asked for): it takes the whole sentence, so a paste into the chat is the
+                request itself rather than eight digits Claude has to be told what to do with. An icon alone, right after the
+                code, which turns to a tick for a moment once copied; Stop on the right, on the code's line.
+            *@
+            <div id="liveLinkCodeBox" class="liveLinkPanel liveLinkCodeBox">
+                <div class="liveLinkCodeText">
+                    <div class="liveLinkCodeSays">Tell Claude: link to my GDS Viewer tab, code</div>
+
+                    <div class="liveLinkCodeLine">
+                        <div id="liveLinkCode" class="liveLinkCode">@Link.Code</div>
+
+                        <button id="liveLinkCopy" type="button" class="buttonStyle2 smallButton liveLinkButton liveLinkCopy" @onclick="copy"
+                                aria-label="@copyLabel()"
+                                title="Copy &quot;Link to my GDS Viewer tab, code @Link.Code&quot;, to paste into Claude">
+                            @if (copied)
+                            {
+                                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                    <path d="M3 8.4 6.4 11.8 13 4.6" fill="none" stroke="currentColor" stroke-width="1.8"
+                                          stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                                    <rect x="5.2" y="1.8" width="9" height="9" rx="1.4"
+                                          fill="none" stroke="currentColor" stroke-width="1.5" />
+                                    <path d="M10.8 13.2v0.6a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4V6.6a1.4 1.4 0 0 1 1.4-1.4h0.6"
+                                          fill="none" stroke="currentColor" stroke-width="1.5"
+                                          stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            }
+                        </button>
+                    </div>
+                </div>
+
+                <button id="liveLinkStop" type="button" class="buttonStyle2 smallButton liveLinkButton aiDanger" @onclick="stop"
+                        title="Stop waiting. The code goes with it">
+                    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                        <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+                    </svg>
+                    Stop
+                </button>
+            </div>
+
+            <p id="liveLinkStatus" class="liveLinkStatus"><span class="liveLinkDot"></span>Waiting for gds mcp on port @Link.Port…</p>
+
+            @*A wait that may not end, said while it is one - see LiveLink.Notice.*@
+            @if (Link.Notice.Length > 0)
+            {
+                <p id="liveLinkNotice" class="aiFormNote">@Link.Notice</p>
+            }
+
+            @if (copyRefused)
+            {
+                <p id="liveLinkCopyRefused" class="aiFormNote">This page was not allowed the clipboard, so the code is selected instead - Ctrl+C copies it.</p>
+            }
+        }
+        else if (Link.State == LiveLinkState.Linked)
+        {
+            <div class="liveLinkPanel liveLinkPanelLinked">
+                <p id="liveLinkStatus" class="liveLinkStatus liveLinkLinked">
+                    <span class="liveLinkDot"></span>
+                    <span>Linked to @clientSaid(). What it changes goes onto this file's undo, like your own changes.</span>
+                </p>
+
+                <button id="liveLinkStop" type="button" class="buttonStyle2 smallButton liveLinkButton aiDanger" @onclick="stop"
+                        title="End the link. Claude is told, and what it changed stays">
+                    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                        <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+                    </svg>
+                    Stop
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="liveLinkPanel liveLinkStart">
+                <label class="liveLinkPortLabel" for="liveLinkPort">Port</label>
+
+                <input id="liveLinkPort" class="aiField liveLinkPort" type="number" min="1" max="65535" step="1"
+                       value="@port" @onchange="portChanged"
+                       title="The port gds mcp listens on: 43707, unless it was started with --link-port" />
+
+                <button id="liveLinkStart" type="button" class="buttonStyle2 smallButton liveLinkButton" @onclick="start"
+                        title="Wait for gds mcp on this port, and show the code to tell Claude">
+                    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                        <path d="M4.5 2.6v10.8a.6.6 0 0 0 .9.5l8.4-5.4a.6.6 0 0 0 0-1L5.4 2.1a.6.6 0 0 0-.9.5z" fill="currentColor" />
+                    </svg>
+                    @startSaid()
+                </button>
+            </div>
+
+            @if (Link.State == LiveLinkState.Ended)
+            {
+                <p id="liveLinkStatus" class="liveLinkStatus liveLinkEnded"><span class="liveLinkDot"></span>The link ended: @Link.Ending</p>
+            }
+
+            <p class="aiFormNote">
+                gds mcp has to be added to Claude first - <code>claude mcp add gds -- gds mcp</code> for Claude Code, or the
+                few lines the README gives for Claude Desktop.
+            </p>
+        }
+
+        @if (Link.Calls.Count > 0)
+        {
+            @*Newest first: the one being answered now is the one worth reading.*@
+            <div id="liveLinkCalls" class="liveLinkCalls">
+                @for (int i = Link.Calls.Count - 1; i >= 0; i--)
+                {
+                    var call = Link.Calls[i];
+
+                    <div class="liveLinkCall @(call.Text is null ? "liveLinkCallRunning" : "") @(call.IsError ? "liveLinkCallRefused" : "")">
+                        <span class="liveLinkCallName">@call.Name.Replace('_', ' ')</span>
+                        <span class="liveLinkCallSaid" title="@call.Text">@(call.Text ?? "Working…")</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    <p class="aiFormNote">
+        The link is to this computer only, 127.0.0.1, and only the gds mcp given the code can use it. What Claude reads from
+        the layout goes to its provider with the rest of your conversation, as anything you show it does.
+    </p>
+</div>
+
+@code {
+    [Parameter]
+    public LiveLink? Link { get; set; }
+
+    ///<summary>The port Start waits on. Not kept: nearly everybody uses gds mcp's own, and a link is a choice made each time.</summary>
+    private int port = LiveLink.DefaultPort;
+
+    private LiveLink? watching;
+
+    private bool copied = false;
+
+    private bool copyRefused = false;
+
+    private int copyRun = 0;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Link, watching))
+            return;
+
+        if (watching is not null)
+            watching.Changed -= redraw;
+
+        watching = Link;
+
+        if (watching is not null)
+            watching.Changed += redraw;
+    }
+
+    public void Dispose()
+    {
+        if (watching is not null)
+            watching.Changed -= redraw;
+    }
+
+    private async Task redraw()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void portChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int typed)
+            && typed >= 1
+            && typed <= 65535)
+            port = typed;
+    }
+
+    private void start()
+    {
+        Link?.Start(port);
+    }
+
+    private async Task stop()
+    {
+        if (Link is not null)
+            await Link.StopAsync();
+    }
+
+    ///
+    ///The request with its code onto the clipboard, saying so on the button for a moment - ShareDialog's copy, whose
+    ///notes say why it draws before the wait and counts its runs.
+    ///
+    private async Task copy()
+    {
+        if (Link is null)
+            return;
+
+        copied = await js.InvokeAsync<bool>("copyText", $"Link to my GDS Viewer tab, code {Link.Code}", "liveLinkCode");
+        copyRefused = !copied;
+
+        int run = ++copyRun;
+
+        if (!copied)
+            return;
+
+        StateHasChanged();
+
+        await Task.Delay(2000);
+
+        if (run != copyRun)
+            return;
+
+        copied = false;
+
+        StateHasChanged();
+    }
+
+    private string copyLabel()
+    {
+        if (copied)
+            return "Copied";
+
+        return "Copy";
+    }
+
+    private string startSaid()
+    {
+        if (Link?.State == LiveLinkState.Ended)
+            return "Link again";
+
+        return "Start";
+    }
+
+    ///<summary>Who the link is to, as gds mcp heard the client introduce itself - or "Claude" when it said nothing.</summary>
+    private string clientSaid()
+    {
+        if (Link is null || Link.Client.Length == 0)
+            return "Claude";
+
+        return Link.Client;
+    }
+}

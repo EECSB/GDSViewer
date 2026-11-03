@@ -1,0 +1,108 @@
+@*
+    Asked as the app opens: whether a tour is wanted (2026-11-03, the user, after GraphDBViewer's in Treeality). Each
+    time it opens, until "Don't show this again" is ticked when it is answered; Settings keeps the tour for later.
+    "Show me" starts the tour, "No thanks" or Escape puts the question away. Whether it is asked at all is the page's -
+    see askAboutTour in Pages/Viewer.razor.
+
+    **A question, not the tour itself.** The tour's own rule still holds - nothing is sprung over the page - so it is
+    one small card that a key or a click puts away, and the page underneath is already open and usable.
+
+    A row of standard cells drawn across the top, the way GraphDBViewer draws a small graph there, so the question
+    is about a chip at a glance: rails in met1, diffusion between them, poly gates across it.
+*@
+@inject IJSRuntime js
+
+@if (Visible)
+{
+    <div id="tourQuestionBackdrop" class="tourQuestionBackdrop" @onclick="() => answer(false)"></div>
+
+    <div id="tourQuestion" class="tourQuestion" role="dialog" aria-modal="true" aria-labelledby="tourQuestionTitle"
+         tabindex="-1" @onkeydown="onKey">
+        <svg class="tourQuestionArt" viewBox="0 0 448 110" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            @foreach (var x in Cells)
+            {
+                <rect class="tourDiff" x="@(x + 6)" y="22" width="44" height="26" />
+                <rect class="tourDiff" x="@(x + 6)" y="62" width="44" height="26" />
+                <rect class="tourPoly" x="@(x + 16)" y="14" width="6" height="82" />
+                <rect class="tourPoly" x="@(x + 34)" y="14" width="6" height="82" />
+            }
+
+            <rect class="tourMet1" x="-4" y="2" width="456" height="12" />
+            <rect class="tourMet1" x="-4" y="96" width="456" height="12" />
+        </svg>
+
+        <div class="tourQuestionBody">
+            <div id="tourQuestionTitle" class="tourQuestionTitle">
+                <img src="resources/Images/Logo/icon2.png" alt="" class="tourQuestionLogo" />
+                Want a tour?
+            </div>
+
+            <div class="tourText">A short walk round GDS Viewer: where things are and what they are for. It is in Settings too, whenever you want it.</div>
+        </div>
+
+        <div class="tourQuestionFoot">
+            <label class="tourQuestionNever">
+                <input id="tourQuestionNever" class="form-check-input" type="checkbox" @bind="never" />
+                Don't show this again
+            </label>
+
+            <button type="button" id="tourQuestionNo" class="buttonStyle2 smallButton tourQuestionButton tourQuestionNo"
+                    @onclick="() => answer(false)">No thanks</button>
+            <button type="button" id="tourQuestionYes" class="buttonStyle2 smallButton tourQuestionButton"
+                    @onclick="() => answer(true)" @ref="yes">Show me</button>
+        </div>
+    </div>
+}
+
+@code {
+    ///<summary>How the question was answered: whether to show the tour, and whether never to ask again.</summary>
+    public readonly record struct Answer(bool Show, bool Never);
+
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback<Answer> OnAnswer { get; set; }
+
+    ///<summary>Where each cell of the row across the top starts.</summary>
+    private static readonly int[] Cells = [8, 64, 120, 176, 232, 288, 344, 400];
+
+    private bool never;
+
+    private bool focused;
+
+    private ElementReference yes;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible)
+        {
+            focused = false;
+
+            return;
+        }
+
+        if (focused)
+            return;
+
+        focused = true;
+
+        //On "Show me", so Enter takes the tour; Escape, heard anywhere on the card, says no thanks.
+        try
+        {
+            await yes.FocusAsync();
+        }
+        catch { }
+    }
+
+    private async Task onKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            await answer(false);
+    }
+
+    private async Task answer(bool show)
+    {
+        await OnAnswer.InvokeAsync(new Answer(show, never));
+    }
+}

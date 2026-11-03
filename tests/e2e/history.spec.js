@@ -5,7 +5,7 @@
 //interop, and what is actually being tested is a round trip through storage rather than a function's return
 //value - a history that saves and never restores would pass any test that did not reload.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, layerCheckbox, hideLayer, openLayerSettings, layerNameBox, svgCounts, selectExample, editorText, saveEditorText, expectEditorLoaded, selectView, MOSFET, MOSFET_POLYGONS, SKY130_CELL, previewShapeCount, openedOnItsOwn, uploadFile, acceptsClosingWhatIsOpen, answersClosingItself } = require('./helpers');
+const { gotoApp, gotoExample, expectLoaded, openFile, layerCheckbox, hideLayer, openLayerSettings, layerNameBox, svgCounts, selectExample, editorText, saveEditorText, expectEditorLoaded, selectView, MOSFET, MOSFET_POLYGONS, SKY130_CELL, previewPicture, uploadOpenedOnItsOwn } = require('./helpers');
 
 //The picker lists files by their whole name; ?file= and the history both name them the same way. MOSFET
 //and SKY130_CELL are slugs, so the extension goes back on for anything that goes through the list.
@@ -71,22 +71,20 @@ async function clearHistory(page, { answer = 'accept' } = {}) {
 }
 
 ///
-///Opens a row of the history, and says yes to the question that asks.
-///
-///A row replaces what is on screen exactly as Open and Examples do, so it asks first - see
-///discardsWhatIsOpen in Viewer.razor. Playwright dismisses a dialog nobody claimed, which is Cancel.
+///Opens a row of the history - into a tab of its own, or the tab that already holds that file. See tabs.spec.
 ///
 async function openRow(page, name) {
-    acceptsClosingWhatIsOpen(page);
-
     await page.locator(`#historyPicker .historyRow[data-file="${name}"] .historyRowName`).click();
 }
 
+///
 ///Puts a file on the page that did not come from the bundled list, the way a person would.
+///
+///Long enough for the question a big file raises once it has been read, without waiting it out where it is not
+///asked - over the app's own example it never is. See uploadOpenedOnItsOwn.
+///
 async function upload(page, name, bytes) {
-    await uploadFile(page, { name, mimeType: 'application/octet-stream', buffer: bytes });
-
-    await openedOnItsOwn(page, 60000);
+    await uploadOpenedOnItsOwn(page, { name, mimeType: 'application/octet-stream', buffer: bytes }, 60000);
 
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(name);
 }
@@ -154,9 +152,10 @@ function grownGds(bytes, targetSize) {
 ///
 ///IBrowserFile.OpenReadStream refuses anything over 512 KB unless told otherwise, and it was not being
 ///told - so a real layout of a megabyte was refused with a message about a limit nobody had chosen. Every
-///bundled example is under 60 KB, which is why nothing in the corpus or the rest of this suite met it.
+///bundled cell is under 60 KB, which is why nothing in the corpus or the rest of this suite met it; the
+///designs bundled since are bigger, but an example is fetched from the server rather than uploaded.
 ///
-///The file is built rather than found: 897 sample files and not one of them is big enough to show this.
+///The file is built rather than found, so it sits just over the limit whatever happens to be bundled.
 ///
 test('a file larger than the browser default upload limit still opens', async ({ page }) => {
     await gotoExample(page, MOSFET);
@@ -255,49 +254,41 @@ test('the most recently changed file is at the top', async ({ page }) => {
 ///which would pass whether or not anything was ever written.
 ///
 ///
-///**A row closes what is open, so it asks first** - the same question New, Open and the Examples list ask.
+///**A row opens in a tab of its own, and asks nothing** - the file on screen keeps its tab, as it does for New,
+///Open and the Examples list. See tabs.spec.
 ///
-///Here rather than beside those three, because a row has to be earned before it can be pressed: the write
-///goes through .NET to IndexedDB, and a test that navigates away the moment the file is on screen finds no
-///row at all. expectHistory is what waits for it.
+///Here rather than there, because a row has to be earned before it can be pressed: the write goes through .NET to
+///IndexedDB, and a test that navigates away the moment the file is on screen finds no row at all. expectHistory
+///is what waits for it.
 ///
-test('opening a row asks before it closes what is open', async ({ page }) => {
+test('a row opens in a tab of its own, and asks nothing', async ({ page }) => {
     await gotoExample(page, MOSFET);
     await expect.poll(async () => openFile(page)).toBe(MOSFET_FILE);
 
     await hideLayer(page);
 
-    //Somewhere else, so the row is not the file already on screen.
+    //Somewhere else, so the row is not the file on screen.
     await selectExample(page, SKY130_FILE);
     await expect.poll(async () => openFile(page)).toBe(SKY130_FILE);
 
     await openHistory(page);
     await expectHistory(page, [MOSFET_FILE]);
 
-    //selectExample above left a standing yes to this question, and this test is about answering it no.
-    answersClosingItself(page);
+    const asked = [];
 
-    let asked = '';
-
-    page.once('dialog', dialog => {
-        asked = dialog.message();
+    page.on('dialog', dialog => {
+        asked.push(dialog.message());
 
         return dialog.dismiss();
     });
 
     await page.locator(`#historyPicker .historyRow[data-file="${MOSFET_FILE}"] .historyRowName`).click();
 
-    //Both files named: the one arriving and the one going.
-    expect(asked).toContain(MOSFET_FILE);
-    expect(asked).toContain(SKY130_FILE);
-
-    //And nothing happened.
-    await expect.poll(async () => openFile(page), { timeout: 10000 }).toBe(SKY130_FILE);
-
-    //Saying yes does what the row always did.
-    await openRow(page, MOSFET_FILE);
-
+    //The row is the tab Mosfet already has - the same file, kept by the same saves - so it is that tab, not a third.
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(MOSFET_FILE);
+    await expect(page.locator('#fileTabs .fileTab')).toHaveCount(2);
+
+    expect(asked).toEqual([]);
 });
 
 test('a file comes back out of the history in the state it was left in', async ({ page }) => {
@@ -422,12 +413,69 @@ test('pointing at a row draws it without opening it', async ({ page }) => {
     await openHistory(page);
     await page.locator('#historyPicker .historyRow[data-file="Mosfet.gds"]').hover();
 
-    //Drawn...
-    await expect.poll(async () => previewShapeCount(page, '.examplePreview'), { timeout: 60000 })
-        .toBeGreaterThan(0);
+    //Drawn - a picture of the row, with something on it...
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 60000 }).toBe('Preview of Mosfet.gds');
+    expect((await previewPicture(page)).drawn).toBeGreaterThan(0);
 
     //...and the file on screen is still the other one.
     expect(await openFile(page)).toBe(SKY130_FILE);
+});
+
+///
+///**With Auto-generate preview off, a row pointed at waits for a press on the frame** - which is beside the list, so
+///the row stays the one waiting as the pointer leaves the list to get there.
+///
+///**The box is in the line under the popup, beside Clear History and under the picture**, and the picture as tall as
+///the list beside it (2026-10-21). It was under the picture, a line of its own out of the picture's height.
+///
+test('with Auto-generate preview off, a row waits for a press on the frame', async ({ page }) => {
+    await gotoExample(page, MOSFET);
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+
+    //A bundled example is kept here once something about it has changed.
+    await hideLayer(page);
+
+    await selectExample(page, SKY130_FILE);
+    await expect.poll(async () => openFile(page)).toBe(SKY130_FILE);
+
+    await openHistory(page);
+
+    const laid = await page.evaluate(() => {
+        const box = (element) => element.getBoundingClientRect();
+        const list = box(document.getElementById('historyPicker').closest('.examplePickerList'));
+        const frame = box(document.querySelector('.examplePreviewFrame'));
+        const tick = box(document.getElementById('historyAutoPreview').closest('label'));
+        const clear = box(document.getElementById('clearHistoryButton'));
+
+        return {
+            tops: frame.top - list.top,
+            bottoms: frame.bottom - list.bottom,
+            tickMiddle: tick.top + (tick.height / 2),
+            clearTop: clear.top,
+            clearBottom: clear.bottom,
+            lefts: tick.left - frame.left
+        };
+    });
+
+    expect(Math.abs(laid.tops)).toBeLessThan(1);
+    expect(Math.abs(laid.bottoms)).toBeLessThan(1);
+    expect(laid.tickMiddle).toBeGreaterThan(laid.clearTop);
+    expect(laid.tickMiddle).toBeLessThan(laid.clearBottom);
+    expect(Math.abs(laid.lefts)).toBeLessThan(1);
+
+    await page.locator('#historyAutoPreview').uncheck();
+    await page.locator('#historyPicker .historyRow[data-file="Mosfet.gds"]').hover();
+
+    const generate = page.locator('#historyPreviewGenerate');
+
+    await expect(generate).toBeVisible({ timeout: 15000 });
+    await expect(generate).toContainText('Mosfet.gds');
+    await expect(page.locator('.examplePreview')).toHaveCount(0);
+
+    await generate.click();
+
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 60000 }).toBe('Preview of Mosfet.gds');
+    expect((await previewPicture(page)).drawn).toBeGreaterThan(0);
 });
 
 test('a row can be thrown away on its own', async ({ page }) => {
@@ -579,11 +627,18 @@ test('clearing removes the stored files, not just the rows', async ({ page }) =>
     const before = await page.evaluate(async () => window.gdsStorage.get('gdsviewer.history.uploaded.gds'));
     expect(before).not.toBeNull();
 
+    //And the file's bytes, which sit beside the row rather than in it - see SavedSession.BytesApart.
+    await expect.poll(async () =>
+        page.evaluate(async () => window.gdsStorage.get('gdsviewer.history.uploaded.gds#bytes'))).not.toBeNull();
+
     await clearHistory(page);
     await expectHistory(page, []);
 
     await expect.poll(async () =>
         page.evaluate(async () => window.gdsStorage.get('gdsviewer.history.uploaded.gds'))).toBeNull();
+
+    await expect.poll(async () =>
+        page.evaluate(async () => window.gdsStorage.get('gdsviewer.history.uploaded.gds#bytes'))).toBeNull();
 });
 
 ///The list survives the browser being closed, which is the whole reason it is in IndexedDB.

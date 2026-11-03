@@ -39,6 +39,24 @@ namespace GdsII
         {
             var summaries = new List<CellSummary>();
 
+            //
+            //**Every placement counted in one walk of the library**, rather than a walk per cell. This asked
+            //PlacementsOf of each cell in turn, and each of those reads every element of every cell - so a
+            //library of a few hundred cells was read a few hundred times over, every time a file opened. On
+            //the RGB mixer that was most of the 1.7 seconds the 2D view spent setting up a file it had already
+            //flattened, before it had drawn anything.
+            //
+            var placed = new Dictionary<string, int>();
+
+            foreach (var structure in gds.StreamFormat.Structures)
+            {
+                foreach (string name in Places(structure))
+                {
+                    placed.TryGetValue(name, out int already);
+                    placed[name] = already + 1;
+                }
+            }
+
             foreach (var structure in gds.StreamFormat.Structures)
             {
                 string name = NameOf(structure);
@@ -46,9 +64,11 @@ namespace GdsII
                 if (name.Length == 0)
                     continue;
 
+                placed.TryGetValue(name, out int placements);
+
                 summaries.Add(new CellSummary(
                     name,
-                    PlacementsOf(gds, name),
+                    placements,
                     structure.Elements.Count,
                     Places(structure).Count));
             }
@@ -183,14 +203,17 @@ namespace GdsII
             Layer,
             Shape,
 
-            ///<summary>How many shapes on a layer were not drawn. See Tree's mostShapes.</summary>
+            ///<summary>One SREF or AREF of a cell, in the cell placing it. See Tree.</summary>
+            Placement,
+
+            ///<summary>How many shapes on a layer, or placements of a cell, were not listed. See Tree's caps.</summary>
             Rest
         }
 
         ///
-        ///One row of the tree, at whichever of the three levels it belongs to.
+        ///One row of the tree, at whichever of its levels it belongs to.
         ///
-        ///One record for all of them rather than three, because what a tree is drawn from is a flat list in
+        ///One record for all of them rather than one each, because what a tree is drawn from is a flat list in
         ///order - the depth is what makes it a tree - and a list of one type is what a renderer can walk.
         ///The fields that do not apply to a kind are left at their defaults; Kind says which are real.
         ///
@@ -211,8 +234,14 @@ namespace GdsII
             ///<summary>Set on a Cell row.</summary>
             public CellSummary? Cell { get; init; }
 
-            ///<summary>The cell a Layer or a Shape belongs to.</summary>
+            ///<summary>A Cell row's own cell, the cell a Layer or a Shape belongs to, and the cell a Placement places.</summary>
             public string Structure { get; init; } = "";
+
+            ///<summary>The cell placing a Cell row's cell, or holding a Placement. Empty for a cell at the top.</summary>
+            public string Inside { get; init; } = "";
+
+            ///<summary>The cell at the top of the row's branch: where the drawing starts for what the row stands for.</summary>
+            public string Top { get; init; } = "";
 
             ///<summary>Set on a Layer row, and on a Shape row for the layer it is on.</summary>
             public LayerKey Layer { get; init; }
@@ -220,10 +249,26 @@ namespace GdsII
             ///<summary>The file's own element, which is what selecting a Shape row has to find.</summary>
             public ElementModel? Shape { get; init; }
 
-            ///<summary>Shapes on a Layer row; shapes left undrawn on a Rest row.</summary>
+            ///<summary>Set on a Placement row: the SREF or AREF itself.</summary>
+            public ElementModel? Placement { get; init; }
+
+            ///
+            ///The placements a row is reached through from Top, outermost first - none for a cell at the top and what
+            ///it holds itself. A cell placed four hundred times draws each of its shapes four hundred times, and this
+            ///says which of them a row is; see DrawnThrough.
+            ///
+            public IReadOnlyList<ElementModel> Via { get; init; } = Array.Empty<ElementModel>();
+
+            ///
+            ///The coordinates of the cell holding what the row stands for, out to Top's: composed through Via, an
+            ///array at its first place. Identity at the top, where a cell's own coordinates are the drawing's.
+            ///
+            public Transform Drawn { get; init; } = Transform.Identity;
+
+            ///<summary>Shapes on a Layer row; shapes or placements left unlisted on a Rest row.</summary>
             public int Count { get; init; }
 
-            ///<summary>This cell is drawn above as well, so what is under it is not repeated here.</summary>
+            ///<summary>This cell is already on the path above it - a loop - so nothing is listed under it.</summary>
             public bool Repeats { get; init; }
 
             ///<summary>Whether a press on it would open or shut something.</summary>
@@ -231,31 +276,99 @@ namespace GdsII
 
             ///<summary>Whether what it folds is showing.</summary>
             public bool Open { get; init; }
+
+            ///
+            ///Whether it starts open, so `folded` is what shuts it: a cell at the top. Everything else starts shut,
+            ///and `opened` is what opens it - see Tree.
+            ///
+            public bool StartsOpen => Kind == TreeRowKind.Cell && Depth == 0;
+
+            ///
+            ///Equal when every field is, Via by the placements it holds rather than by which list holds them.
+            ///
+            ///A record compares a list by reference, so two trees built from the same file, row for row the same,
+            ///came out different the moment a row carried placements - and two builds agreeing is exactly what the
+            ///view's kept rows rest on (see HierarchyTests' edits that keep every row). A field added above has to
+            ///be added here.
+            ///
+            public bool Equals(TreeRow? other)
+            {
+                if (other is null)
+                    return false;
+
+                if (ReferenceEquals(this, other))
+                    return true;
+
+                return Kind == other.Kind
+                    && Depth == other.Depth
+                    && Key == other.Key
+                    && Equals(Cell, other.Cell)
+                    && Structure == other.Structure
+                    && Inside == other.Inside
+                    && Top == other.Top
+                    && Layer.Equals(other.Layer)
+                    && ReferenceEquals(Shape, other.Shape)
+                    && ReferenceEquals(Placement, other.Placement)
+                    && Via.SequenceEqual(other.Via)
+                    && Drawn.Equals(other.Drawn)
+                    && Count == other.Count
+                    && Repeats == other.Repeats
+                    && Folds == other.Folds
+                    && Open == other.Open;
+            }
+
+            public override int GetHashCode()
+            {
+                return HashCode.Combine(Kind, Depth, Key, Count);
+            }
         }
 
         ///<summary>How many shapes a layer lists before the rest become one line saying how many.</summary>
         public const int MostShapesListed = 200;
 
         ///
-        ///The whole tree: cells, the layers each one draws on, and the shapes on those layers.
+        ///How many of one cell's placements in another are listed before the rest become one line saying how many.
+        ///A filler cell can be placed thousands of times, and a row each is a list nobody reads past. The text view's
+        ///cell list lists them by the same number.
         ///
-        ///The cells are Tree(gds)'s, walked the same way and with the same answers for a shared cell, a
-        ///loop and a cell nothing reaches - see it for why each of those comes out as it does.
+        public const int MostPlacementsListed = 200;
+
         ///
-        ///**What folds, and what it starts as.** A cell is open unless it is in `folded`, because the tree
-        ///has always shown the whole hierarchy at once and that is the thing it is for. A layer is shut
-        ///unless it is in `opened`, because the shapes are the level that can be a hundred thousand rows and
-        ///nobody arrives wanting all of them. So the two sets are the two defaults, and neither is a set of
+        ///The whole tree: the cells, where each is placed, and what each placement draws.
+        ///
+        ///**A cell at the top lists what it holds itself** - the layers it draws on, with the shapes on them, then
+        ///each cell it places. **A placed cell lists its placements in the cell placing it**, one row each, where it
+        ///is and how it is turned or arrayed, as the text view's cell list does. **A placement lists what it
+        ///draws**: the placed cell's layers and shapes, and the cells that one places in turn. Since 2026-10-17 -
+        ///before, a placed cell went straight to its layers, and nothing in the tree said where any instance of it
+        ///was.
+        ///
+        ///A shape under a placement is the cell's own, said where that placement draws it - see TreeRow.Drawn - so
+        ///the same shape under two placements says two places, and a press on either finds the one it says.
+        ///
+        ///**What folds, and what it starts as.** A cell at the top is open unless it is in `folded`, so the tree
+        ///arrives showing what the file holds. Everything else is shut unless it is in `opened`: a layer, because
+        ///the shapes are the level that can be a hundred thousand rows; a placed cell and a placement, because a
+        ///standard cell placed four hundred times would be four hundred rows under every cell placing it, and
+        ///everything under each of those again. So the two sets are the two defaults, and neither is a set of
         ///"everything" that has to be built before anything can be drawn.
         ///
-        ///**A layer lists at most mostShapes of them**, then one row saying how many are left. A cell of
-        ///forty thousand boundaries is a real file, not a corner case, and a tree that tried to draw them
-        ///would take the page down - the cap is what makes this level safe to open at all. The row that says
-        ///so is there because a list that silently stopped would be a lie about the file.
+        ///**A layer lists at most mostShapes, and a cell at most mostPlacements**, then one row saying how many are
+        ///left. A cell of forty thousand boundaries is a real file, not a corner case, and a tree that tried to
+        ///draw them would take the page down - the cap is what makes the level safe to open at all. The row that
+        ///says so is there because a list that silently stopped would be a lie about the file.
         ///
-        ///Layers before placements, both under the cell: what a cell is made of, then what it holds.
+        ///A cell placed by two parents is under both, with its placements in each. A loop is drawn once and never
+        ///descended into, and a cell nothing reaches is at the root - see Tree(gds) for both.
         ///
-        public static List<TreeRow> Tree(GDS gds, IReadOnlySet<string> folded, IReadOnlySet<string> opened, int mostShapes = MostShapesListed)
+        ///Layers before placed cells, both under what holds them: what a cell is made of, then what it places.
+        ///
+        public static List<TreeRow> Tree(
+            GDS gds,
+            IReadOnlySet<string> folded,
+            IReadOnlySet<string> opened,
+            int mostShapes = MostShapesListed,
+            int mostPlacements = MostPlacementsListed)
         {
             var rows = new List<TreeRow>();
             var summaries = Summarize(gds);
@@ -268,57 +381,30 @@ namespace GdsII
             foreach (var summary in summaries)
                 byName[summary.Name] = summary;
 
-            var seen = new HashSet<string>();
-
-            void walk(CellSummary cell, int depth, string path, HashSet<string> onThePath)
+            //
+            //What a cell holds, under the row standing for it - a cell at the top, or a placement of one: its layers
+            //and their shapes, then each cell it places, with that cell's placements in it when its row is open, and
+            //under each placement opened the same again.
+            //
+            void holds(StructureModel structure, string top, int depth, string path, IReadOnlyList<ElementModel> via, Transform drawn, HashSet<string> onThePath)
             {
-                bool repeats = !seen.Add(cell.Name);
-                var structure = Named(gds, cell.Name);
+                string name = NameOf(structure);
 
-                //Distinct, because a cell placed four times by one parent is one child of it.
-                var children = new List<string>();
-
-                if (structure is not null && !repeats)
+                foreach (var (layer, shapes) in LayersIn(structure))
                 {
-                    foreach (string placed in Places(structure))
-                    {
-                        if (!children.Contains(placed))
-                            children.Add(placed);
-                    }
-                }
-
-                var layers = LayersIn(structure);
-                bool folds = !repeats && (layers.Count > 0 || children.Count > 0);
-                bool open = folds && !folded.Contains(path);
-
-                rows.Add(new TreeRow
-                {
-                    Kind = TreeRowKind.Cell,
-                    Depth = depth,
-                    Key = path,
-                    Cell = cell,
-                    Structure = cell.Name,
-                    Repeats = repeats,
-                    Folds = folds,
-                    Open = open
-                });
-
-                //Already drawn somewhere above, so what is under it has been drawn there too.
-                if (repeats || !open || structure is null)
-                    return;
-
-                foreach (var (layer, shapes) in layers)
-                {
-                    string layerPath = $"{path}{layer}";
+                    string layerPath = $"{path}\u001F{layer}";
                     bool showing = opened.Contains(layerPath);
 
                     rows.Add(new TreeRow
                     {
                         Kind = TreeRowKind.Layer,
-                        Depth = depth + 1,
+                        Depth = depth,
                         Key = layerPath,
-                        Structure = cell.Name,
+                        Structure = name,
+                        Top = top,
                         Layer = layer,
+                        Via = via,
+                        Drawn = drawn,
                         Count = shapes.Count,
                         Folds = shapes.Count > 0,
                         Open = showing
@@ -332,11 +418,14 @@ namespace GdsII
                         rows.Add(new TreeRow
                         {
                             Kind = TreeRowKind.Shape,
-                            Depth = depth + 2,
-                            Key = $"{layerPath}{at}",
-                            Structure = cell.Name,
+                            Depth = depth + 1,
+                            Key = $"{layerPath}\u001F{at}",
+                            Structure = name,
+                            Top = top,
                             Layer = layer,
-                            Shape = shapes[at]
+                            Shape = shapes[at],
+                            Via = via,
+                            Drawn = drawn
                         });
                     }
 
@@ -345,16 +434,17 @@ namespace GdsII
                         rows.Add(new TreeRow
                         {
                             Kind = TreeRowKind.Rest,
-                            Depth = depth + 2,
-                            Key = $"{layerPath}…",
-                            Structure = cell.Name,
+                            Depth = depth + 1,
+                            Key = $"{layerPath}\u001F…",
+                            Structure = name,
+                            Top = top,
                             Layer = layer,
                             Count = shapes.Count - mostShapes
                         });
                     }
                 }
 
-                foreach (string placed in children)
+                foreach (var (placed, placements) in PlacementsByCell(structure))
                 {
                     //A name that points at nothing is a broken reference, which the notice above the view
                     //reports - there is no row to draw for a cell the file does not contain.
@@ -369,30 +459,127 @@ namespace GdsII
                         rows.Add(new TreeRow
                         {
                             Kind = TreeRowKind.Cell,
-                            Depth = depth + 1,
+                            Depth = depth,
                             Key = childPath,
                             Cell = child,
-                            Structure = child.Name,
+                            Structure = placed,
+                            Inside = name,
+                            Top = top,
+                            Via = via,
+                            Drawn = drawn,
                             Repeats = true
                         });
 
                         continue;
                     }
 
-                    onThePath.Add(placed);
+                    bool listing = opened.Contains(childPath);
 
-                    walk(child, depth + 1, childPath, onThePath);
+                    rows.Add(new TreeRow
+                    {
+                        Kind = TreeRowKind.Cell,
+                        Depth = depth,
+                        Key = childPath,
+                        Cell = child,
+                        Structure = placed,
+                        Inside = name,
+                        Top = top,
+                        Via = via,
+                        Drawn = drawn,
+                        Folds = true,
+                        Open = listing
+                    });
 
-                    onThePath.Remove(placed);
+                    if (!listing)
+                        continue;
+
+                    //Whether a placement of it has anything to open to: a shape on a layer, or a cell placed.
+                    var inner = Named(gds, placed);
+                    bool draws = inner is not null && inner.Elements.Any(element => element.Element is IHasLayer || PlacedBy(element) is not null);
+
+                    for (int at = 0; at < placements.Count && at < mostPlacements; at++)
+                    {
+                        var placement = placements[at];
+                        string placementPath = $"{childPath}\u001F#{at}";
+                        bool showing = draws && opened.Contains(placementPath);
+
+                        rows.Add(new TreeRow
+                        {
+                            Kind = TreeRowKind.Placement,
+                            Depth = depth + 1,
+                            Key = placementPath,
+                            Structure = placed,
+                            Inside = name,
+                            Top = top,
+                            Placement = placement,
+                            Via = via,
+                            Drawn = drawn,
+                            Folds = draws,
+                            Open = showing
+                        });
+
+                        if (!showing || inner is null)
+                            continue;
+
+                        //
+                        //Drawn where the placement puts it, an array at its first place - the one the flattener
+                        //draws first, and where the array is written.
+                        //
+                        var through = new List<ElementModel>(via) { placement };
+                        var placedAt = drawn;
+
+                        if (InstancesOf(placement, 1) is { Count: > 0 } first)
+                            placedAt = first[0].Then(drawn);
+
+                        onThePath.Add(placed);
+
+                        holds(inner, top, depth + 2, placementPath, through, placedAt, onThePath);
+
+                        onThePath.Remove(placed);
+                    }
+
+                    if (placements.Count > mostPlacements)
+                    {
+                        rows.Add(new TreeRow
+                        {
+                            Kind = TreeRowKind.Rest,
+                            Depth = depth + 1,
+                            Key = $"{childPath}\u001F#…",
+                            Structure = placed,
+                            Inside = name,
+                            Top = top,
+                            Count = placements.Count - mostPlacements
+                        });
+                    }
                 }
+            }
+
+            void root(CellSummary cell)
+            {
+                var structure = Named(gds, cell.Name);
+                bool folds = structure is not null && structure.Elements.Any(element => element.Element is IHasLayer || PlacedBy(element) is not null);
+                bool open = folds && !folded.Contains(cell.Name);
+
+                rows.Add(new TreeRow
+                {
+                    Kind = TreeRowKind.Cell,
+                    Depth = 0,
+                    Key = cell.Name,
+                    Cell = cell,
+                    Structure = cell.Name,
+                    Top = cell.Name,
+                    Folds = folds,
+                    Open = open
+                });
+
+                if (open && structure is not null)
+                    holds(structure, cell.Name, 1, cell.Name, Array.Empty<ElementModel>(), Transform.Identity, new HashSet<string> { cell.Name });
             }
 
             foreach (var summary in summaries)
             {
-                if (!summary.IsTop)
-                    continue;
-
-                walk(summary, 0, summary.Name, new HashSet<string> { summary.Name });
+                if (summary.IsTop)
+                    root(summary);
             }
 
             //
@@ -407,13 +594,131 @@ namespace GdsII
 
             foreach (var summary in summaries)
             {
-                if (reachable.Contains(summary.Name))
-                    continue;
-
-                walk(summary, 0, summary.Name, new HashSet<string> { summary.Name });
+                if (!reachable.Contains(summary.Name))
+                    root(summary);
             }
 
             return rows;
+        }
+
+        ///
+        ///What a cell places, a cell at a time: each cell it places, in the order the file first places it, with every
+        ///SREF and AREF naming it in the order the file holds them.
+        ///
+        ///One walk of the cell for all of them. Asking PlacementsIn of each would walk it once per cell placed, which
+        ///on the RGB mixer is fifty walks of 22,725 elements to list what one walk finds.
+        ///
+        public static List<(string Cell, List<ElementModel> Placements)> PlacementsByCell(StructureModel structure)
+        {
+            var found = new List<(string Cell, List<ElementModel> Placements)>();
+            var at = new Dictionary<string, int>();
+
+            foreach (var element in structure.Elements)
+            {
+                if (PlacedBy(element) is not string name)
+                    continue;
+
+                if (!at.TryGetValue(name, out int where))
+                {
+                    where = found.Count;
+                    at[name] = where;
+
+                    found.Add((name, new List<ElementModel>()));
+                }
+
+                found[where].Placements.Add(element);
+            }
+
+            return found;
+        }
+
+        ///
+        ///Whether a drawn shape was reached from `top` through exactly these placements, in turn, and perhaps further
+        ///- an array through any of its places. Which of the many shapes a cell placed several times draws is the
+        ///one a tree row stands for; see TreeRow.Via.
+        ///
+        ///**By where each level puts the next, not by the transform as a whole.** Composing the placements here
+        ///again would have to agree with the flattener to the last bit of a double; asking each placement whether
+        ///it puts an instance where the drawing found one is what PlacementAt already answers, and it is asked the
+        ///same way. So two placements putting one cell at the same point are one place to this, as they are to
+        ///PlacementAt and so to the selection - the drawing records where a shape is, not which record put it there.
+        ///
+        public static bool DrawnThrough(IReadOnlyList<PlacementLevel> levels, string top, IReadOnlyList<ElementModel> via)
+        {
+            if (levels.Count < via.Count + 1 || levels[0].Structure != top)
+                return false;
+
+            for (int at = 0; at < via.Count; at++)
+            {
+                if (PlacedBy(via[at]) != levels[at + 1].Structure)
+                    return false;
+
+                if (levels[at].Placement.Inverse() is not Transform outOfParent)
+                    return false;
+
+                if (!puts(via[at], levels[at + 1].Placement.Then(outOfParent)))
+                    return false;
+            }
+
+            return true;
+        }
+
+        ///
+        ///What a tree row stands for in a drawn layout, as indexes into its elements: **for a placement, every shape
+        ///drawn through it**, however deep, and **for a shape, the one drawn under the placements above its row** - see
+        ///DrawnThrough. What a press on either goes to, in the 2D view and the 3D one alike. Nothing for any other row.
+        ///
+        ///A shape found under none of them - the file and the drawing disagreeing - is the first one drawn, which is
+        ///what a press on its row found before the tree knew where each placement was.
+        ///
+        public static List<int> DrawnFor(FlattenedLayout layout, TreeRow row)
+        {
+            var found = new List<int>();
+
+            if (row.Kind == TreeRowKind.Shape && row.Shape is not null)
+            {
+                int? first = null;
+
+                for (int at = 0; at < layout.Elements.Count; at++)
+                {
+                    if (layout.Elements[at].Source is not ElementSource source || !ReferenceEquals(source.Model, row.Shape))
+                        continue;
+
+                    first ??= at;
+
+                    if (source.Depth == row.Via.Count && DrawnThrough(source.Ancestry, row.Top, row.Via))
+                    {
+                        found.Add(at);
+
+                        return found;
+                    }
+                }
+
+                if (first is int drawn)
+                    found.Add(drawn);
+
+                return found;
+            }
+
+            if (row.Kind != TreeRowKind.Placement || row.Placement is null)
+                return found;
+
+            var through = new List<ElementModel>(row.Via) { row.Placement };
+
+            for (int at = 0; at < layout.Elements.Count; at++)
+            {
+                //The cheap questions first: drawn under it means at least as deep, and in the cell it places at its depth.
+                if (layout.Elements[at].Source is not ElementSource source || source.Depth < through.Count)
+                    continue;
+
+                if (source.Path[0] != row.Top || source.Path[through.Count] != row.Structure)
+                    continue;
+
+                if (DrawnThrough(source.Ancestry, row.Top, through))
+                    found.Add(at);
+            }
+
+            return found;
         }
 
         ///
@@ -878,6 +1183,11 @@ namespace GdsII
 
             foreach (var record in placement)
             {
+                //An array has its grid already. The format has no array of arrays, and a second set of counts
+                //written into one is an element nothing can read back.
+                if (record.Type == RecordType.AREF || record.Type == RecordType.COLROW)
+                    return null;
+
                 if (record.Type == RecordType.SREF)
                 {
                     made.Add(Make(RecordType.AREF, null));
@@ -915,6 +1225,418 @@ namespace GdsII
                 return null;
 
             return made;
+        }
+
+        ///
+        ///An element's records with what it draws put through a transform: every coordinate moved, and whatever
+        ///the element says about which way it faces composed with the transform's own turn, mirror and size.
+        ///
+        ///**Records rather than a model**, so whatever else the element carries comes across untouched - its
+        ///flags, its properties, a path's ends, a label's justification, an array's counts. Only the records that
+        ///say where it is and how it faces are written afresh.
+        ///
+        ///**A placement is a point and an orientation**, and moving the point alone is the mistake this is here
+        ///to make impossible: the point lands in the right place and the cell it places is drawn facing the way
+        ///it faced before - unturned, unmirrored, at its own size. Its reflection, angle and magnification are
+        ///composed with the transform's, the way <see cref="Placement"/> reads them back off a matrix, and a
+        ///label's the same way. An array's three points are all places, so each goes through as one and the grid
+        ///turns with them.
+        ///
+        ///A path's width and its extensions are lengths, so a magnification grows them.
+        ///
+        ///Null when a coordinate would land outside what a file can hold.
+        ///
+        public static List<Record>? Through(IReadOnlyList<Record> element, Transform transform)
+        {
+            return Through(element, transform, Transform.Identity);
+        }
+
+        ///
+        ///The same, with an absolute angle or magnification read against <paramref name="against"/>: the
+        ///transform the element was drawn inside.
+        ///
+        ///**Which is what flattening needs.** A flag marking either as absolute means the parent's own is divided
+        ///out when the element is drawn, so one moved out of a placement into the cell above is written with what
+        ///it was drawn with - its own value less what the placement contributed - and the flag is dropped, since
+        ///that value is now in the cell's own terms. Exact for a cell drawn at the top, which is how the
+        ///flattener draws the cell being flattened into whenever it is the top.
+        ///
+        internal static List<Record>? Through(IReadOnlyList<Record> element, Transform transform, Transform against)
+        {
+            if (element.Count == 0)
+                return null;
+
+            var kind = element[0].Type;
+            bool faces = kind == RecordType.SREF || kind == RecordType.AREF || kind == RecordType.TEXT;
+
+            var flags = Strans.Default;
+            double angle = 0;
+            double magnification = 1;
+
+            foreach (var record in element)
+            {
+                if (record.Type == RecordType.STRANS)
+                    flags = Strans.From(record.Data);
+                else if (record.Type == RecordType.MAG && record.Data is Real8Data mag && mag.Values.Length > 0)
+                    magnification = mag.Value;
+                else if (record.Type == RecordType.ANGLE && record.Data is Real8Data turned && turned.Values.Length > 0)
+                    angle = turned.Value;
+            }
+
+            if (flags.AbsoluteMagnification && against.Scale != 0)
+                magnification /= against.Scale;
+
+            if (flags.AbsoluteAngle)
+                angle -= against.AngleInDegrees;
+
+            //Only the transform's turn, mirror and size act on which way something faces; its shift moves the point.
+            var turning = new Transform(transform.XX, transform.XY, transform.YX, transform.YY, 0, 0);
+            var facing = Transform.ForPlacement(flags.ReflectAboutX, magnification, angle, 0, 0).Then(turning);
+
+            double scale = transform.Scale;
+            bool placed = false;
+            var moved = new List<Record>(element.Count + 3);
+
+            foreach (var record in element)
+            {
+                if (record.Type == RecordType.STRANS || record.Type == RecordType.MAG || record.Type == RecordType.ANGLE)
+                    continue;
+
+                //Back where the format reads it: after the name, in front of an array's counts or the coordinates.
+                if (faces && !placed && (record.Type == RecordType.COLROW || record.Type == RecordType.XY))
+                {
+                    moved.AddRange(orientationRecords(facing));
+                    placed = true;
+                }
+
+                if (record.Type == RecordType.XY)
+                {
+                    if (record.Data is not Int4Data xy || throughPoints(xy.Values, transform) is not int[] points)
+                        return null;
+
+                    moved.Add(Make(RecordType.XY, new Int4Data(points)));
+
+                    continue;
+                }
+
+                if (isLength(kind, record.Type) && scale != 1 && record.Data is Int4Data length && length.Values.Length > 0)
+                {
+                    double grown = Math.Round(length.Values[0] * scale);
+
+                    if (!fits(grown))
+                        return null;
+
+                    moved.Add(Make(record.Type, new Int4Data((int)grown)));
+
+                    continue;
+                }
+
+                moved.Add(Make(record.Type, record.Data));
+            }
+
+            return moved;
+        }
+
+        ///<summary>A reflection, an angle and a magnification as the records that say them, or none for none of them.</summary>
+        private static List<Record> orientationRecords(Transform facing)
+        {
+            var written = new List<Record>();
+
+            bool mirrored = facing.Mirrored;
+            double angle = Settled(facing.AngleInDegrees);
+            double magnification = Steadied(facing.Scale);
+
+            if (!mirrored && angle == 0 && magnification == 1)
+                return written;
+
+            written.Add(Make(RecordType.STRANS, new BitArrayData(new Strans(mirrored, false, false).Encode())));
+
+            //MAG before ANGLE, which is the order the format reads them in.
+            if (magnification != 1)
+                written.Add(Make(RecordType.MAG, new Real8Data(magnification)));
+
+            if (angle != 0)
+                written.Add(Make(RecordType.ANGLE, new Real8Data(angle)));
+
+            return written;
+        }
+
+        ///
+        ///Which records are lengths rather than places: a path's width and its two extensions, and a label's
+        ///width. A negative width - the format's absolute one - is grown the same way, which is how the flattener
+        ///draws it.
+        ///
+        private static bool isLength(RecordType kind, RecordType type)
+        {
+            if (type == RecordType.WIDTH)
+                return kind == RecordType.PATH || kind == RecordType.TEXT;
+
+            if (type == RecordType.BGNEXTN || type == RecordType.ENDEXTN)
+                return kind == RecordType.PATH;
+
+            return false;
+        }
+
+        ///<summary>Every coordinate pair through a transform, rounded once - or null when one lands past what a coordinate holds.</summary>
+        private static int[]? throughPoints(int[] values, Transform transform)
+        {
+            var moved = new int[values.Length];
+
+            for (int i = 0; i + 1 < values.Length; i += 2)
+            {
+                (double x, double y) = transform.ApplyTo(values[i], values[i + 1]);
+
+                double roundX = Math.Round(x);
+                double roundY = Math.Round(y);
+
+                if (!fits(roundX) || !fits(roundY))
+                    return null;
+
+                moved[i] = (int)roundX;
+                moved[i + 1] = (int)roundY;
+            }
+
+            //An odd trailing value would be a malformed record; carried across rather than dropped.
+            if (values.Length % 2 != 0)
+                moved[^1] = values[^1];
+
+            return moved;
+        }
+
+        ///<summary>Whether a whole number fits a four-byte coordinate - false for one that is not a number at all.</summary>
+        private static bool fits(double value)
+        {
+            return value >= int.MinValue && value <= int.MaxValue;
+        }
+
+        ///
+        ///The placement in a cell that puts an instance of <paramref name="named"/> where
+        ///<paramref name="place"/> puts one: a single instance there, or an array with one of its places there.
+        ///
+        ///**By where it puts things, not only by what it names.** A cell placed several times in one parent has
+        ///several placements, and only one of them is the one a click came through. An array is one placement
+        ///with many places and a click lands on one of them - any of them, not only the first, whose point is the
+        ///one the array is written at. Finding only that one made every other place of an array look like nothing
+        ///anybody could act on.
+        ///
+        public static ElementModel? PlacementAt(StructureModel inside, string named, Transform place)
+        {
+            foreach (var element in inside.Elements)
+            {
+                if (PlacedBy(element) == named && puts(element, place))
+                    return element;
+            }
+
+            return null;
+        }
+
+        ///<summary>Whether a placement puts an instance where `place` puts one: at its point, or at one of an array's places.</summary>
+        private static bool puts(ElementModel placement, Transform place)
+        {
+            if (placement.Element is ArefModel)
+                return hasPlaceAt(placement, place.Dx, place.Dy);
+
+            if (placement.Element.XY?.Data is Int4Data xy && xy.Values.Length >= 2)
+                return Math.Abs(place.Dx - xy.Values[0]) < 1 && Math.Abs(place.Dy - xy.Values[1]) < 1;
+
+            return false;
+        }
+
+        ///
+        ///Whether one of an array's places is at a point, to within a unit.
+        ///
+        ///Solved for the column and the row rather than walked, since an array can have a thousand million places.
+        ///A grid that lies along one line - a single row, or two steps pointing the same way - has nothing to
+        ///solve, and is walked, which is at most a row's worth for any array anybody draws.
+        ///
+        private static bool hasPlaceAt(ElementModel array, double x, double y)
+        {
+            if (gridOf(array) is not (int columns, int rows, double originX, double originY, double acrossX, double acrossY, double downX, double downY))
+                return false;
+
+            double offX = x - originX;
+            double offY = y - originY;
+            double determinant = (acrossX * downY) - (acrossY * downX);
+
+            if (Math.Abs(determinant) > 1e-9)
+            {
+                double column = Math.Round(((offX * downY) - (offY * downX)) / determinant);
+                double row = Math.Round(((acrossX * offY) - (acrossY * offX)) / determinant);
+
+                if (column < 0 || column >= columns || row < 0 || row >= rows)
+                    return false;
+
+                return Math.Abs((column * acrossX) + (row * downX) - offX) < 1 && Math.Abs((column * acrossY) + (row * downY) - offY) < 1;
+            }
+
+            if (columns * (long)rows > MostWalked)
+                return false;
+
+            for (int column = 0; column < columns; column++)
+            {
+                for (int row = 0; row < rows; row++)
+                {
+                    if (Math.Abs((column * acrossX) + (row * downX) - offX) < 1 && Math.Abs((column * acrossY) + (row * downY) - offY) < 1)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        ///<summary>The most places of a grid along one line that are looked through one by one.</summary>
+        private const int MostWalked = 1_000_000;
+
+        ///
+        ///An array's counts, its first place and its two steps, from the three points the format stores - the
+        ///first place, where the columns reach one step past the last, and the same for the rows. Null for
+        ///anything that is not a well-formed array.
+        ///
+        private static (int Columns, int Rows, double OriginX, double OriginY, double AcrossX, double AcrossY, double DownX, double DownY)? gridOf(ElementModel array)
+        {
+            if (array.Element is not ArefModel aref || aref.COLROW?.Data is not Int2Data counts || counts.Values.Length < 2)
+                return null;
+
+            if (aref.XY?.Data is not Int4Data xy || xy.Values.Length < 6)
+                return null;
+
+            int columns = counts.Values[0];
+            int rows = counts.Values[1];
+
+            if (columns < 1 || rows < 1)
+                return null;
+
+            double originX = xy.Values[0];
+            double originY = xy.Values[1];
+
+            return (
+                columns,
+                rows,
+                originX,
+                originY,
+                (xy.Values[2] - originX) / columns,
+                (xy.Values[3] - originY) / columns,
+                (xy.Values[4] - originX) / rows,
+                (xy.Values[5] - originY) / rows);
+        }
+
+        ///
+        ///Where `child` is placed in `parent`: every SREF and AREF there that names it, in the order the file holds
+        ///them. The text view's cell list opens a cell's row, under the parent that places it, to one row each - and
+        ///so does the 2D tree, from PlacementsByCell, which finds every cell's at once.
+        ///
+        public static List<ElementModel> PlacementsIn(StructureModel parent, string child)
+        {
+            var found = new List<ElementModel>();
+
+            foreach (var element in parent.Elements)
+            {
+                if (PlacedBy(element) == child)
+                    found.Add(element);
+            }
+
+            return found;
+        }
+
+        ///
+        ///A placement in a line, as the text view's cell list and the 2D tree say it: where it is, in the file's own
+        ///units as its XY record has them, then whatever it is turned, mirrored or scaled by, and an array's columns
+        ///by its rows - "(1200, 3400)  R90  M  3 × 2". Only what differs from a plain placement is said.
+        ///
+        public static string DescribePlacement(ElementModel placement)
+        {
+            var said = new System.Text.StringBuilder();
+
+            if (placement.Element.XY?.Data is Int4Data xy && xy.Values.Length >= 2)
+                said.Append(FormattableString.Invariant($"({xy.Values[0]}, {xy.Values[1]})"));
+
+            var (mirrored, angle, magnification) = TransformOf(placement);
+
+            if (angle != 0)
+                said.Append(FormattableString.Invariant($"  R{angle:0.###}"));
+
+            if (mirrored)
+                said.Append("  M");
+
+            if (magnification != 1)
+                said.Append(FormattableString.Invariant($"  ×{magnification:0.###}"));
+
+            if (placement.Element is ArefModel array && array.COLROW?.Data is Int2Data counts && counts.Values.Length >= 2)
+                said.Append(FormattableString.Invariant($"  {counts.Values[0]} × {counts.Values[1]}"));
+
+            return said.ToString();
+        }
+
+        ///<summary>How many instances a placement makes: one, or an array's columns times its rows - none for a malformed one.</summary>
+        public static long InstanceCount(ElementModel placement)
+        {
+            if (placement.Element is SrefModel)
+                return 1;
+
+            if (gridOf(placement) is (int columns, int rows, _, _, _, _, _, _))
+                return columns * (long)rows;
+
+            return 0;
+        }
+
+        ///
+        ///Each instance a placement makes, as the transform that draws it in the cell holding the placement: one
+        ///for a single instance, and one per place for an array, columns first - the order the flattener draws
+        ///them in.
+        ///
+        ///**With its reflection, angle and magnification as they are written.** One marked absolute is measured
+        ///against the world rather than the cell holding it, and the two are the same thing when that cell is
+        ///drawn at the top.
+        ///
+        ///At most `most` of them: an array can have a thousand million places, and the tree wants its first.
+        ///
+        public static List<Transform> InstancesOf(ElementModel placement, int most = int.MaxValue)
+        {
+            var instances = new List<Transform>();
+
+            StransModel? strans = null;
+
+            if (placement.Element is SrefModel sref)
+                strans = sref.Strans;
+            else if (placement.Element is ArefModel aref)
+                strans = aref.Strans;
+
+            var flags = Strans.From(strans?.STRANS?.Data);
+            double magnification = 1;
+            double angle = 0;
+
+            if (strans?.MAG?.Data is Real8Data mag && mag.Values.Length > 0)
+                magnification = mag.Value;
+
+            if (strans?.ANGLE?.Data is Real8Data turned && turned.Values.Length > 0)
+                angle = turned.Value;
+
+            if (placement.Element is SrefModel)
+            {
+                if (placement.Element.XY?.Data is Int4Data xy && xy.Values.Length >= 2)
+                    instances.Add(Transform.ForPlacement(flags.ReflectAboutX, magnification, angle, xy.Values[0], xy.Values[1]));
+
+                return instances;
+            }
+
+            if (gridOf(placement) is not (int columns, int rows, double originX, double originY, double acrossX, double acrossY, double downX, double downY))
+                return instances;
+
+            for (int column = 0; column < columns; column++)
+            {
+                for (int row = 0; row < rows; row++)
+                {
+                    if (instances.Count >= most)
+                        return instances;
+
+                    double x = originX + (column * acrossX) + (row * downX);
+                    double y = originY + (column * acrossY) + (row * downY);
+
+                    instances.Add(Transform.ForPlacement(flags.ReflectAboutX, magnification, angle, x, y));
+                }
+            }
+
+            return instances;
         }
 
         ///<summary>

@@ -620,4 +620,157 @@ public class NetTests
     }
 
     #endregion **********************************************************************
+
+    #region Up and down the stack ***************************************************
+
+    ///<summary>A rectangle on a layer given a height and a thickness, as a layermap with a process stack does.</summary>
+    private static int AddAt(FlattenedLayout layout, short number, LayerRole role, int height, int thickness, int left, int bottom, int right, int top)
+    {
+        var layer = new Layer(new LayerKey(number, 0), "#ffffff") { Role = role, CustomHeight = height, Depth = thickness };
+
+        var element = new Element { Layer = layer };
+
+        element.Points.Add(new Element.Point(left, bottom));
+        element.Points.Add(new Element.Point(right, bottom));
+        element.Points.Add(new Element.Point(right, top));
+        element.Points.Add(new Element.Point(left, top));
+        element.Points.Add(new Element.Point(left, bottom));
+
+        layout.Elements.Add(element);
+
+        return layout.Elements.Count - 1;
+    }
+
+    ///
+    ///**A via joins the metal under it and the metal over it, not a metal further up that it also lies under.**
+    ///
+    ///Seen from above, a via between met1 and met2 overlaps any met3 routed across it, and a via that joined
+    ///everything it overlaps shorted every route on a chip to every other. With heights given, a via reaches
+    ///only what its own height range touches - sky130's: met1 at 1,370 to 1,730, the via to 2,000, met2 to 2,360
+    ///and met3 from 2,780.
+    ///
+    [Fact]
+    public void A_via_with_heights_joins_only_the_layers_either_side_of_it()
+    {
+        var layout = Empty();
+
+        int lower = AddAt(layout, Metal1, LayerRole.Conductor, 1370, 360, 0, 0, 100, 20);
+        int via = AddAt(layout, Via1, LayerRole.Via, 1730, 270, 40, 5, 60, 15);
+        int upper = AddAt(layout, Metal2, LayerRole.Conductor, 2000, 360, 40, -50, 60, 70);
+        AddAt(layout, 70, LayerRole.Conductor, 2780, 845, -500, 0, 500, 20);
+
+        Assert.Equal(new[] { lower, via, upper }, Nets.Reaching(layout, lower).Order());
+    }
+
+    ///<summary>With no heights the stack says nothing, and a via joins whatever it overlaps as it always did.</summary>
+    [Fact]
+    public void A_via_without_heights_joins_whatever_it_overlaps()
+    {
+        var layout = Empty();
+
+        int lower = Add(layout, Metal1, 0, 0, 100, 20);
+        int via = Add(layout, Via1, 40, 5, 60, 15);
+        int upper = Add(layout, Metal2, 40, -50, 60, 70);
+
+        Assert.Equal(new[] { lower, via, upper }, Nets.Reaching(layout, lower).Order());
+    }
+
+    #endregion **********************************************************************
+
+
+
+    #region A step at a time ********************************************************
+
+    ///<summary>A row of abutting wires on metal1, each a hop from the last.</summary>
+    private static List<int> Chain(FlattenedLayout layout, int count)
+    {
+        var wires = new List<int>();
+
+        for (int i = 0; i < count; i++)
+            wires.Add(Add(layout, Metal1, i * 100, 0, (i + 1) * 100, 20));
+
+        return wires;
+    }
+
+    ///
+    ///**Taken a step at a time, a walk reaches the same net as asking for all of it.** It is the same walk
+    ///stopped and started, so stopping cannot be allowed to lose a shape or find one twice.
+    ///
+    [Fact]
+    public void Steps_reach_the_same_net_as_the_whole_walk()
+    {
+        var layout = Empty();
+
+        var wires = Chain(layout, 10);
+
+        Add(layout, Metal1, 5000, 0, 5100, 20);
+
+        var walk = Nets.Begin(layout, wires[0]);
+        var steps = new List<int>();
+
+        while (!walk.Done)
+            steps.Add(walk.Step(3));
+
+        Assert.Equal(new[] { 3, 3, 3 }, steps);
+        Assert.Equal(Nets.Reaching(layout, wires[0]).Order(), walk.Found.Order());
+        Assert.Equal(wires, walk.Found.Order());
+    }
+
+    ///<summary>Breadth first: one step from the end of a chain is the wire next to it, not one further along.</summary>
+    [Fact]
+    public void A_step_reaches_the_nearest_shapes_first()
+    {
+        var layout = Empty();
+
+        var wires = Chain(layout, 5);
+
+        var walk = Nets.Begin(layout, wires[0]);
+
+        Assert.Equal(1, walk.Step(1));
+        Assert.Equal(new[] { wires[0], wires[1] }, walk.Found.Order());
+        Assert.False(walk.Done);
+    }
+
+    ///
+    ///**A step stops at its count even partway through what one shape touches.** A via can touch hundreds
+    ///of shapes, and a walk that only stopped between the shapes it visited would hand back all of them for a
+    ///step of one. What it had no room for comes first next time.
+    ///
+    [Fact]
+    public void A_step_stops_at_its_count_inside_what_one_shape_touches()
+    {
+        var layout = Empty();
+
+        int via = Add(layout, Via1, 0, 0, 1000, 20);
+        var over = new List<int>();
+
+        for (int i = 0; i < 6; i++)
+            over.Add(Add(layout, Metal2, (i * 150) + 10, 5, (i * 150) + 60, 15));
+
+        var walk = Nets.Begin(layout, via);
+
+        Assert.Equal(2, walk.Step(2));
+        Assert.Equal(3, walk.Found.Count);
+
+        Assert.Equal(4, walk.Step(100));
+        Assert.True(walk.Done);
+        Assert.Equal(over.Prepend(via).Order(), walk.Found.Order());
+    }
+
+    ///<summary>A shape that takes no part starts a walk that is already over, with nothing in it.</summary>
+    [Fact]
+    public void A_walk_from_a_shape_that_takes_no_part_is_over_before_it_starts()
+    {
+        var layout = Empty();
+
+        int nothing = Add(layout, 99, 0, 0, 100, 20);
+
+        var walk = Nets.Begin(layout, nothing);
+
+        Assert.True(walk.Done);
+        Assert.Empty(walk.Found);
+        Assert.Equal(0, walk.Step(100));
+    }
+
+    #endregion **********************************************************************
 }

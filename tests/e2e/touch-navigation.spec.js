@@ -2,7 +2,7 @@
 //
 //Through the browser's real touch input rather than through dispatched PointerEvents. A synthetic event is
 //delivered to the page as it was built, so it cannot show what a real one runs into - the browser deciding a
-//drag is a scroll, taking it over, and cancelling the pointer the view was following. That is the failure
+//drag is a scroll, taking it over, and canceling the pointer the view was following. That is the failure
 //being pinned here, and only Input.dispatchTouchEvent goes through the part of the browser that makes it.
 //
 //The measure throughout is the point under the finger. A drag or a pinch is right when the part of the layout
@@ -12,6 +12,7 @@ const { test, expect } = require('@playwright/test');
 const {
     gotoExample,
     svgCounts,
+    viewSettled,
     MOSFET,
     MOSFET_POLYGONS
 } = require('./helpers');
@@ -88,9 +89,13 @@ async function openSettled(page) {
 ///
 ///Fingers, through the browser's own touch input.
 ///
-///Each event lists every finger still down, and the browser works out which ones pressed, moved or lifted
-///against the event before - so a second finger landing is a touchStart listing both, and one lifting is a
-///touchEnd listing the one left.
+///A touchStart or a touchMove lists every finger that is down, and the browser works out against the event
+///before which ones pressed or moved - so a second finger landing is a touchStart listing both.
+///
+///**A touchEnd is the other way round: it lists the fingers that lift**, and an empty one lifts them all.
+///Listing the finger that stays, which is what the symmetry suggests, lifts that one instead - and its next
+///move then arrives as a new finger landing, which turns the drag being tested into a pinch against the
+///finger that was meant to have gone.
 ///
 async function fingers(page) {
     const client = await page.context().newCDPSession(page);
@@ -171,6 +176,9 @@ test.describe('on a touch screen', () => {
 
         await touch('touchEnd', []);
 
+        //The pinch scales the picture, and the viewBox follows once the fingers are off.
+        await viewSettled(page);
+
         const [, , widthAfter] = await viewBoxOf(page);
 
         expect(widthAfter / widthBefore).toBeCloseTo(0.5, 2);
@@ -200,6 +208,8 @@ test.describe('on a touch screen', () => {
 
         await touch('touchEnd', []);
 
+        await viewSettled(page);
+
         const [, , widthAfter] = await viewBoxOf(page);
 
         expect(widthAfter).toBeCloseTo(widthBefore, 3);
@@ -227,8 +237,9 @@ test.describe('on a touch screen', () => {
         for (let step = 1; step <= STEPS; step++)
             await touch('touchMove', [{ ...along(leftFrom, leftSpread, step, STEPS), id: 0 }, { ...along(rightFrom, rightSpread, step, STEPS), id: 1 }]);
 
-        //The right finger comes up. What is under the left one now is what it should keep hold of.
-        await touch('touchEnd', [leftSpread]);
+        //The right finger comes up - named, since a touchEnd lists the fingers that lift. What is under the
+        //left one now is what it should keep hold of.
+        await touch('touchEnd', [rightSpread]);
 
         const held = await layoutAt(page, leftSpread);
         const leftTo = { x: leftSpread.x + 40, y: leftSpread.y - 70, id: 0 };
@@ -260,6 +271,8 @@ test.describe('on a touch screen', () => {
             await touch('touchMove', [{ ...along(leftFrom, leftTo, step, STEPS), id: 0 }, { ...along(rightFrom, rightTo, step, STEPS), id: 1 }]);
 
         await touch('touchEnd', []);
+
+        await viewSettled(page);
 
         const [, , width, height] = await viewBoxOf(page);
         const minimum = await page.evaluate(() => window.viewGeometry.MINIMUM_SIZE);

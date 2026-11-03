@@ -3,7 +3,7 @@
 //visit is invisible until the browser starts dropping the oldest, and nothing but a real browser can
 //show it.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, selectView, threeCounts, MOSFET, MOSFET_POLYGONS, MOSFET_MESHES, MOSFET_LABELS, shapeCount, shapesDrawn, clearLayerNames } = require('./helpers');
+const { gotoExample, selectView, threeCounts, stackOnScreen, onScreenSaid, MOSFET, MOSFET_POLYGONS, MOSFET_MESHES, MOSFET_OUTLINES, MOSFET_LABELS, shapeCount, shapesDrawn, bareNumbers } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     await gotoExample(page, MOSFET, '3d');
@@ -12,17 +12,26 @@ test.beforeEach(async ({ page }) => {
 });
 
 ///
-///One mesh per merged outline, not per drawn polygon.
+///A slab per merged outline rather than per drawn polygon, and a mesh per layer rather than per slab.
 ///
 ///The 3D view merges each layer before extruding, because two slabs at the same height fight over which
-///is in front. Mosfet.gds has two shapes on 66/20 that meet along an edge, so eighteen boundaries come out
-///as seventeen slabs covering exactly the same ground.
+///is in front. Mosfet.gds has two shapes on 66/20 that meet along an edge, so twenty boundaries come out
+///as nineteen outlines covering exactly the same ground.
+///
+///**And each layer's outlines are one mesh.** A mesh is a draw call on every frame, and at one per outline
+///the big designs put a hundred thousand of them in the scene. Both numbers are asserted: the meshes say the
+///layers were batched, the outlines say nothing was lost in batching them.
+///
+///**So are each layer's labels**, for the same reason: at a sprite each, the RGB mixer's 19,005 labels took its
+///frames from 17 ms to 43. Mosfet.gds carries its three on one layer, so they are one draw.
 ///
 test('extrudes every element and draws every label', async ({ page }) => {
     const scene = await threeCounts(page);
 
     expect(scene.meshes).toBe(MOSFET_MESHES);
-    expect(scene.sprites).toBe(MOSFET_LABELS);
+    expect(scene.outlines).toBe(MOSFET_OUTLINES);
+    expect(scene.labels).toBe(MOSFET_LABELS);
+    expect(scene.labelMeshes).toBe(1);
 });
 
 ///
@@ -42,14 +51,14 @@ test('every extruded shape covers the same ground as the 2D outline of it', asyn
     await gotoExample(page, 'sky130_fd_sc_hd__a211oi_1', '2d');
 
     //
-    //**Cleared first, so both views draw the same set of shapes.**
+    //**On bare numbers first, so both views draw the same set of shapes.**
     //
     //The bundled sky130 map is laid over an example as it opens, and a layer that map says nothing about
     //is left out of the 3D view rather than placed at a height nobody measured - see the last test in this
     //file. That is three layers on this cell, so the two sides would differ by exactly those and this
     //would fail for a reason that has nothing to do with the dropped corner it exists to catch.
     //
-    await clearLayerNames(page);
+    await bareNumbers(page);
 
     await expect.poll(async () => shapeCount(page)).toBeGreaterThan(50);
 
@@ -86,16 +95,34 @@ test('every extruded shape covers the same ground as the 2D outline of it', asyn
         await new Promise(resolve => setTimeout(resolve, 800));
         THREE.Object3D.prototype.add = original;
 
-        return added.filter(object => object.isMesh).map(mesh => {
+        //
+        //Every distinct XY each outline's extrusion actually occupies, rounded to whole layout units.
+        //
+        //**Split back into outlines first**, since a mesh is a whole layer: it records the vertex each of its
+        //outlines starts at, and an outline runs to where the next one starts. Compared per layer instead, a
+        //dropped corner could hide behind the same corner of a neighbor. The slabs only - a layer's labels are a
+        //mesh too, and carry no outlines.
+        //
+        return added.filter(object => object.isMesh && object.userData.outlineStarts != null).flatMap(mesh => {
             const position = mesh.geometry.attributes.position;
-            const corners = new Set();
+            const starts = mesh.userData.outlineStarts;
+            const outlines = [];
 
-            //Every distinct XY the extrusion actually occupies. The bevel insets by a hair, so these are
-            //rounded to whole layout units before being compared with the outline they came from.
-            for (let i = 0; i < position.count; i++)
-                corners.add(`${Math.round(position.getX(i))},${Math.round(position.getY(i))}`);
+            for (let n = 0; n < starts.length; n++) {
+                let end = position.count;
 
-            return [...corners].sort().join(' ');
+                if (n + 1 < starts.length)
+                    end = starts[n + 1];
+
+                const corners = new Set();
+
+                for (let i = starts[n]; i < end; i++)
+                    corners.add(`${Math.round(position.getX(i))},${Math.round(position.getY(i))}`);
+
+                outlines.push([...corners].sort().join(' '));
+            }
+
+            return outlines;
         }).sort();
     });
 
@@ -105,10 +132,12 @@ test('every extruded shape covers the same ground as the 2D outline of it', asyn
 test('labels hang from the point their justification asks for', async ({ page }) => {
     const scene = await threeCounts(page);
 
+    expect(scene.labelHangs).toHaveLength(MOSFET_LABELS);
+
     //Mosfet.gds carries no PRESENTATION record, so its labels take the format's default of left and
-    //top - which on a sprite is the top-left corner it hangs from.
-    for (const center of scene.spriteCenters)
-        expect(center).toEqual([0, 1]);
+    //top - which is the top-left corner a label hangs from, in its own 0..1 space with Y up.
+    for (const hang of scene.labelHangs)
+        expect(hang).toEqual([0, 1]);
 });
 
 ///
@@ -124,6 +153,11 @@ test('labels hang from the point their justification asks for', async ({ page })
 ///Asserted against the top face worked out from the layout, not from the placement code - the check is
 ///"above the slab", so it would still hold if the clearance were retuned, and it fails outright if the
 ///anchor goes back to the buried face.
+///
+///**On a sky130 cell as well as on Mosfet.gds**, because Mosfet's labels are on a slab thick enough that the gap
+///left above it - a fifth of its thickness - is taller than a label is. A label hung down from its anchor
+///through that gap still clears the surface, so on Mosfet alone this passed with the hang never added at all.
+///The cell's pins are on li1, which is a hundred nanometers.
 ///
 test('labels sit above the layer they name, not inside it', async ({ page }) => {
     //Installed before the app loads, through a property whose getter hands back a fresh wrapper. Replacing
@@ -147,17 +181,15 @@ test('labels sit above the layer they name, not inside it', async ({ page }) => 
         });
     });
 
-    await gotoExample(page, MOSFET, '3d');
-
-    const placed = await page.evaluate(async () => {
+    const placedLabels = async () => page.evaluate(async () => {
         const THREE = await import('three');
-        const sprites = [];
+        const meshes = [];
 
         const original = THREE.Object3D.prototype.add;
         THREE.Object3D.prototype.add = function (...objects) {
             for (const object of objects) {
-                if (object.isSprite)
-                    sprites.push(object);
+                if (object.isMesh && object.userData.labels != null)
+                    meshes.push(object);
             }
 
             return original.apply(this, objects);
@@ -171,24 +203,35 @@ test('labels sit above the layer they name, not inside it', async ({ page }) => 
 
         THREE.Object3D.prototype.add = original;
 
-        //The same tip the extrusions get. A layer's top face at a given layout point is that point's own
-        //Y carried through the rotation, lifted by the layer's place in the stack.
         //
-        //Sprite i against label i, which only holds if the two came from the same redraw - so the counts
-        //are returned and asserted rather than trusted. A stale pairing here would still produce numbers
-        //that look about right, which is the kind of test that passes for the wrong reason.
-        return {
-            sprites: sprites.length,
-            labels: window.__labels.map((label, i) => {
-                const sprite = sprites[i];
+        //**Only the labels still in the scene**: a draw takes the last one's out before it puts its own in, so these
+        //are the ones on screen. Counting every one added was counting draws - one still finishing from the open,
+        //or the one the address's own settings ask for, landed in the window now and then and doubled the count.
+        //
+        const shown = meshes.filter(mesh => mesh.parent != null);
 
-                return {
+        //
+        //Each label off the mesh that draws its layer's labels, against the labels of that layer the draw was
+        //handed - by layer rather than one by one, since a layer's labels are drawn together. Both counts are
+        //returned and asserted rather than trusted: a pairing with a stale redraw would still produce numbers
+        //that look about right, which is the kind of test that passes for the wrong reason.
+        //
+        const labels = [];
+
+        for (const mesh of shown) {
+            const handed = window.__labels.find(label => label.at === mesh.userData.stackAt);
+            const anchor = mesh.geometry.getAttribute('anchor');
+            const size = mesh.geometry.getAttribute('size');
+            const hang = mesh.geometry.getAttribute('hang');
+
+            for (let i = 0; i < mesh.userData.labels; i++) {
+                labels.push({
                     //The bottom edge of the text, not the point it hangs from. Those are the same thing
                     //only for a label justified to the bottom - the format's default is the top, where
-                    //the anchor is the sprite's *upper* edge and the glyphs are a whole height below it.
+                    //the anchor is the label's *upper* edge and the glyphs are a whole height below it.
                     //Measuring the anchor is what let the first version of this pass while the text was
-                    //still buried.
-                    lowestGlyph: sprite.position.y - (sprite.center.y * sprite.scale.y),
+                    //still buried. The mesh is lifted to the layer and the anchor sits in it.
+                    lowestGlyph: mesh.position.y + anchor.getY(i) - (hang.getY(i) * size.getY(i)),
 
                     //
                     //The top face of the slab this label names, worked out from the layout rather than
@@ -203,19 +246,39 @@ test('labels sit above the layer they name, not inside it', async ({ page }) => 
                     //**And no term for the layout's own Y.** It carried `label.y * Math.cos(1.5)`, which
                     //was the tilt leaking in: the layout used to be laid back by 1.5 radians rather than a
                     //right angle, so a little of its Y showed up in world Y. It is a right angle now, that
-                    //cosine is nought, and the term was a stale constant this test went on multiplying by.
+                    //cosine is zero, and the term was a stale constant this test went on multiplying by.
                     //
-                    top: label.offset + label.depth,
-                    depth: label.depth
-                };
-            })
-        };
+                    top: handed.offset + handed.depth,
+                    depth: handed.depth,
+                    height: size.getY(i)
+                });
+            }
+        }
+
+        return { handed: window.__labels.length, labels: labels };
     });
 
-    expect(placed.sprites).toBe(MOSFET_LABELS);
-    expect(placed.labels.length).toBe(MOSFET_LABELS);
+    await gotoExample(page, MOSFET, '3d');
+    await expect(page.locator('#viewLoading')).toHaveCount(0, { timeout: 60000 });
 
-    for (const label of placed.labels) {
+    const mosfet = await placedLabels();
+
+    expect(mosfet.handed).toBe(MOSFET_LABELS);
+    expect(mosfet.labels.length).toBe(MOSFET_LABELS);
+
+    await gotoExample(page, 'sky130_fd_sc_hd__nand2_1', '3d');
+    await expect(page.locator('#viewLoading')).toHaveCount(0, { timeout: 60000 });
+
+    const cell = await placedLabels();
+
+    expect(cell.labels.length).toBeGreaterThan(0);
+    expect(cell.labels.length).toBe(cell.handed);
+
+    //Some of them on a layer thin enough that the gap above it - a fifth of it, LABEL_CLEARANCE - would not
+    //clear a label on its own, or the cell adds nothing to Mosfet.
+    expect(cell.labels.some(label => label.depth / 5 < label.height)).toBe(true);
+
+    for (const label of [...mosfet.labels, ...cell.labels]) {
         //Clear of the surface...
         expect(label.lowestGlyph).toBeGreaterThan(label.top);
 
@@ -318,7 +381,165 @@ test('the scene survives being left and returned to', async ({ page }) => {
     const scene = await threeCounts(page);
 
     expect(scene.meshes).toBe(MOSFET_MESHES);
-    expect(scene.sprites).toBe(MOSFET_LABELS);
+    expect(scene.labels).toBe(MOSFET_LABELS);
+});
+
+///
+///Counts the draws into the 3D view's canvas from here on, at the WebGL calls themselves - the one place a canvas
+///that has left the page still shows anything. Kept on the context, so the count follows that canvas wherever it
+///goes and a canvas built later has a count of its own.
+///
+async function watchDraws(page) {
+    await page.evaluate(() => {
+        const canvas = document.querySelector('#container canvas');
+
+        window.watchedScene = canvas.getContext('webgl2') || canvas.getContext('webgl');
+
+        for (const prototype of [WebGL2RenderingContext.prototype, WebGLRenderingContext.prototype]) {
+            for (const name of ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced']) {
+                const draw = prototype[name];
+
+                if (typeof draw !== 'function')
+                    continue;
+
+                prototype[name] = function (...rest) {
+                    this.drawsCounted = (this.drawsCounted || 0) + 1;
+
+                    return draw.apply(this, rest);
+                };
+            }
+        }
+    });
+}
+
+///
+///How many draws the watched canvas took over what `doing` does and 400 ms after it.
+///
+///**Something has to be done**, for a count that is meant to be more than nothing: the scene is drawn only when
+///something changes - see "the scene draws when something changes" below.
+///
+async function drawsAfter(page, doing) {
+    const before = await page.evaluate(() => window.watchedScene.drawsCounted || 0);
+
+    await doing();
+    await page.waitForTimeout(400);
+
+    return (await page.evaluate(() => window.watchedScene.drawsCounted || 0)) - before;
+}
+
+///Nothing done, for a count of what the scene draws by itself.
+async function standingStill() {
+}
+
+///A press on the zoom-in button beside Center, which moves the camera in whichever view is open.
+function zoomingIn(page) {
+    return () => page.locator('#zoomIn').click();
+}
+
+///
+///**Leaving the view stops the scene drawing.**
+///
+///The viewer was only taken down when the 3D view was next opened, so after a switch to 2D the whole scene went
+///on being drawn every frame into a canvas no longer in the page - 840 draws a second on the RGB mixer - with its
+///WebGL context held, until the next visit or a reload. Nothing on screen shows it, and the test above passes
+///either way, since it counts what is alive once the view is back.
+///
+///The scene drawing before the switch is checked as well, or a count of nothing would pass for a counter that saw
+///nothing - and the same press after it, which would have the old scene draw again if it were still listening.
+///
+test('leaving the view stops the scene drawing', async ({ page }) => {
+    await watchDraws(page);
+
+    await expect.poll(() => drawsAfter(page, zoomingIn(page))).toBeGreaterThan(0);
+
+    await selectView(page, 'View2DSvg');
+
+    await expect.poll(() => drawsAfter(page, zoomingIn(page))).toBe(0);
+
+    //And the context given back rather than only left idle: a browser allows only a handful of live ones.
+    await expect.poll(() => page.evaluate(() => window.watchedScene.isContextLost())).toBe(true);
+});
+
+///
+///**The scene is drawn when something changes, and not while it stands still.**
+///
+///It was drawn on every frame the browser showed, still or not: 2,463 WebGL draws a second on the RGB mixer to
+///put the same picture back. A frame is drawn now only when something asks for one, which makes forgetting to
+///ask a fault nothing else would show - the old picture stays up, and looks like a change that did nothing. So
+///each kind of change is made in turn and has to draw, and the scene has to go quiet again afterwards.
+///
+test('the scene draws when something changes, and not while it stands still', async ({ page }) => {
+    await watchDraws(page);
+
+    //Whatever opening the view asked for has been drawn by now, and nothing since.
+    await expect.poll(() => drawsAfter(page, standingStill)).toBe(0);
+
+    //The camera, moved by the buttons beside Center and by a drag across the canvas.
+    expect(await drawsAfter(page, zoomingIn(page))).toBeGreaterThan(0);
+
+    expect(await drawsAfter(page, async () => {
+        const box = await page.locator('#container canvas').boundingBox();
+
+        await page.mouse.move(box.x + (box.width / 2), box.y + (box.height / 2));
+        await page.mouse.down();
+        await page.mouse.move(box.x + (box.width / 2) + 60, box.y + (box.height / 2) + 20, { steps: 4 });
+        await page.mouse.up();
+    })).toBeGreaterThan(0);
+
+    //
+    //The layers pulled apart, which moves them without building anything - see restackLayers.
+    //
+    //Counted only while the slider is moving, and moved faster than it settles: once it stops, the scene is
+    //built again for whatever a step left out (Settling.Quiet), and that draws a frame of its own - which would
+    //pass for this one if it landed inside the count.
+    //
+    expect(await page.evaluate(async () => {
+        const before = window.watchedScene.drawsCounted || 0;
+        const slider = document.getElementById('layerSpacing');
+
+        for (let step = 0; step < 12; step++) {
+            slider.value = String(Number(slider.value) + 5);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+            await new Promise(resolve => setTimeout(resolve, 40));
+        }
+
+        return (window.watchedScene.drawsCounted || 0) - before;
+    })).toBeGreaterThan(0);
+
+    //A layer's row pressed, which lights its slabs for a moment.
+    await expect.poll(async () => page.locator('.layerRow').count(), { timeout: 60000 }).toBeGreaterThan(0);
+
+    expect(await drawsAfter(page, () => page.evaluate(() => document.querySelectorAll('.layerRow')[0].click()))).toBeGreaterThan(0);
+
+    //The view made a different size, which clears the canvas.
+    const size = page.viewportSize();
+
+    expect(await drawsAfter(page, () => page.setViewportSize({ width: size.width - 120, height: size.height - 80 }))).toBeGreaterThan(0);
+
+    //And quiet again once the flash has run its course.
+    await expect.poll(() => drawsAfter(page, standingStill), { timeout: 10000 }).toBe(0);
+});
+
+///
+///**A teardown only takes down the viewer of the view that sent it.**
+///
+///The view being left and the one replacing it can be a render apart, so the old one's teardown can arrive after the
+///new one has built a viewer of its own - and taking down "the viewer" then would blank the one on screen. So each
+///view names the viewer it registered. Sent by hand here, naming viewers nobody registered, because the order that
+///would deliver a stale one is not one a click can be counted on to produce.
+///
+test('a teardown naming another viewer leaves this one drawing', async ({ page }) => {
+    await watchDraws(page);
+
+    await page.evaluate(() => {
+        window.unregisterThree(0);
+        window.unregisterThree(-1);
+    });
+
+    await expect.poll(() => drawsAfter(page, zoomingIn(page))).toBeGreaterThan(0);
+
+    expect(await page.evaluate(() => window.watchedScene.isContextLost())).toBe(false);
 });
 
 ///
@@ -338,10 +559,11 @@ test('the spacing slider still moves the layers apart', async ({ page }) => {
         const THREE = await import('three');
         const meshes = [];
 
+        //The slabs, which are the meshes carrying outlines - a layer's labels are a mesh too.
         const original = THREE.Object3D.prototype.add;
         THREE.Object3D.prototype.add = function (...objects) {
             for (const object of objects) {
-                if (object.isMesh)
+                if (object.isMesh && object.userData.outlines != null)
                     meshes.push(object);
             }
 
@@ -372,9 +594,9 @@ test('the spacing slider still moves the layers apart', async ({ page }) => {
     //
     //The shipped mapping now carries sky130's real heights, and those already span seven microns before
     //the slider is touched - so the ratio between the two spreads is dominated by the wafer rather than by
-    //the control being tested. Cleared, the resting stack is the even one this was written against.
+    //the control being tested. On bare numbers the resting stack is the even one this was written against.
     //
-    await clearLayerNames(page);
+    await bareNumbers(page);
 
     const close = await heights(60);
     const apart = await heights(600);
@@ -465,8 +687,9 @@ test('a layer the process table says nothing about is left out rather than hung 
                 return { onTheWafer: !markers.includes(found), height: offsets[at] };
             });
 
+        //Slabs and labels both, since a layer's labels are a mesh carrying its offset too.
         const heights = added
-            .filter(object => object.isMesh || object.isSprite)
+            .filter(object => object.isMesh)
             .map(object => object.userData.stackOffset);
 
         const distinct = (numbers) => [...new Set(numbers)].sort((a, b) => a - b);
@@ -588,6 +811,79 @@ test('a press on a layer row flashes that layer in the stack', async ({ page }) 
     expect(flashed.settled).toEqual(flashed.before);
 });
 
+///
+///**The layers are drawn plain**, the flat colors the view always had: their surfaces are the game's since 2026-10-14,
+///put on by its Apply texture - see chip-game.spec.js. The metal is still known for when they are on - what the
+///layermap says each layer is - and the shader every layer is drawn with compiles, which nothing but a browser can say.
+///
+///Mosfet.gds opens with the bundled sky130 layermap, which names its layers: li1 and met1 are the wiring, licon1 and
+///mcon the contacts up to them, and diff, poly, nsdm and npc are silicon and the implants into it.
+///
+test('the layers are drawn plain, and the metal among them is known for when their surfaces are on', async ({ page }) => {
+    const problems = [];
+
+    //Opened again with the console watched from the start, since a shader is compiled for the first frame it draws.
+    page.on('console', message => {
+        if (message.type() === 'error' && /shader|WebGLProgram/i.test(message.text()))
+            problems.push(message.text());
+    });
+
+    await gotoExample(page, MOSFET, '3d');
+
+    await expect.poll(async () => page.locator('.layerRow').count(), { timeout: 60000 }).toBeGreaterThan(3);
+
+    const finishes = await page.evaluate(async () => {
+        const THREE = await import('three');
+        const added = [];
+
+        //Caught on the way into the scene, as the flash above catches them.
+        const original = THREE.Object3D.prototype.add;
+
+        THREE.Object3D.prototype.add = function (...objects) {
+            for (const object of objects)
+                added.push(object);
+
+            return original.apply(this, objects);
+        };
+
+        const slider = document.getElementById('layerSpacing');
+
+        slider.value = String(Number(slider.value) + 10);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        THREE.Object3D.prototype.add = original;
+
+        const rows = Array.from(document.querySelectorAll('.layerRow')).map(row => row.textContent);
+
+        return added
+            .filter(object => object.isMesh && object.userData.words != null)
+            .map(mesh => ({
+                row: rows[mesh.userData.stackAt] || '',
+                metal: mesh.material.userData.surface?.surfaceMetal.value,
+                surfaced: mesh.material.userData.surfaced
+            }));
+    });
+
+    expect(finishes.length).toBeGreaterThan(0);
+    expect(finishes.every(one => one.surfaced === false), 'every layer plain').toBe(true);
+
+    const named = name => finishes.filter(one => one.row.includes(`${name} (`));
+
+    for (const metal of ['licon1', 'li1', 'mcon', 'met1']) {
+        expect(named(metal).length, `${metal} is drawn`).toBeGreaterThan(0);
+        expect(named(metal).every(one => one.metal === 1), `${metal} is metal`).toBe(true);
+    }
+
+    for (const silicon of ['diff', 'poly', 'nsdm', 'npc']) {
+        expect(named(silicon).length, `${silicon} is drawn`).toBeGreaterThan(0);
+        expect(named(silicon).every(one => one.metal === 0), `${silicon} is not metal`).toBe(true);
+    }
+
+    expect(problems).toEqual([]);
+});
+
 ///Nothing in this view may be edited from the layer list, since neither edit is a thing it can show.
 test('the layer list offers no adding or removing in 3D', async ({ page }) => {
     await expect.poll(async () => page.locator('.layerRow').count(), { timeout: 60000 }).toBeGreaterThan(0);
@@ -682,88 +978,49 @@ test('a press on a layer row flashes that row', async ({ page }) => {
 ///normalized cube on both axes is "in frame", and it holds wherever the geometry moves to next. Which is the
 ///point - a camera position tuned to today's stack would pass this while meaning nothing.
 ///
-test('opening a layout in 3D frames the whole stack', async ({ page }) => {
-    const framing = await page.evaluate(async () => {
-        const THREE = await import('three');
+///**And in depth, which this did not check, and which is how every bundled design came to open on nothing.**
+///The planes were fixed at 1 and 50,000 and the designs are framed from further than that, so the whole of one
+///was past the far plane: in frame across and up, and not drawn. The same check on a design is in
+///designs.spec.js.
+///
+test('opening a layout in 3D frames the whole stack, between the near and far planes', async ({ page }) => {
+    const on = await stackOnScreen(page);
 
-        //The meshes come back through the restack, which is a Y write per object and builds nothing.
-        const added = [];
-        const originalAdd = THREE.Object3D.prototype.add;
+    expect(on.meshes).toBeGreaterThan(0);
+    expect(on.camera).toBe(true);
 
-        THREE.Object3D.prototype.add = function (...objects) {
-            for (const object of objects)
-                added.push(object);
+    const said = onScreenSaid(on);
 
-            return originalAdd.apply(this, objects);
-        };
+    expect(on.top, `the stack runs off the top: ${said}`).toBeLessThanOrEqual(1);
+    expect(on.bottom, `the stack runs off the bottom: ${said}`).toBeGreaterThanOrEqual(-1);
+    expect(on.right, `the stack runs off the right: ${said}`).toBeLessThanOrEqual(1);
+    expect(on.left, `the stack runs off the left: ${said}`).toBeGreaterThanOrEqual(-1);
 
-        const slider = document.getElementById('layerSpacing');
-
-        slider.value = String(Number(slider.value) + 1);
-        slider.dispatchEvent(new Event('input', { bubbles: true }));
-
-        await new Promise(resolve => setTimeout(resolve, 1200));
-
-        THREE.Object3D.prototype.add = originalAdd;
-
-        const meshes = added.filter(object => object.isMesh);
-
-        if (meshes.length === 0)
-            return { meshes: 0 };
-
-        //Up to the scene, then the camera it holds - the same one the renderer draws with.
-        let root = meshes[0];
-
-        while (root.parent)
-            root = root.parent;
-
-        let camera = null;
-
-        root.traverse(object => {
-            if (object.isCamera && camera === null)
-                camera = object;
-        });
-
-        if (camera === null)
-            return { meshes: meshes.length, camera: false };
-
-        const box = new THREE.Box3();
-
-        for (const mesh of meshes) {
-            mesh.updateMatrixWorld(true);
-            box.expandByObject(mesh);
-        }
-
-        camera.updateMatrixWorld(true);
-
-        let left = 9, right = -9, bottom = 9, top = -9;
-
-        for (const x of [box.min.x, box.max.x])
-            for (const y of [box.min.y, box.max.y])
-                for (const z of [box.min.z, box.max.z]) {
-                    const corner = new THREE.Vector3(x, y, z).project(camera);
-
-                    left = Math.min(left, corner.x);
-                    right = Math.max(right, corner.x);
-                    bottom = Math.min(bottom, corner.y);
-                    top = Math.max(top, corner.y);
-                }
-
-        return { meshes: meshes.length, camera: true, left, right, bottom, top };
-    });
-
-    expect(framing.meshes).toBeGreaterThan(0);
-    expect(framing.camera).toBe(true);
-
-    const said = `x ${framing.left.toFixed(2)}..${framing.right.toFixed(2)}, y ${framing.bottom.toFixed(2)}..${framing.top.toFixed(2)}`;
-
-    expect(framing.top, `the stack runs off the top: ${said}`).toBeLessThanOrEqual(1);
-    expect(framing.bottom, `the stack runs off the bottom: ${said}`).toBeGreaterThanOrEqual(-1);
-    expect(framing.right, `the stack runs off the right: ${said}`).toBeLessThanOrEqual(1);
-    expect(framing.left, `the stack runs off the left: ${said}`).toBeGreaterThanOrEqual(-1);
+    expect(on.nearest, `the stack is in front of the near plane: ${said}`).toBeGreaterThanOrEqual(-1);
+    expect(on.farthest, `the stack is past the far plane: ${said}`).toBeLessThanOrEqual(1);
 
     //And it is actually filling the frame rather than a speck in the middle of it, which would also "fit".
-    expect(framing.top - framing.bottom, `the stack is a speck: ${said}`).toBeGreaterThan(0.2);
+    expect(on.top - on.bottom, `the stack is a speck: ${said}`).toBeGreaterThan(0.2);
+});
+
+///
+///**From above, at forty-five degrees, and in the middle of the picture.** It opened looking straight across the
+///layout, which shows a chip edge-on. Centered on screen rather than aimed at the layout's middle, which from an
+///angle puts the near half low and big - see framedCamera in viewGeometry.js.
+///
+///Loosely, because the spacing step that finds the scene has made the stack a little taller since it was framed.
+///
+test('opening a layout in 3D looks down on it, and has it in the middle', async ({ page }) => {
+    const on = await stackOnScreen(page);
+
+    expect(on.camera).toBe(true);
+
+    expect(on.pitch).toBeCloseTo(45, 0);
+
+    const said = onScreenSaid(on);
+
+    expect(Math.abs(on.left + on.right), `off to one side: ${said}`).toBeLessThan(0.1);
+    expect(Math.abs(on.bottom + on.top), `off up or down: ${said}`).toBeLessThan(0.1);
 });
 
 ///
@@ -803,8 +1060,18 @@ test('the axis indicator is drawn into the bottom-left corner, and gives the vie
             undos.push(() => { context.prototype.viewport = original; });
         }
 
-        //Long enough for several frames of the animation loop to pass through it.
-        await new Promise(resolve => setTimeout(resolve, 400));
+        //Several frames through it, asked for by moving the camera a notch in and out again: a scene standing
+        //still draws nothing - see animate in ThreeInterop.js.
+        for (let step = 0; step < 4; step++) {
+            let notches = -1;
+
+            if (step % 2 === 0)
+                notches = 1;
+
+            window.zoomCameraInterOp(notches);
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
 
         for (const undo of undos)
             undo();

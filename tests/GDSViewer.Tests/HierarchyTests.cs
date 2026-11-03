@@ -71,7 +71,8 @@ public class HierarchyTests
 
         new AddStructure(gds, "MADE", ASquare(400)).Apply();
 
-        Assert.Contains(GdsFlattener.Flatten(new GDS(gds.Serialize())).Elements,
+        Assert.Contains(
+            GdsFlattener.Flatten(new GDS(gds.Serialize())).Elements,
             element => element.Source!.Structure == "MADE");
     }
 
@@ -643,6 +644,49 @@ public class HierarchyTests
 
         Assert.Equal(3, Hierarchy.PlacementsOf(gds, "LEAF"));
         Assert.Equal(0, Hierarchy.PlacementsOf(gds, "TOP"));
+    }
+
+    ///<summary>
+    ///**Where a cell is placed in another**, one placement each, in the file's order - what the text view's cell list
+    ///opens a row to - each said in a line: where it is, in the file's units as its XY has it.
+    ///</summary>
+    [Fact]
+    public void A_cells_placements_in_another_are_listed_and_said_where_they_are()
+    {
+        var gds = Placed();
+
+        var placed = Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF");
+
+        Assert.Equal(new[] { "(600, 0)", "(1200, 0)", "(1800, 0)" }, placed.Select(Hierarchy.DescribePlacement));
+        Assert.Empty(Hierarchy.PlacementsIn(Named(gds, "LEAF"), "TOP"));
+    }
+
+    ///<summary>
+    ///And only what differs from a plain placement is said after where it is: the turn, a mirror and a magnification,
+    ///and an array's columns by its rows.
+    ///</summary>
+    [Fact]
+    public void A_placement_says_its_turn_mirror_magnification_and_array()
+    {
+        var gds = Placed();
+
+        //The first of the three turned a quarter, mirrored and doubled, by the records the text view would type.
+        string text = gds.AsText();
+        int named = text.IndexOf("SNAME: LEAF \n", StringComparison.Ordinal) + "SNAME: LEAF \n".Length;
+
+        gds.Deserialize(text.Insert(named, "STRANS: 0x8000 \nMAG: 2 \nANGLE: 90 \n"));
+
+        var turned = Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF")[0];
+
+        Assert.Equal("(600, 0)  R90  M  ×2", Hierarchy.DescribePlacement(turned));
+
+        var array = Hierarchy.AsArray(ThePlacement(gds, "TOP"), 3, 2, 1000, 0, 0, 1000);
+
+        Assert.NotNull(array);
+
+        new AddElement(gds, Named(gds, "TOP"), array, "Array").Apply();
+
+        Assert.EndsWith("3 × 2", Hierarchy.DescribePlacement(Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF").Last()));
     }
 
     ///
@@ -1431,9 +1475,31 @@ public class HierarchyTests
     }
 
     ///
+    ///The tree's rows opened as far as LEAF's: its row under TOP, which lists where it is placed there, and the
+    ///first of those, which lists what it draws. Found by row rather than written out, so a test does not hold
+    ///the shape of a key.
+    ///
+    private static HashSet<string> LeafOpened(GDS gds)
+    {
+        var opened = new HashSet<string>();
+
+        var leaf = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Cell && row.Structure == "LEAF");
+
+        opened.Add(leaf.Key);
+
+        var placement = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Placement && row.Structure == "LEAF");
+
+        opened.Add(placement.Key);
+
+        return opened;
+    }
+
+    ///
     ///A cell's own layers, not the ones the cells it places draw on.
     ///
-    ///A placement's layers belong to the cell it places, which has a row of its own further down. Counting
+    ///A placement's layers belong to the cell it places, which lists them under each placement of it. Counting
     ///them here would say a cell draws on a layer it never touches, once per level of nesting.
     ///
     [Fact]
@@ -1441,7 +1507,7 @@ public class HierarchyTests
     {
         var gds = Placed();
 
-        var rows = Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string>());
+        var rows = Hierarchy.Tree(gds, new HashSet<string>(), LeafOpened(gds));
 
         var underTop = rows.Count(row => row.Kind == Hierarchy.TreeRowKind.Layer && row.Structure == "TOP");
         var underLeaf = rows.Count(row => row.Kind == Hierarchy.TreeRowKind.Layer && row.Structure == "LEAF");
@@ -1513,10 +1579,13 @@ public class HierarchyTests
         for (int more = 0; more < 4; more++)
             new AddElement(gds, leaf, ASquare(100 + more), "Add").Apply();
 
-        var shut = Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string>());
+        var opened = LeafOpened(gds);
+        var shut = Hierarchy.Tree(gds, new HashSet<string>(), opened);
         var layer = shut.First(row => row.Kind == Hierarchy.TreeRowKind.Layer && row.Structure == "LEAF" && row.Count > 2);
 
-        var rows = Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string> { layer.Key }, mostShapes: 2);
+        opened.Add(layer.Key);
+
+        var rows = Hierarchy.Tree(gds, new HashSet<string>(), opened, mostShapes: 2);
 
         Assert.Equal(2, rows.Count(row => row.Kind == Hierarchy.TreeRowKind.Shape));
 
@@ -1620,6 +1689,417 @@ public class HierarchyTests
         int onALayer = Named(gds, "TOP").Elements.Count(element => element.Element is GDS.IHasLayer);
 
         Assert.Equal(onALayer, listed);
+    }
+
+    #endregion **********************************************************************
+
+
+
+    #region Where a cell is placed, in the tree *************************************
+
+    ///<summary>LEAF's row under TOP, as the tree is drawn with what `opened` holds.</summary>
+    private static Hierarchy.TreeRow LeafRow(GDS gds, HashSet<string> opened)
+    {
+        return Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .Single(row => row.Kind == Hierarchy.TreeRowKind.Cell && row.Structure == "LEAF");
+    }
+
+    ///
+    ///**A cell placed somewhere is shut, and opens to where it is placed there** - a row each, in the order the
+    ///file holds them, the way the text view's cell list opens one.
+    ///
+    ///Shut, because a standard cell placed four hundred times would be four hundred rows under every cell placing
+    ///it. The cell at the top is open: it is the file everybody came for.
+    ///
+    [Fact]
+    public void A_placed_cell_is_shut_and_opens_to_its_placements_there()
+    {
+        var gds = Placed();
+        var leaf = LeafRow(gds, new HashSet<string>());
+
+        Assert.True(leaf.Folds);
+        Assert.False(leaf.Open);
+        Assert.False(leaf.StartsOpen);
+        Assert.Equal("TOP", leaf.Inside);
+        Assert.DoesNotContain(Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string>()), row => row.Kind == Hierarchy.TreeRowKind.Placement);
+
+        var rows = Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string> { leaf.Key });
+        var placements = rows.Where(row => row.Kind == Hierarchy.TreeRowKind.Placement).ToList();
+
+        Assert.Equal(Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF"), placements.Select(row => row.Placement!));
+        Assert.All(placements, row => Assert.Equal(leaf.Depth + 1, row.Depth));
+        Assert.All(placements, row => Assert.Equal("TOP", row.Inside));
+        Assert.All(placements, row => Assert.False(row.Open));
+
+        var top = rows.Single(row => row.Kind == Hierarchy.TreeRowKind.Cell && row.Structure == "TOP");
+
+        Assert.True(top.StartsOpen);
+        Assert.True(top.Open);
+    }
+
+    ///
+    ///**A placement opens to what it draws, said where it draws it**: the cell's own layers and shapes, under each
+    ///placement of it - and a shape there says the corner that placement puts it at, so two placements of one
+    ///cell read as the two places they are.
+    ///
+    [Fact]
+    public void A_placement_opens_to_the_cells_shapes_said_where_it_draws_them()
+    {
+        var gds = Placed();
+        var opened = new HashSet<string> { LeafRow(gds, new HashSet<string>()).Key };
+
+        //The second of the three, at (1200, 0), so the first is not the only one that works.
+        var second = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .Where(row => row.Kind == Hierarchy.TreeRowKind.Placement)
+            .ElementAt(1);
+
+        opened.Add(second.Key);
+
+        var layer = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Layer && row.Structure == "LEAF");
+
+        Assert.Equal(second.Depth + 1, layer.Depth);
+        Assert.Equal(new[] { second.Placement! }, layer.Via);
+
+        opened.Add(layer.Key);
+
+        var shape = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Shape && row.Structure == "LEAF");
+
+        var corner = ((Int4Data)shape.Shape!.Element.XY!.Data!).Values;
+        var drawn = shape.Drawn.Apply(corner[0], corner[1]);
+
+        //A plain placement at (1200, 0) moves every corner of the cell by exactly that.
+        Assert.Equal(corner[0] + 1200, drawn.X);
+        Assert.Equal(corner[1], drawn.Y);
+        Assert.Equal("TOP", shape.Top);
+    }
+
+    ///A cell placed more often than the cap lists so many, then says how many more there are.
+    [Fact]
+    public void A_cell_placed_past_the_cap_lists_so_many_and_says_how_many_are_left()
+    {
+        var gds = Placed();
+        var leaf = LeafRow(gds, new HashSet<string>());
+
+        var rows = Hierarchy.Tree(gds, new HashSet<string>(), new HashSet<string> { leaf.Key }, mostPlacements: 2);
+
+        Assert.Equal(2, rows.Count(row => row.Kind == Hierarchy.TreeRowKind.Placement));
+        Assert.Equal(1, rows.Single(row => row.Kind == Hierarchy.TreeRowKind.Rest).Count);
+    }
+
+    ///
+    ///**A drawn shape is found through the placement its row is under, and through no other.** LEAF is placed
+    ///three times, so each of its shapes is drawn three times, and a row under the second placement stands for
+    ///one of those three - which a press has to find, rather than whichever is drawn first.
+    ///
+    [Fact]
+    public void A_shape_is_drawn_through_the_placement_its_row_is_under_and_no_other()
+    {
+        var gds = Placed();
+        var layout = GdsFlattener.Flatten(gds);
+        var placements = Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF");
+        var shape = Named(gds, "LEAF").Elements.First(element => element.Element is GDS.IHasLayer);
+
+        var drawn = layout.Elements
+            .Select(element => element.Source)
+            .OfType<ElementSource>()
+            .Where(source => ReferenceEquals(source.Model, shape))
+            .ToList();
+
+        Assert.Equal(3, drawn.Count);
+
+        foreach (var placement in placements)
+        {
+            var through = drawn.Where(source => Hierarchy.DrawnThrough(source.Ancestry, "TOP", new[] { placement })).ToList();
+
+            Assert.Single(through);
+
+            //And it is the one that placement puts where it says.
+            var xy = ((Int4Data)placement.Element.XY!.Data!).Values;
+
+            Assert.Equal(xy[0], through[0].Placement.Dx, 6);
+            Assert.Equal(xy[1], through[0].Placement.Dy, 6);
+        }
+
+        //Reached from another top, it is not.
+        Assert.DoesNotContain(drawn, source => Hierarchy.DrawnThrough(source.Ancestry, "LEAF", new[] { placements[0] }));
+    }
+
+    ///
+    ///**An array is one placement and one row**, every place of it drawn through it - and what is under its row is
+    ///said at its first place, where the array is written and the one the flattener draws first.
+    ///
+    ///Moved up off the three single placements, since the array is made from the first and would start where it
+    ///is: two placements putting LEAF at one point are one place to DrawnThrough, as they are to PlacementAt.
+    ///
+    [Fact]
+    public void An_arrays_row_stands_for_every_place_and_says_its_first()
+    {
+        var gds = Placed();
+        var array = Hierarchy.AsArray(ThePlacement(gds, "TOP"), 3, 2, 1000, 0, 0, 1000)!;
+
+        new AddElement(gds, Named(gds, "TOP"), array, "Array").Apply();
+
+        var placed = Hierarchy.PlacementsIn(Named(gds, "TOP"), "LEAF").Last();
+
+        new MoveElement(Named(gds, "TOP"), placed, 0, 5000).Apply();
+
+        var shape = Named(gds, "LEAF").Elements.First(element => element.Element is GDS.IHasLayer);
+
+        int through = GdsFlattener.Flatten(gds).Elements
+            .Select(element => element.Source)
+            .OfType<ElementSource>()
+            .Count(source => ReferenceEquals(source.Model, shape) && Hierarchy.DrawnThrough(source.Ancestry, "TOP", new[] { placed }));
+
+        Assert.Equal(6, through);
+
+        var opened = new HashSet<string> { LeafRow(gds, new HashSet<string>()).Key };
+
+        var row = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .Single(each => each.Kind == Hierarchy.TreeRowKind.Placement && ReferenceEquals(each.Placement, placed));
+
+        opened.Add(row.Key);
+
+        var layer = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(each => each.Kind == Hierarchy.TreeRowKind.Layer && each.Structure == "LEAF");
+
+        var first = ((Int4Data)placed.Element.XY!.Data!).Values;
+
+        Assert.Equal(first[0], layer.Drawn.Dx, 6);
+        Assert.Equal(first[1], layer.Drawn.Dy, 6);
+    }
+
+    ///
+    ///**What a row stands for in the drawing**, which a press goes to in the 2D tree and the 3D one alike: for a
+    ///placement, every shape drawn through it; for a shape, the one drawn under its row's placements.
+    ///
+    [Fact]
+    public void A_placement_row_stands_for_what_it_draws_and_a_shape_row_for_one_shape()
+    {
+        var gds = Placed();
+        var layout = GdsFlattener.Flatten(gds);
+        var opened = new HashSet<string> { LeafRow(gds, new HashSet<string>()).Key };
+
+        var third = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .Where(row => row.Kind == Hierarchy.TreeRowKind.Placement)
+            .ElementAt(2);
+
+        var drawn = Hierarchy.DrawnFor(layout, third);
+        int inLeaf = Named(gds, "LEAF").Elements.Count(element => element.Element is GDS.IHasLayer);
+
+        //A drawn shape for each of LEAF's, every one through the third placement, at (1800, 0).
+        Assert.Equal(inLeaf, drawn.Count);
+        Assert.All(drawn, at => Assert.Equal(1800, layout.Elements[at].Source!.Placement.Dx, 6));
+
+        opened.Add(third.Key);
+
+        var layer = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Layer && row.Structure == "LEAF");
+
+        opened.Add(layer.Key);
+
+        var shape = Hierarchy.Tree(gds, new HashSet<string>(), opened)
+            .First(row => row.Kind == Hierarchy.TreeRowKind.Shape && row.Structure == "LEAF");
+
+        var one = Hierarchy.DrawnFor(layout, shape);
+
+        Assert.Single(one);
+        Assert.Same(shape.Shape, layout.Elements[one[0]].Source!.Model);
+        Assert.Equal(1800, layout.Elements[one[0]].Source!.Placement.Dx, 6);
+
+        //And nothing for a row that is neither.
+        Assert.Empty(Hierarchy.DrawnFor(layout, layer));
+    }
+
+    ///
+    ///**Two trees of one file are equal row for row**, the placements a row is under included. A record compares
+    ///a list by reference, so before TreeRow said otherwise every row under a placement differed from itself one
+    ///build later - see An_edit_that_keeps_every_shape_on_its_layer_leaves_every_row_as_it_was.
+    ///
+    [Fact]
+    public void Two_trees_of_one_file_are_equal_under_its_placements_too()
+    {
+        var gds = Placed();
+        var opened = LeafOpened(gds);
+
+        var once = Hierarchy.Tree(gds, new HashSet<string>(), opened);
+        var again = Hierarchy.Tree(gds, new HashSet<string>(), opened);
+
+        Assert.Contains(once, row => row.Via.Count > 0);
+        Assert.Equal(once, again);
+    }
+
+    #endregion **********************************************************************
+
+
+
+    #region What an edit leaves of the tree ******************************************
+
+    ///<summary>Twenty-one SkullFET inverters in a ring: a real design, with labels, whose cells are placed over and over.</summary>
+    private static GDS Bones()
+    {
+        return new GDS(GdsTestData.ReadSample(Path.Combine("Sky130 Designs", "tt_um_oscillating_bones.gds")));
+    }
+
+    ///
+    ///The whole tree with everything that folds opened - every placed cell, placement and layer - so there is a
+    ///row for every shape the caps let through. Opened a level at a time, since a row only appears once the row
+    ///above it is open.
+    ///
+    private static List<Hierarchy.TreeRow> EverythingOpen(GDS gds)
+    {
+        var opened = new HashSet<string>();
+
+        while (true)
+        {
+            var rows = Hierarchy.Tree(gds, new HashSet<string>(), opened);
+            int was = opened.Count;
+
+            foreach (var row in rows)
+            {
+                if (row.Folds && !row.StartsOpen)
+                    opened.Add(row.Key);
+            }
+
+            if (opened.Count == was)
+                return rows;
+        }
+    }
+
+    ///<summary>The first element of the kind asked for, and the cell it is in.</summary>
+    private static (GDS.StructureModel Structure, GDS.ElementModel Model) First<T>(GDS gds)
+    {
+        foreach (var structure in gds.StreamFormat.Structures)
+        {
+            foreach (var model in structure.Elements)
+            {
+                if (model.Element is T)
+                    return (structure, model);
+            }
+        }
+
+        throw new InvalidOperationException($"the design has no {typeof(T).Name}");
+    }
+
+    ///<summary>One of each edit that says it keeps its shapes on their layers.</summary>
+    private static LayoutEdit KeepingLayers(GDS gds, string kind)
+    {
+        var (structure, model) = First<GDS.BoundaryModel>(gds);
+
+        if (kind == "move")
+            return new MoveElement(structure, model, 130, -70);
+
+        if (kind == "corner")
+            return new MoveVertex(structure, model, 0, 40, 25);
+
+        if (kind == "turn")
+        {
+            var xy = ((Int4Data)model.Element.XY!.Data!).Values;
+            var turned = new int[xy.Length];
+
+            for (int i = 0; i + 1 < xy.Length; i += 2)
+            {
+                turned[i] = -xy[i + 1];
+                turned[i + 1] = xy[i];
+            }
+
+            return new ReshapeElement(structure, model, turned, "Turn");
+        }
+
+        if (kind == "label")
+        {
+            var (holding, label) = First<GDS.TextModel>(gds);
+
+            return new RetextElement(holding, label, "renamed");
+        }
+
+        var several = structure.Elements
+            .Where(each => each.Element is GDS.BoundaryModel)
+            .Take(4)
+            .Select(each => (LayoutEdit)new MoveElement(structure, each, -20, 15));
+
+        return new CompoundEdit("Move", several);
+    }
+
+    ///
+    ///**An edit that keeps every shape on its layer leaves every row of the tree as it was.**
+    ///
+    ///Which is what the 2D view counts on to keep the rows it has drawn: building the RGB mixer's 1,246 of
+    ///them again was 270 ms of the 450 ms a corner drop froze for. Everything is opened, so the shape rows are
+    ///here too, under every placement - the same rows, holding the same elements. What one of those says, where
+    ///the shape starts or what the label reads, is asked of the element as the row is drawn, and the view draws
+    ///the rows again when a shape the edit changed is one of them.
+    ///
+    [Theory]
+    [InlineData("move")]
+    [InlineData("corner")]
+    [InlineData("turn")]
+    [InlineData("label")]
+    [InlineData("several")]
+    public void An_edit_that_keeps_every_shape_on_its_layer_leaves_every_row_as_it_was(string kind)
+    {
+        var gds = Bones();
+        var before = EverythingOpen(gds);
+        var edit = KeepingLayers(gds, kind);
+
+        new EditHistory().Do(edit);
+
+        Assert.True(edit.KeepsLayers);
+        Assert.NotNull(edit.Reshaped);
+        Assert.Contains(before, row => row.Kind == Hierarchy.TreeRowKind.Shape && edit.Reshaped!.Contains(row.Shape!));
+        Assert.Equal(before, EverythingOpen(gds));
+    }
+
+    ///<summary>A shape put on another layer is a row taken from one layer's count and added to another's - and says so.</summary>
+    [Fact]
+    public void A_shape_put_on_another_layer_changes_the_rows_and_does_not_claim_otherwise()
+    {
+        var gds = Bones();
+        var before = EverythingOpen(gds);
+        var (structure, model) = First<GDS.BoundaryModel>(gds);
+        var edit = new RelayerElement(gds, structure, model, new LayerKey(250, 7));
+
+        new EditHistory().Do(edit);
+
+        Assert.False(edit.KeepsLayers);
+        Assert.NotEqual(before, EverythingOpen(gds));
+    }
+
+    ///<summary>A group keeps layers only when every part of it does, and an empty one claims nothing.</summary>
+    [Fact]
+    public void A_group_keeps_layers_only_when_every_part_does()
+    {
+        var gds = Bones();
+        var (structure, model) = First<GDS.BoundaryModel>(gds);
+
+        var moves = new CompoundEdit("Move", new LayoutEdit[]
+        {
+            new MoveElement(structure, model, 10, 10),
+            new MoveVertex(structure, model, 1, 5, 5)
+        });
+
+        var mixed = new CompoundEdit("Change", new LayoutEdit[]
+        {
+            new MoveElement(structure, model, 10, 10),
+            new RelayerElement(gds, structure, model, new LayerKey(250, 7))
+        });
+
+        Assert.True(moves.KeepsLayers);
+        Assert.False(mixed.KeepsLayers);
+        Assert.False(new CompoundEdit("Nothing", Array.Empty<LayoutEdit>()).KeepsLayers);
+    }
+
+    ///<summary>Anything that adds or takes away is not an edit in place at all, and claims nothing either.</summary>
+    [Fact]
+    public void Adding_or_taking_away_does_not_claim_to_keep_layers()
+    {
+        var gds = Placed();
+        var leaf = Named(gds, "LEAF");
+
+        Assert.False(new AddElement(gds, leaf, ASquare(100), "Add").KeepsLayers);
+        Assert.False(new DeleteElement(gds, leaf, leaf.Elements[0]).KeepsLayers);
+        Assert.False(new AddStructure(gds, "MORE", ASquare(50)).KeepsLayers);
     }
 
     #endregion **********************************************************************

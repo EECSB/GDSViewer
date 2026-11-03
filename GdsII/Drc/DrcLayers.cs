@@ -33,7 +33,7 @@ namespace GdsII
         private readonly DrcDeck deck;
         private readonly FlattenedLayout layout;
 
-        private readonly Dictionary<string, List<List<Element.Point>>> geometry = new Dictionary<string, List<List<Element.Point>>>();
+        private readonly Dictionary<string, List<Booleans.Ring>> geometry = new Dictionary<string, List<Booleans.Ring>>();
         private readonly HashSet<string> unresolved = new HashSet<string>();
 
         ///<summary>
@@ -249,6 +249,12 @@ namespace GdsII
         ///Labels and open runs take no part, the same way <see cref="Booleans.MergeByLayer"/> leaves them
         ///out: a label is an anchor and a string, and a zero-width path is a centerline that encloses
         ///nothing. Either one unioned in would put area into a layer that has none there.
+        ///
+        ///**Merged into rings, holes kept as holes, and not into keyholed outlines.** Every check hands a
+        ///layer straight back to Clipper, and a keyhole is the one input it is pathologically slow on: an
+        ///analog layout whose Metal1 merges into one outline with 2,516 holes took 190 seconds over a single
+        ///area rule when it was kept keyholed, every hole a channel Clipper had to take apart again. See
+        ///<see cref="Booleans.Merge(IEnumerable{Booleans.Ring})"/> and docs/DRC.md, What it costs.
         ///</summary>
         private void gatherDrawn(HashSet<string> wanted)
         {
@@ -301,7 +307,7 @@ namespace GdsII
                 if (!shapesByKey.TryGetValue(pair.Key, out var shapes))
                     shapes = new List<IReadOnlyList<Element.Point>>();
 
-                var merged = Booleans.Merge(shapes);
+                var merged = Booleans.MergeToRings(shapes);
 
                 foreach (string name in pair.Value)
                     geometry[name] = merged;
@@ -315,6 +321,8 @@ namespace GdsII
         ///operation to many shapes, which is not what a derivation is: `poly and diff not psdm` changes
         ///operation halfway, and there is no precedence to reorder it by - it reads left to right because
         ///anything else is something a person has to hold in their head while reading a deck.
+        ///
+        ///In rings from one step to the next, for the reason the drawn layers are kept in them.
         ///</summary>
         private void derive(DrcDerivation derivation)
         {
@@ -337,12 +345,12 @@ namespace GdsII
         ///why, and <see cref="IsResolved"/> is how a caller tells "this layer is empty" from "this layer
         ///could not be worked out". Those are different answers and a report has to keep them apart.
         ///</summary>
-        private List<List<Element.Point>> geometryOf(string name)
+        private List<Booleans.Ring> geometryOf(string name)
         {
-            if (geometry.TryGetValue(name, out var shapes))
-                return shapes;
+            if (geometry.TryGetValue(name, out var rings))
+                return rings;
 
-            return new List<List<Element.Point>>();
+            return new List<Booleans.Ring>();
         }
 
         #endregion **************************************************************************
@@ -363,8 +371,22 @@ namespace GdsII
         ///empty because it was never computed: this answers for the layers the deck's rules reach, since
         ///working out the rest would be a clipping pass over the whole layout for something nothing asked
         ///about.
+        ///
+        ///**For reading, not for measuring.** Each hole is folded into its outline as a keyhole here, the shape
+        ///a file can hold, and handing that back to a boolean is the slow path the rings exist to avoid - a
+        ///check measures <see cref="RingsOf"/>.
         ///</summary>
         public IReadOnlyList<IReadOnlyList<Element.Point>> Of(string name)
+        {
+            return Booleans.Keyholed(geometryOf(name));
+        }
+
+        ///<summary>
+        ///The same layer as <see cref="Of"/>, with each hole kept as a hole: what every check measures.
+        ///
+        ///Empty in the same three cases.
+        ///</summary>
+        public IReadOnlyList<Booleans.Ring> RingsOf(string name)
         {
             return geometryOf(name);
         }
@@ -409,47 +431,10 @@ namespace GdsII
             get { return Problems.Count == 0 && unresolved.Count == 0; }
         }
 
-        ///<summary>
-        ///The drawn layers a name is ultimately made of - itself when it is one, and what its derivation
-        ///reads all the way down when it is not.
-        ///
-        ///**What lets a violation say which cell it came from.** A marker is a region a boolean produced
-        ///and belongs to no element, so the way back into the hierarchy is through the elements that
-        ///contributed to it - and those sit on the drawn layers underneath whatever the rule happened to
-        ///name. A rule about a gate has to end up looking at poly and diff.
-        ///</summary>
+        ///<summary>The drawn layers a name is made of: <see cref="DrcDeck.DrawnBehind"/>, which answers it from the names alone.</summary>
         public List<LayerKey> DrawnBehind(string name)
         {
-            var keys = new List<LayerKey>();
-
-            drawnBehind(name, keys, new HashSet<string>());
-
-            return keys;
-        }
-
-        private void drawnBehind(string name, List<LayerKey> keys, HashSet<string> seen)
-        {
-            //Also what stops a circle from walking forever, which is worth having here as well as in the
-            //sort: this is reachable on a deck whose cycle was reported and carried on from.
-            if (!seen.Add(name))
-                return;
-
-            if (deck.Layers.TryGetValue(name, out var key))
-            {
-                if (!keys.Contains(key))
-                    keys.Add(key);
-
-                return;
-            }
-
-            foreach (var derivation in deck.Derivations)
-            {
-                if (derivation.Name != name)
-                    continue;
-
-                foreach (string operand in derivation.Operands)
-                    drawnBehind(operand, keys, seen);
-            }
+            return deck.DrawnBehind(name);
         }
 
         ///<summary>The rules whose layers could not all be worked out, named.</summary>

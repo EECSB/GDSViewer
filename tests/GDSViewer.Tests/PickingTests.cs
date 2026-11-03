@@ -244,6 +244,57 @@ public class PickingTests
         Assert.Equal(0, Picking.At(layout, At(50, 50), null));
     }
 
+    ///<summary>
+    ///A rubber band takes what a click would take, and no more.
+    ///
+    ///It asked only about locks, so a band over a hidden layer caught its shapes by their boxes and they came
+    ///back as outlines over empty canvas - and a click with a pixel of movement in it is a band. The shape
+    ///on the layer that is shown is still caught.
+    ///</summary>
+    [Fact]
+    public void A_band_does_not_catch_a_hidden_layer()
+    {
+        var shown = Square(0, 0, 100, OnLayer(65));
+        var hidden = Square(0, 0, 100, OnLayer(67));
+
+        var onlyTheShown = new HashSet<LayerKey> { new LayerKey(65, 20) };
+
+        Assert.Equal(new List<int> { 0 }, Picking.Caught(Holding(shown, hidden), new Bounds(40, 40, 60, 60), onlyTheShown));
+    }
+
+    ///<summary>Touching is enough to be caught, and with no layer list every layer is in reach - as for a click.</summary>
+    [Fact]
+    public void A_band_catches_what_it_touches()
+    {
+        var layout = Holding(Square(0, 0, 100, OnLayer(65)), Square(500, 500, 100, OnLayer(67)));
+
+        Assert.Equal(new List<int> { 0 }, Picking.Caught(layout, new Bounds(90, 90, 200, 200)));
+        Assert.Equal(new List<int> { 0, 1 }, Picking.Caught(layout, new Bounds(90, 90, 510, 510)));
+    }
+
+    ///<summary>
+    ///The rows' own answer: a layer is out of reach hidden or locked, which is why the set is an intersection
+    ///of the two switches rather than the complement of either.
+    ///</summary>
+    [Fact]
+    public void Hidden_and_locked_layers_are_both_out_of_reach()
+    {
+        var rows = new List<GDSViewer.Models.CheckboxItem>
+        {
+            new() { Id = new LayerKey(65, 20), Label = "65/20", IsSelected = true },
+            new() { Id = new LayerKey(66, 20), Label = "66/20", IsSelected = false },
+            new() { Id = new LayerKey(67, 20), Label = "67/20", IsSelected = true, IsLocked = true }
+        };
+
+        var reachable = GDSViewer.Models.CheckboxItem.EditableLayers(rows);
+
+        Assert.True(Picking.InReach(Square(0, 0, 100, OnLayer(65)), reachable));
+        Assert.False(Picking.InReach(Square(0, 0, 100, OnLayer(66)), reachable));
+        Assert.False(Picking.InReach(Square(0, 0, 100, OnLayer(67)), reachable));
+
+        Assert.True(Picking.InReach(Square(0, 0, 100, OnLayer(66)), null));
+    }
+
     #endregion ***********************************************************************
 
 
@@ -310,7 +361,7 @@ public class PickingTests
             GdsTestData.Record(RecordType.BGNSTR, stamps),
             GdsTestData.Record(RecordType.STRNAME, GdsTestData.Ascii("TOP")),
 
-            //The placement first, so the leaf's square is element nought of the flattened list.
+            //The placement first, so the leaf's square is element zero of the flattened list.
             GdsTestData.Record(RecordType.SREF),
             GdsTestData.Record(RecordType.SNAME, GdsTestData.Ascii("LEAF")),
             GdsTestData.Record(RecordType.XY, GdsTestData.Int4(new[] { 0, 0 })),

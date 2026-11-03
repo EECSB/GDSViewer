@@ -3,7 +3,7 @@
 //which is why they share a spec - and why every one of them is asserted from an empty file where there is
 //nothing to mistake for what the button did.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, openFile, expectLoaded, openLayerSettings, layerPairs, SKY130_CELL, uploadFile, openExamples, filterExamples, exampleRow } = require('./helpers');
+const { gotoApp, gotoExample, openFile, expectLoaded, openLayerSettings, layerPairs, SKY130_CELL, openExamples, filterExamples, exampleRow } = require('./helpers');
 const path = require('path');
 
 ///
@@ -18,16 +18,27 @@ async function rowText(page) {
 }
 
 ///
-///Presses New, and says yes to the prompt.
+///Presses New.
 ///
-///New asks before it closes what is open - see discardsWhatIsOpen in Viewer.razor - so a press nobody
-///answers is a press that does nothing at all. Playwright dismisses a dialog it was not told about, which
-///is Cancel, so every one of these has to say so out loud.
+///It used to ask before closing what was open, and this said yes to it. It asks nothing now - the file on screen
+///keeps a tab of its own, or gives way when it is the one the app opened for itself - and a yes armed here with
+///no question to answer was a yes the next question in the test got, whatever that was.
 ///
 async function startNewLayout(page) {
-    page.once('dialog', dialog => dialog.accept());
-
     await page.locator('#newLayout').click();
+}
+
+///Every question the page asks from here on, answered no - so a question that came back would say so.
+function questionsAsked(page) {
+    const asked = [];
+
+    page.on('dialog', dialog => {
+        asked.push(dialog.message());
+
+        return dialog.dismiss();
+    });
+
+    return asked;
 }
 
 async function addLayer(page, number, dataType) {
@@ -39,22 +50,29 @@ async function addLayer(page, number, dataType) {
     await page.locator('#addLayerConfirm').click();
 }
 
+///Set PDK under the empty layer list, and the PDK shown used in the manager it opens - see Viewer.razor's setPdk.
+async function startWithPdkLayers(page) {
+    await page.locator('#layersSetPdk').click();
+
+    await expect(page.locator('#pdkManagerWindow')).toBeVisible();
+
+    await page.locator('#pdkUse').click();
+
+    await expect(page.locator('#pdkManagerWindow')).toBeHidden();
+}
+
 ///
-///**New asks before it closes what is open.**
+///**Opening a file asks nothing, and closes nothing somebody chose.**
 ///
-///It sits in the toolbar beside Open and Download and one press wipes the view. What is worth pinning is
-///not that a dialog appears but that Cancel is a real answer - the file that was open is still open - and
-///that the question names the file, so it can be answered without guessing which one is about to go.
+///New, Open and a row of the Examples list each asked before closing what was open, every time, so that the
+///file on screen never went without a word. With tabs it does not go: a file somebody chose keeps its tab - see
+///tabs.spec - and the one that gives way is the example the app opened for itself, untouched. That is where
+///these start, so what they pin is that the first file opened takes its place without a question or a tab.
 ///
-test.describe('closing what is open', () => {
+test.describe('opening over the file the app opened for itself', () => {
     //
-    //Through gotoApp rather than gotoExample, so the file on screen is the one the app opened for itself.
-    //
-    //That is what the Open case needs: mayOfferImport asks a *better* question when there is something to
-    //bring across - import this file as a cell, or open it on its own - and taking the second answer is
-    //choosing to replace, so the confirm stands aside for it. The app's own opening file is the case it
-    //stands aside from, since nothing on screen is worth importing into yet, and it is also the first thing
-    //anybody actually does.
+    //Through gotoApp rather than gotoExample, so the file on screen is the one the app opened for itself rather
+    //than one a link asked for.
     //
     test.beforeEach(async ({ page }) => {
         await gotoApp(page);
@@ -63,99 +81,42 @@ test.describe('closing what is open', () => {
         await expect.poll(async () => openFile(page)).toBe('Mosfet.gds');
     });
 
-    test('Cancel keeps the file that was open', async ({ page }) => {
-        let asked = '';
+    test('New takes its place, and asks nothing', async ({ page }) => {
+        const asked = questionsAsked(page);
 
-        page.once('dialog', dialog => {
-            asked = dialog.message();
-
-            return dialog.dismiss();
-        });
-
-        await page.locator('#newLayout').click();
-
-        expect(asked).toContain('Mosfet.gds');
-
-        //Polled rather than read once, because what this guards against is a new layout arriving a moment
-        //later rather than not at all.
-        await expect.poll(async () => openFile(page), { timeout: 10000 }).toBe('Mosfet.gds');
-    });
-
-    test('and saying yes does what the button always did', async ({ page }) => {
         await startNewLayout(page);
 
         await expect.poll(async () => openFile(page), { timeout: 15000 }).toBe('Untitled.gds');
+        await expect(page.locator('#fileTabs')).toHaveCount(0);
+
+        expect(asked).toEqual([]);
     });
 
-    ///
-    ///**All three ways in ask, not just New.**
-    ///
-    ///Open and a row of the Examples list replace what is on screen exactly as New does, so a question on
-    ///one of them and silence on the other two is a rule nobody can rely on. Each names the file arriving
-    ///as well as the one going, which is what makes the question answerable.
-    ///
-    test('choosing an example asks, and Cancel keeps what was open', async ({ page }) => {
+    test('so does an example chosen from the list', async ({ page }) => {
+        const asked = questionsAsked(page);
+
         await openExamples(page);
         await filterExamples(page, SKY130_CELL);
-
-        let asked = '';
-
-        page.once('dialog', dialog => {
-            asked = dialog.message();
-
-            return dialog.dismiss();
-        });
-
-        await exampleRow(page, `${SKY130_CELL}.gds`).click();
-
-        //Both files named: the one arriving and the one going.
-        expect(asked).toContain(SKY130_CELL);
-        expect(asked).toContain('Mosfet.gds');
-
-        await expect.poll(async () => openFile(page), { timeout: 10000 }).toBe('Mosfet.gds');
-
-        //And yes opens it.
-        page.once('dialog', dialog => dialog.accept());
 
         await exampleRow(page, `${SKY130_CELL}.gds`).click();
 
         await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${SKY130_CELL}.gds`);
+        await expect(page.locator('#fileTabs')).toHaveCount(0);
+
+        expect(asked).toEqual([]);
     });
 
-    test('opening a file asks, and Cancel keeps what was open', async ({ page }) => {
-        let asked = '';
+    test('and a file opened from this computer', async ({ page }) => {
+        const asked = questionsAsked(page);
 
-        page.once('dialog', dialog => {
-            asked = dialog.message();
-
-            return dialog.dismiss();
-        });
-
-        //Driven straight at the input rather than through uploadFile, which answers the question for you.
+        //Straight at the input rather than through uploadFile, which would answer a question for you.
         await page.locator('#fileUpload').setInputFiles(path.join(__dirname, 'fixtures', 'placed.gds'));
 
-        //Polled: the question is asked from C# by way of the interop, so it is not up the instant
-        //setInputFiles returns - unlike a click, which does not come back until the dialog is answered.
-        await expect.poll(() => asked, { timeout: 15000 }).toContain('placed.gds');
-
-        expect(asked).toContain('Mosfet.gds');
-
-        await expect.poll(async () => openFile(page), { timeout: 10000 }).toBe('Mosfet.gds');
-    });
-
-    ///
-    ///Saying yes on its own page, rather than after the Cancel above.
-    ///
-    ///Setting the same path on the input a second time is not a second upload: the file list is already
-    ///that file, and what a person does after cancelling is choose again from a dialog rather than re-pick
-    ///the same name. A fresh page is the honest version of "and then they said yes".
-    ///
-    test('and saying yes to that opens it', async ({ page }) => {
-        await uploadFile(page, 'e2e/fixtures/placed.gds');
-
         await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('placed.gds');
-    });
+        await expect(page.locator('#fileTabs')).toHaveCount(0);
 
+        expect(asked).toEqual([]);
+    });
 });
 
 test.describe('a layout started from nothing', () => {
@@ -183,19 +144,118 @@ test.describe('a layout started from nothing', () => {
         await expect(page.locator('.contextCrumb.contextCrumbOn')).toHaveText('TOP');
     });
 
-    ///<summary>And it is not a bundled example, so no PDK names are guessed onto it.</summary>
-    test('gets no layermap guessed at it', async ({ page }) => {
+    ///
+    ///**A layer added is named by the PDK in use**, the layout being drawn in it: 66/20 is poly in sky130, with poly's
+    ///height and role, the way it is on every sky130 file and the way it comes back after a reload. It came in bare
+    ///while nothing said what the layout was; the PDK in use says it now. A pair the PDK has no row for comes in bare.
+    ///
+    test('names a layer added from the PDK in use, and leaves one it has no row for bare', async ({ page }) => {
         await addLayer(page, 66, 20);
+        await addLayer(page, 99, 0);
 
-        //66/20 is poly in sky130. Bare here, because this file is not a sky130 cell and nothing said it was.
-        await expect.poll(async () => await rowText(page)).toEqual(['1.66/20']);
+        await expect.poll(async () => await rowText(page)).toEqual(['1.poly (66/20)', '2.99/0']);
     });
 
     test('takes a layer that nothing is drawn on yet', async ({ page }) => {
         await addLayer(page, 66, 44);
         await addLayer(page, 68, 20);
 
-        await expect.poll(async () => await rowText(page)).toEqual(['1.66/44', '2.68/20']);
+        await expect.poll(async () => await rowText(page)).toEqual(['1.licon1 (66/44)', '2.met1 (68/20)']);
+    });
+
+    ///
+    ///**And offers the PDK's layers while it has none** - for sky130, the 21 its rules check with the 16 pins and labels
+    ///on them, named and each in a color of its own - so there is something to draw on and to check without a layermap
+    ///of anybody's own. Asked for 2026-10-17, and the pins and labels 2026-10-18: a new layout was a list with nothing
+    ///in it, and a layermap imported into it named nothing. Through Set PDK and the PDK manager since 2026-10-31, where
+    ///the PDK already in use offers its use pill too.
+    ///
+    test('offers the PDK\'s layers while it has none: sky130\'s drawing layers with their pins and labels', async ({ page }) => {
+        await expect(page.locator('#layersEmpty')).toContainText('No layers yet');
+        await expect(page.locator('#layersSetPdk')).toHaveText('Set PDK');
+
+        await startWithPdkLayers(page);
+
+        await expect.poll(async () => (await rowText(page)).length, { timeout: 15000 }).toBe(37);
+
+        const rows = (await rowText(page)).join(' | ');
+
+        for (const named of ['nwell (64/20)', 'poly (66/20)', 'licon1 (66/44)', 'met1 (68/20)', 'via4 (71/44)', 'met5 (72/20)', 'lvtn (125/44)', 'met1.pin (68/16)', 'met1.label (68/5)', 'pwell.pin (122/16)'])
+            expect(rows).toContain(named);
+
+        //Not the markers and implants nobody starts a layout on.
+        expect(rows).not.toContain('(83/44)');
+        expect(rows).not.toContain('(89/44)');
+
+        //A color each, rather than thirty-seven rows of the gray a layer added on its own comes in.
+        const colors = await page.locator('#layerSidebar .layerRow .layerSwatch').evaluateAll(swatches => swatches.map(each => each.getAttribute('title')));
+
+        expect(new Set(colors).size).toBe(37);
+        expect(colors).not.toContain('#808080');
+
+        //And the offer goes once there is a list.
+        await expect(page.locator('#layersEmpty')).toHaveCount(0);
+    });
+
+    ///
+    ///**Kept through a reload, though nothing is drawn on them.** The file's own records cannot carry a layer with no
+    ///shape on it, so they come back from the session, which keeps a named one - see applyRestoredLayers. They did not:
+    ///the first reload took every one of them away again.
+    ///
+    test('keeps the PDK\'s layers through a reload, though nothing is drawn on them', async ({ page }) => {
+        await startWithPdkLayers(page);
+
+        await expect.poll(async () => (await rowText(page)).length, { timeout: 15000 }).toBe(37);
+
+        const before = await rowText(page);
+        const colors = async () => page.locator('#layerSidebar .layerRow .layerSwatch').evaluateAll(swatches => swatches.map(each => each.getAttribute('title')));
+        const colorsBefore = await colors();
+
+        //A refresh: no query string, so the session is what opens the file.
+        await page.goto('/');
+
+        await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Untitled.gds');
+        await expect.poll(async () => await rowText(page), { timeout: 15000 }).toEqual(before);
+
+        //In the colors they had, rather than the gray an empty layer comes back in.
+        expect(await colors()).toEqual(colorsBefore);
+    });
+
+    ///
+    ///**Set PDK closed without using one changes nothing**: the list stays empty and still offers it. And the manager
+    ///opened another way while it does - the PDK row over the list here - picks the same as Set PDK (2026-11-01, asked
+    ///for): it said the PDK was in use and offered nothing, over a list still waiting for its layers.
+    ///
+    test('leaves the list empty when the PDK manager is closed without using a PDK, and picks from the PDK row as from Set PDK', async ({ page }) => {
+        await page.locator('#layersSetPdk').click();
+
+        await expect(page.locator('#pdkManagerWindow')).toBeVisible();
+
+        await page.locator('#pdkManagerWindow .closeButton').click();
+
+        await expect(page.locator('#pdkManagerWindow')).toBeHidden();
+        await expect(page.locator('#layersSetPdk')).toBeVisible();
+
+        //And the row over the list does not name a PDK whose layers it has not got.
+        await expect(page.locator('#sidebarPdkName')).toHaveText('not set');
+
+        await page.locator('#sidebarPdkManager').click();
+
+        await expect(page.locator('#pdkManagerWindow')).toBeVisible();
+
+        expect(await rowText(page)).toEqual([]);
+
+        await page.locator('#pdkUse').click();
+
+        await expect(page.locator('#pdkManagerWindow')).toBeHidden();
+        await expect.poll(async () => (await rowText(page)).length, { timeout: 15000 }).toBe(37);
+        await expect(page.locator('#sidebarPdkName')).toHaveText('sky130');
+
+        //With layers, the manager opened from the row is for managing: the PDK in use says so, and offers no pill.
+        await page.locator('#sidebarPdkManager').click();
+
+        await expect(page.locator('#pdkList .pdkRow').first()).toContainText('in use');
+        await expect(page.locator('#pdkUse')).toHaveCount(0);
     });
 
     ///
@@ -211,7 +271,7 @@ test.describe('a layout started from nothing', () => {
         await expect(page.locator('#addLayerProblem')).toContainText('already in the list');
 
         //And the list is unchanged, rather than carrying a second row that says the same thing.
-        await expect.poll(async () => await rowText(page)).toEqual(['1.66/44']);
+        await expect.poll(async () => await rowText(page)).toEqual(['1.licon1 (66/44)']);
     });
 
     ///
@@ -258,14 +318,14 @@ test.describe('a layout started from nothing', () => {
 
         await page.locator('.layerRow').first().locator('.layerRemove').click();
 
-        await expect.poll(async () => await rowText(page)).toEqual(['1.66/44', '2.68/20']);
+        await expect.poll(async () => await rowText(page)).toEqual(['1.licon1 (66/44)', '2.met1 (68/20)']);
 
         //Said yes: it goes.
         page.once('dialog', dialog => dialog.accept());
 
         await page.locator('.layerRow').first().locator('.layerRemove').click();
 
-        await expect.poll(async () => await rowText(page)).toEqual(['1.68/20']);
+        await expect.poll(async () => await rowText(page)).toEqual(['1.met1 (68/20)']);
     });
 });
 
@@ -409,4 +469,33 @@ test.describe('the rules list', () => {
         //Nothing was selected by it, which is what following the row would have done.
         await expect(page.locator('.rulesRowChosen')).toHaveCount(0);
     });
+});
+
+///
+///**A layer is added beside the text too** (asked for 2026-11-01), and what is typed in the editor is left as it is: a
+///layer with no shapes writes no record, so the text is not made again under it. Taking one out still rewrites the
+///text, so the rows' × stays 2D's.
+///
+test('a layer is added beside the text, and the text typed is kept', async ({ page }) => {
+    await gotoExample(page, 'Mosfet', 'text');
+
+    await expect(page.locator('.monaco-editor').first()).toBeVisible({ timeout: 60000 });
+    await expect.poll(async () => page.locator('#layerSidebar .layerRow').count(), { timeout: 60000 }).toBeGreaterThan(0);
+
+    const before = await page.locator('#layerSidebar .layerRow').count();
+
+    //Something typed and not applied.
+    await page.evaluate(() => {
+        const model = monaco.editor.getModels().find(one => one.getValue().includes('BGNLIB'));
+
+        model.setValue('typed here, not applied\n' + model.getValue());
+    });
+
+    await addLayer(page, 99, 7);
+
+    await expect(page.locator('#layerSidebar .layerRow')).toHaveCount(before + 1);
+    await expect(page.locator('#layerSidebar .layerRow').last()).toContainText('99/7');
+    await expect(page.locator('.layerRemove')).toHaveCount(0);
+
+    expect(await page.evaluate(() => monaco.editor.getModels().some(one => one.getValue().startsWith('typed here, not applied')))).toBe(true);
 });

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description/>
+ <original-file>sample.gds</original-file>
+ <generator>klayout-every-value.rb</generator>
+ <top-cell>TOP</top-cell>
+ <tags>
+  <tag>
+   <name>waived</name>
+   <description/>
+  </tag>
+  <tag>
+   <name>mine</name>
+   <description/>
+  </tag>
+ </tags>
+ <categories>
+  <category>
+   <name>m1.width</name>
+   <description>Metal 1 width &lt; 0.14 &amp; stuff &lt;tag&gt;</description>
+   <categories>
+    <category>
+     <name>sub.cat</name>
+     <description>A subcategory</description>
+     <categories>
+     </categories>
+    </category>
+   </categories>
+  </category>
+  <category>
+   <name>plain</name>
+   <description/>
+   <categories>
+   </categories>
+  </category>
+  <category>
+   <name>has space</name>
+   <description/>
+   <categories>
+   </categories>
+  </category>
+ </categories>
+ <cells>
+  <cell>
+   <name>TOP</name>
+   <variant/>
+   <layout-name/>
+   <references>
+   </references>
+  </cell>
+  <cell>
+   <name>SUB</name>
+   <variant>2</variant>
+   <layout-name/>
+   <references>
+    <ref>
+     <parent>TOP</parent>
+     <trans>r90 *1 10.5,-2.25</trans>
+    </ref>
+    <ref>
+     <parent>TOP</parent>
+     <trans>r0 *1 100,0</trans>
+    </ref>
+   </references>
+  </cell>
+  <cell>
+   <name>SUB</name>
+   <variant>1</variant>
+   <layout-name/>
+   <references>
+    <ref>
+     <parent>TOP</parent>
+     <trans>m0 *2 -1,3</trans>
+    </ref>
+   </references>
+  </cell>
+ </cells>
+ <items>
+  <item>
+   <tags>waived,#mine</tags>
+   <category>'m1.width'</category>
+   <cell>TOP</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment>a comment</comment>
+   <image/>
+   <values>
+    <value>polygon: (0,0;0,2.25;1.5,2.25;1.5,0)</value>
+    <value>edge-pair: (0,0;0,1)/(1,1;1,0)</value>
+    <value>edge: (0,0;3,4)</value>
+    <value>box: (-1,-2;3,4)</value>
+    <value>path: (0,0;10,0) w=0.5 bx=0 ex=0 r=false</value>
+    <value>label: ('lbl',r0 1.5,2.5)</value>
+    <value>float: 2.5</value>
+    <value>text: 'some text, with \'quotes\''</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'m1.width'.'sub.cat'</category>
+   <cell>SUB:2</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>polygon: (0,0;0,10;10,10;10,0/2,2;8,2;8,8;2,8)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>plain</category>
+   <cell>SUB:1</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (0,0;0,1)|(0.5,0;0.5,1)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'has space'</category>
+   <cell>TOP</cell>
+   <visited>true</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>box: (5,5;6,6)</value>
+   </values>
+  </item>
+ </items>
+</report-database>

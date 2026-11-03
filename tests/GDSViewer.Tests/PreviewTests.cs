@@ -163,4 +163,147 @@ public class PreviewTests
     }
 
     #endregion *************************************************************************
+
+
+
+    #region A layout as a file of its own ************************************************
+
+    private static readonly LayerKey OnlyLayer = new LayerKey(1, 0);
+
+    ///<summary>
+    ///A document that stands on its own - the namespace a file needs and a page does not - framed exactly as
+    ///a thumbnail of the same layout is.
+    ///</summary>
+    [Fact]
+    public void A_document_is_a_whole_svg_framed_like_a_thumbnail()
+    {
+        var layout = LayoutOf(Cell("A", Square(0, 0, 100)));
+        var shown = new HashSet<LayerKey> { OnlyLayer };
+
+        string document = Preview.Document(layout, shown, shown, 0.5f);
+        (_, string viewBox) = Preview.Of(layout, 0.5f);
+
+        Assert.StartsWith($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{viewBox}\">", document);
+        Assert.EndsWith("</svg>", document);
+        Assert.Contains("<path", document);
+    }
+
+    ///<summary>A layer switched off is out of the picture, the way it is out of the view - and still framed.</summary>
+    [Fact]
+    public void A_hidden_layer_is_left_out_of_the_document()
+    {
+        var layout = LayoutOf(Cell("A", Square(0, 0, 100)));
+
+        string document = Preview.Document(layout, new HashSet<LayerKey>(), new HashSet<LayerKey>(), 0.5f);
+
+        Assert.DoesNotContain("<path", document);
+        Assert.Contains("viewBox=\"-5 -5 110 110\"", document);
+    }
+
+    #endregion *************************************************************************
+
+
+
+    #region The picture as markup ******************************************************
+
+    ///<summary>A structure of <paramref name="count"/> squares in a row, for a layout past what is drawn as markup.</summary>
+    private static byte[] Squares(string name, int count)
+    {
+        var records = new List<byte[]>
+        {
+            GdsTestData.Record(RecordType.BGNSTR, GdsTestData.Timestamps()),
+            GdsTestData.Record(RecordType.STRNAME, GdsTestData.Ascii(name))
+        };
+
+        for (int i = 0; i < count; i++)
+        {
+            records.Add(GdsTestData.Record(RecordType.BOUNDARY));
+            records.Add(GdsTestData.Record(RecordType.LAYER, GdsTestData.Int2(1)));
+            records.Add(GdsTestData.Record(RecordType.DATATYPE, GdsTestData.Int2(0)));
+            records.Add(GdsTestData.Record(RecordType.XY, GdsTestData.Int4(Square(i * 20, 0, 10))));
+            records.Add(GdsTestData.Record(RecordType.ENDEL));
+        }
+
+        records.Add(GdsTestData.Record(RecordType.ENDSTR));
+
+        return GdsTestData.Concat(records.ToArray());
+    }
+
+    ///
+    ///**A small layout's picture is its SVG** - see PreviewPictures.MostAsMarkup in the app - which says it is the size
+    ///the PNG would have been, so either kind lands the same in a frame, and is the thumbnail's markup in the
+    ///thumbnail's frame.
+    ///
+    [Fact]
+    public void A_picture_as_markup_says_it_is_the_size_the_png_would_be()
+    {
+        var layout = LayoutOf(Cell("WIDE", new[] { 0, 0, 300, 0, 300, 100, 0, 100, 0, 0 }));
+
+        var png = Preview.Picture(layout, 320, 240, 0.85f)!;
+        string document = Preview.PictureDocument(layout, 320, 240, 0.85f)!;
+        (string markup, string viewBox) = Preview.Of(layout, 0.85f);
+
+        Assert.Equal($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{viewBox}\" width=\"{png.Width}\" height=\"{png.Height}\">{markup}</svg>", document);
+        Assert.Contains("<path", markup);
+    }
+
+    [Fact]
+    public void A_layout_with_nothing_in_it_has_no_picture_as_markup()
+    {
+        Assert.Null(Preview.PictureDocument(LayoutOf(EmptyCell("NOTHING")), 320, 240, 1f));
+    }
+
+    ///
+    ///**Which kind a list shows is the app's choice**: the SVG document up to PreviewPictures.MostAsMarkup elements and
+    ///corners, and a PNG past it, where markup was what froze the page.
+    ///
+    [Fact]
+    public async Task A_small_layout_is_drawn_as_markup_and_a_big_one_as_a_png()
+    {
+        var small = LayoutOf(Cell("A", Square(0, 0, 100)));
+        var big = LayoutOf(Squares("MANY", 4_000));
+
+        Assert.True(Models.PreviewPictures.Small(small));
+        Assert.False(Models.PreviewPictures.Small(big));
+
+        string smallPicture = await Models.PreviewPictures.PictureAsync(small, (320, 240), 0.85f, new Models.Pacer());
+        string bigPicture = await Models.PreviewPictures.PictureAsync(big, (320, 240), 0.85f, new Models.Pacer());
+
+        Assert.StartsWith(Models.PreviewPictures.SvgAddress, smallPicture);
+        Assert.Equal(Preview.PictureDocument(small, 320, 240, 0.85f), System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(smallPicture.Substring(Models.PreviewPictures.SvgAddress.Length))));
+        Assert.StartsWith(Models.PreviewPictures.PngAddress, bigPicture);
+    }
+
+    ///<summary>And nothing to draw is no picture either way.</summary>
+    [Fact]
+    public async Task A_layout_with_nothing_in_it_is_no_picture()
+    {
+        Assert.Equal("", await Models.PreviewPictures.PictureAsync(LayoutOf(EmptyCell("NOTHING")), (320, 240), 1f, new Models.Pacer()));
+    }
+
+    #endregion *************************************************************************
+
+    #region The format's way up *********************************************************
+
+    ///
+    ///Turned over for `gds svg`: the same frame, with the picture flipped about its middle - y' = top + bottom - y - so
+    ///a file to read as KLayout draws the layout, where the view and the download draw y downward. The CLI framed this
+    ///on its own, with a margin of its own, until 2026-11-03.
+    ///
+    [Fact]
+    public void A_document_the_formats_way_up_is_the_same_frame_turned_over()
+    {
+        var layout = LayoutOf(Cell("A", Square(0, 0, 100)));
+        var shown = new HashSet<LayerKey> { OnlyLayer };
+
+        string plain = Preview.Document(layout, shown, shown, 0.5f);
+        string turned = Preview.Document(layout, shown, shown, 0.5f, yUp: true);
+
+        Assert.StartsWith("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-5 -5 110 110\">", turned);
+        Assert.Contains("<g transform=\"translate(0,100) scale(1,-1)\">", turned);
+        Assert.EndsWith("</g></svg>", turned);
+        Assert.DoesNotContain("translate(", plain);
+    }
+
+    #endregion *************************************************************************
 }

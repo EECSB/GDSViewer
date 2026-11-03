@@ -112,7 +112,7 @@ rule via2.1     width      via2              280   "Via2 width"
 rule met3.1     width      met3              360   "Met3 width"
 
 #Implant marker areas. holearea is a rule on the holes in a merged layer rather than on the layer, which
-#is a distinction the documentation makes explicitly and which MergeByLayer already hands back separately.
+#is a distinction the documentation makes explicitly and which merging the layer already hands back separately.
 rule hvtp.5     area       hvtp           265000   "Hvtp min area"
 rule hvtp.6     holearea   hvtp           265000   "Hvtp min hole area"
 rule lvtn.13    area       lvtn           265000   "Lvtn min area"
@@ -129,7 +129,7 @@ rule grid.1     offgrid    *                   5   "Coordinate off the 5nm manuf
 
 #Rules deliberately NOT here *********************************************************
 #
-#These are real sky130 rules that the size-and-boolean engine cannot express, listed so that their absence
+#These are real sky130 rules that this checker cannot express, or that are not transcribed yet, listed so that their absence
 #is a decision on the record rather than an oversight. A deck that quietly approximated them would report
 #a clean cell that is not clean, which is worse than reporting that it did not look.
 #

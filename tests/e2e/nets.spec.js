@@ -8,7 +8,7 @@
 //through a genuine sky130 cell crosses layers - which is the claim, and the thing a hand-built fixture
 //cannot make.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, shapeCount, shapeBox, dismissSelection, snapToGrid } = require('./helpers');
+const { gotoExample, shapeCount, shapeBox, dismissSelection, snapToGrid, bareNumbers, importLayermap } = require('./helpers');
 const path = require('path');
 
 //
@@ -47,18 +47,18 @@ test.beforeEach(async ({ page }) => {
 });
 
 ///
-///Loads a mapping and waits for it to land on the panel.
+///Loads a mapping into the PDK in use, sky130 on Mosfet, and waits for it to land on the panel - see importLayermap.
 ///
-///On the panel rather than on a dialog: a mapping that works no longer says anything, so waiting to be told
-///would wait for a message that is never coming. The whole suite shares one dev server, so the round trip
-///through .NET is generously waited on - see layer-names.spec.
+///On the panel rather than on the PDK manager's line: the layers are laid over the file again after the line is
+///said. The whole suite shares one dev server, so the round trip through .NET is generously waited on - see
+///layer-names.spec.
 ///
 async function loadRoles(page, contents = ROLES) {
     const labels = () => page.locator('.layerRow .layerName').allTextContents();
 
     const before = (await labels()).join('|');
 
-    await page.locator('#layerNamesImport').setInputFiles({
+    await importLayermap(page, {
         name: 'roles.csv',
         mimeType: 'text/csv',
         buffer: Buffer.from(contents, 'utf8')
@@ -115,16 +115,12 @@ async function chosenCount(page) {
 ///With nothing said about the layers - which now takes saying so.
 ///
 ///A bundled example arrives with the shipped sky130 mapping over it, roles and all, so "before anything has
-///said" is a state that has to be got back to rather than one the file starts in. Clear is how, and it is the
-///same button somebody who wants bare numbers would press.
+///said" is a state that has to be got back to rather than one the file starts in. A PDK with no layers put in
+///use is how - see bareNumbers - and the roles go with the names.
 ///
 test.describe('before anything has said what the layers are for', () => {
     test.beforeEach(async ({ page }) => {
-        await page.locator('.layerSidebarClear').click();
-
-        //The roles go with the names, so this waits for the list to stop saying met1 rather than for a timeout.
-        await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-            { timeout: 20000 }).not.toContain('met1');
+        await bareNumbers(page);
     });
 
     ///
@@ -215,6 +211,26 @@ test.describe('with roles loaded', () => {
         await page.keyboard.press('Escape');
 
         await expect.poll(async () => page.locator('#gdsSVG .shapeSelected').count(), { timeout: 15000 }).toBe(0);
+    });
+
+    ///
+    ///**A net that fits in one step says it is all there.** A trace goes out a number of shapes at a time - see
+    ///the big net below - and on a cell this size the first step is the whole of it, so there is nothing for Next
+    ///to do and it is not offered.
+    ///
+    test('a net found in one step says it is the whole net', async ({ page }) => {
+        await loadRoles(page);
+
+        await chooseSomethingTraceable(page);
+
+        await page.locator('#traceNet').click();
+
+        await expect(page.locator('#netSteps')).toContainText('the whole net', { timeout: 15000 });
+        await expect(page.locator('#netNext')).toHaveCount(0);
+
+        const said = Number((await page.locator('#netSteps').textContent()).match(/(\d+) shape/)[1]);
+
+        expect(said).toBe(await chosenCount(page));
     });
 
     ///
@@ -381,14 +397,11 @@ test.describe('setting a role by hand', () => {
     ///
     ///The other way in, for somebody who knows their stack and has no CSV to hand.
     ///
-    ///Cleared first, so the box starts where somebody with no mapping would find it: the shipped one is over
-    ///a bundled example on arrival, and 65/20 comes with a role already.
+    ///On bare numbers first, so the box starts where somebody with no mapping would find it: the shipped one is
+    ///over a bundled example on arrival, and 65/20 comes with a role already. See bareNumbers.
     ///
     test('the layer settings offer conductor, via and none', async ({ page }) => {
-        await page.locator('.layerSidebarClear').click();
-
-        await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-            { timeout: 20000 }).not.toContain('met1');
+        await bareNumbers(page);
 
         await page.locator('.layerSettingsButton').first().click();
 
@@ -441,28 +454,25 @@ test.describe('the layermap that ships', () => {
         await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
 
         //
-        //Cleared first, so importing it proves something.
+        //Into a PDK with no layers first, so importing it proves something.
         //
-        //This same file is laid over a bundled example automatically, so the names are already on the panel
-        //when the page settles - and an import that changed nothing would be waited on by watching for a
-        //name that was never going to go away. Clearing puts the bare numbers back, and the names returning
-        //is the shipped file being read.
+        //This same file is the built-in PDK's, laid over a bundled example automatically, so the names are
+        //already on the panel when the page settles - and an import that changed nothing would be waited on by
+        //watching for a name that was never going to go away. An empty PDK in use puts the bare numbers back -
+        //see bareNumbers - and the names returning is the shipped file being read into it.
         //
-        await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
+        await bareNumbers(page);
 
-        await expect(page.locator('.layerList')).not.toContainText('met1');
-
-        await page.locator('#layerNamesImport').setInputFiles(path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'sky130-roles.csv'));
+        const read = await importLayermap(page, path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'sky130-roles.csv'));
 
         await expect(page.locator('.layerList')).toContainText('met1', { timeout: 60000 });
 
         //
-        //And it was read without complaint, which is now what silence means.
-        //
-        //A mapping that lands says nothing at all; what still reaches a dialog is a row that could not be
-        //read, or a whole file that matched nothing. Either would be a fault in the mapping this app ships.
+        //And it was read without complaint: no dialog, and no line it could not use said beside the Import.
+        //Either would be a fault in the mapping this app ships.
         //
         expect(said.join(' ')).toBe('');
+        expect(read).toMatch(/^Imported: \d+ layers\.$/);
 
         //And somewhere in the file is a shape that can be traced. Every shape in turn rather than a chosen
         //one: which index is metal is a fact about the example, and not the claim being made.
@@ -498,5 +508,81 @@ test.describe('the layermap that ships', () => {
         }
 
         throw new Error('no shape of the bundled example offered a trace');
+    });
+});
+
+///
+///**A net bigger than a step is traced a step at a time.**
+///
+///A supply rail on a real design is thousands of shapes, and the whole of one at once was a frozen page - so a
+///trace reaches a hundred shapes, nearest first, and Next reaches the number beside it more. The RC oscillator is
+///the smallest bundled design with nets that need more than one step, and its rails are its largest met1 shapes.
+///
+test.describe('a big net', () => {
+    test.beforeEach(async ({ page }) => {
+        await gotoExample(page, 'sky130_ef_ip__rc_osc_500k', 'View2DSvg');
+
+        await expect.poll(async () => shapeCount(page), { timeout: 120000 }).toBeGreaterThan(0);
+
+        await page.locator('#selectTool').click();
+    });
+
+    ///A point just inside the corner of the largest met1 shape drawn, on screen.
+    async function onTheLargestRail(page) {
+        return page.evaluate(() => {
+            const svg = document.getElementById('gdsSVG');
+            let best = null;
+
+            for (const path of svg.querySelectorAll('path.l68_20[data-elements]')) {
+                for (const run of window.viewGeometry.subpaths(path.getAttribute('d'))) {
+                    const corners = [];
+
+                    for (let i = 0; i + 1 < run.corners.length; i += 2)
+                        corners.push([run.corners[i], run.corners[i + 1]]);
+
+                    const xs = corners.map(corner => corner[0]);
+                    const ys = corners.map(corner => corner[1]);
+                    const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+
+                    if (best === null || area > best.area)
+                        best = { area: area, corner: corners[0] };
+                }
+            }
+
+            const point = svg.createSVGPoint();
+
+            point.x = best.corner[0] + 50;
+            point.y = best.corner[1] + 50;
+
+            const screen = point.matrixTransform(svg.getScreenCTM());
+
+            return { x: screen.x, y: screen.y };
+        });
+    }
+
+    test('a trace reaches a hundred shapes, Next a hundred more, and all of it on asking', async ({ page }) => {
+        const rail = await onTheLargestRail(page);
+
+        await page.mouse.click(rail.x, rail.y);
+        await page.locator('#traceNet').click();
+
+        //The shape it started on and a hundred more.
+        await expect(page.locator('#netSteps')).toContainText('101 shapes so far', { timeout: 30000 });
+
+        await page.locator('#netNext').click();
+
+        await expect(page.locator('#netSteps')).toContainText('201 shapes so far', { timeout: 30000 });
+        expect(await chosenCount(page)).toBe(201);
+
+        await page.locator('#netStep').selectOption('0');
+        await page.locator('#netNext').click();
+
+        await expect(page.locator('#netSteps')).toContainText('the whole net', { timeout: 60000 });
+        await expect(page.locator('#netNext')).toHaveCount(0);
+
+        const whole = Number((await page.locator('#netSteps').textContent()).match(/(\d+) shapes/)[1]);
+
+        expect(whole).toBeGreaterThan(201);
+        expect(await chosenCount(page)).toBe(whole);
     });
 });

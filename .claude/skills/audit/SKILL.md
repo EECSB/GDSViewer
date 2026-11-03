@@ -45,7 +45,7 @@ These separate a useful audit from a list of opinions, and each was earned here.
 
 `git status` first - know what is uncommitted before editing anything, or the audit's changes and someone
 else's blur together. Then `dotnet test` from the root and `npm test` from `tests/` for a green baseline;
-the 33 `Needs=KLayout` tests run for real on this machine. Skip the e2e suite here - it comes in only if
+the 38 `Needs=KLayout` tests run for real on this machine. Skip the e2e suite here - it comes in only if
 a later pass needs a browser fact, and then under the hazards below.
 
 ## Pass 1 - documentation against code
@@ -71,9 +71,21 @@ times - are the likeliest drift. Fix what is wrong in place; the findings list r
 Grep produces candidates; the rules have stated exceptions, so every hit needs eyes before it counts as a
 violation. Exclude the vendored trees and this skill's own file, whose word list below matches itself.
 
-- **US English** - case-insensitive word search for: centre, colour, behaviour, grey, licence, initialise,
-  organise, recognise, serialise, normalise, optimise, analyse, labelled, cancelled, modelled. Watch for
-  proper nouns - the Unlicense is one.
+- **US English** - case-insensitive, and by *stem*, never by whole word: a whole-word `grey` cannot see
+  `greyed` or `greys`, and on 2026-10-12 that had let 43 British spellings through, in 23 files. Start from
+  this - the words `CLAUDE.md` names, their inflections, and the ones that sweep turned up:
+
+  ```
+  \b\w*(colour|centre|behaviour|licenc|neighbour|favour|honour|metre|litre|fibre|calibre|defence|offence|artefact|judgement|catalogue|speciality|anticlockwise|isation|initialis|organis|recognis|serialis|normalis|optimis|visualis|synchronis|minimis|maximis|utilis|labell|modell|travell|signall|levell|channell|tunnell|fuell)\w*|\b(grey\w*|centring|programmes?|cancell(ed|ing)|totall(ed|ing)|realis(e|ed|es|ing)|analys(e|ed|ing))\b
+  ```
+
+  Run it with `grep -E` over the files `git ls-files` lists, and read what grep calls binary with `grep -a`:
+  `GdsII/Formats/DxfBinary.cs` carries a raw NUL, so a plain grep says "Binary file matches" and shows nothing.
+  Hits that stay: the examples in `CLAUDE.md`; `aria-labelledby`, an HTML attribute; Calibre, Siemens' DRC
+  tool; the `nanometre` and `millimetre` that `Models/Embedding.cs` accepts on the way in, and its comment
+  saying so; and SVG's `grey` color keyword in `GdsII/Formats/SvgReader.cs`. One stem lands on a word that is
+  fine: `metre` inside `renameTreeCell`. A test name is an identifier like any other: listed, not renamed in
+  passing.
 - **No ternaries** in `.cs`, `.razor`, `.js` - search ` ? ` with a matching ` : ` on the line; noisy, since
   `?.`, `??` and `int?` are not ternaries. A ternary in Razor markup attributes is allowed. When one is
   converted, a side effect stays inside the branch that had it.

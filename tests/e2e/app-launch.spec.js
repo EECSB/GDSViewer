@@ -2,7 +2,7 @@
 //the router resolved the viewer at "/". Everything else assumes all of that, so it is worth failing here
 //rather than somewhere confusing.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, openExamples, closeExamples, exampleRow, filterExamples, openFile, openLayerSettings, selectView, MOSFET, MOSFET_POLYGONS, previewShapeCount } = require('./helpers');
+const { gotoApp, gotoExample, openExamples, closeExamples, exampleRow, filterExamples, openFile, openLayerSettings, selectView, shapeBox, MOSFET, previewPicture } = require('./helpers');
 
 test('the WASM app boots and renders its shell', async ({ page }) => {
     await gotoApp(page);
@@ -50,11 +50,11 @@ test('the example list names its groups', async ({ page }) => {
     //The hand-made one sits under the first heading, ahead of the library.
     await expect(exampleRow(page, `${MOSFET}.gds`)).toBeVisible();
 
-    //Filtering to something only the library has leaves that group's heading and drops the other.
+    //Filtering to something only the libraries have leaves their headings and drops the others - sky130's and,
+    //since 2026-11-02, GF180's and IHP's, which each have a nand2_1 of their own.
     await filterExamples(page, 'nand2_1');
 
-    await expect(headings).toHaveCount(1);
-    await expect(headings.nth(0)).toHaveText('Sky130 GDS Examples');
+    await expect(headings).toHaveText(['Sky130 GDS Examples', 'GF180 GDS Examples', 'IHP GDS Examples']);
 
     //And the other way round.
     await filterExamples(page, 'Mosfet');
@@ -290,11 +290,15 @@ test.describe('the file lists hang off their buttons', () => {
 ///difference between reading a list of names and seeing what they are. Framed to the cell's own bounds,
 ///so a small cell fills the thumbnail rather than sitting in the corner of a fixed window.
 ///
-test('the preview is framed to the cell it is of, and carries no labels', async ({ page }) => {
+///**A picture since 2026-10-17**, not markup - see PreviewPictures - so what is pinned here is that there is one,
+///whose it is, and that it is framed on what it draws: the drawing reaches a twentieth of the wider side from the
+///picture's edge, which is the frame's margin. That it carries no labels, and what each pixel is, PngWriterTests pin.
+///
+test('the preview is framed to the cell it is of', async ({ page }) => {
     await gotoApp(page);
     await openExamples(page);
 
-    const preview = page.locator('svg.examplePreview');
+    const preview = page.locator('.examplePreview');
 
     //
     //Nothing until a row is pointed at.
@@ -309,10 +313,12 @@ test('the preview is framed to the cell it is of, and carries no labels', async 
     await filterExamples(page, `${MOSFET}.gds`);
     await exampleRow(page, `${MOSFET}.gds`).hover();
 
-    await expect(preview).toBeVisible();
-    await expect.poll(async () => previewShapeCount(page), { timeout: 15000 }).toBe(MOSFET_POLYGONS);
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 15000 }).toBe(`Preview of ${MOSFET}.gds`);
 
-    const framedOnMosfet = await preview.getAttribute('viewBox');
+    const mosfet = await previewPicture(page);
+
+    expect(mosfet.drawn).toBeGreaterThan(0);
+    expectFramedOnItsDrawing(mosfet);
 
     //
     //Off the list before pointing at the next row, which is not fussiness.
@@ -329,13 +335,55 @@ test('the preview is framed to the cell it is of, and carries no labels', async 
     await filterExamples(page, 'a211oi_1');
     await exampleRow(page, 'sky130_fd_sc_hd__a211oi_1.gds').hover();
 
-    await expect.poll(async () => previewShapeCount(page), { timeout: 60000 }).toBe(74);
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 60000 }).toBe('Preview of sky130_fd_sc_hd__a211oi_1.gds');
 
-    //Reframed to the new cell rather than kept on the old one's bounds.
-    expect(await preview.getAttribute('viewBox')).not.toBe(framedOnMosfet);
+    const cell = await previewPicture(page);
 
-    //No labels: at a couple of hundred pixels they are a smudge, and this answers "what is this cell".
-    await expect(preview.locator('text')).toHaveCount(0);
+    //Reframed to the new cell rather than kept on the old one's bounds: a standard cell is wide and short where the
+    //Mosfet is not, and the picture takes the frame's shape.
+    expectFramedOnItsDrawing(cell);
+    expect(Math.abs((cell.width / cell.height) - (mosfet.width / mosfet.height))).toBeGreaterThan(0.1);
+});
+
+///
+///Whether a picture is framed on what it draws: the drawing comes to within the margin of both sides of its wider
+///axis - a twentieth of that side, see Preview.FrameOf - and the picture is no bigger than that.
+///
+function expectFramedOnItsDrawing(picture) {
+    const across = picture.box.right - picture.box.left + 1;
+    const down = picture.box.bottom - picture.box.top + 1;
+    const wider = Math.max(picture.width, picture.height);
+    const drawnWider = Math.max(across, down);
+
+    expect(drawnWider / wider).toBeGreaterThan(0.85);
+    expect(drawnWider / wider).toBeLessThan(0.95);
+}
+
+///
+///**With Auto-generate preview off, a row pointed at waits for a press on the frame** - fetched and drawn only then.
+///The frame is beside the list, so the row stays the one waiting as the pointer leaves the list to reach it.
+///
+test('with Auto-generate preview off, an example waits for a press on the frame', async ({ page }) => {
+    await gotoApp(page);
+    await openExamples(page);
+
+    await expect(page.locator('#examplesAutoPreview')).toBeChecked();
+
+    await page.locator('#examplesAutoPreview').uncheck();
+
+    await filterExamples(page, `${MOSFET}.gds`);
+    await exampleRow(page, `${MOSFET}.gds`).hover();
+
+    const generate = page.locator('#examplePreviewGenerate');
+
+    await expect(generate).toBeVisible({ timeout: 15000 });
+    await expect(generate).toContainText(`${MOSFET}.gds`);
+    await expect(page.locator('.examplePreview')).toHaveCount(0);
+
+    await generate.click();
+
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 15000 }).toBe(`Preview of ${MOSFET}.gds`);
+    expect((await previewPicture(page)).drawn).toBeGreaterThan(0);
 });
 
 ///
@@ -349,7 +397,7 @@ test('pointing at an example previews it without opening it', async ({ page }) =
     await gotoApp(page);
     await openExamples(page);
 
-    const preview = page.locator('svg.examplePreview');
+    const preview = page.locator('.examplePreview');
 
     //Nothing is pointed at yet.
     await expect(preview).toHaveCount(0);
@@ -357,7 +405,8 @@ test('pointing at an example previews it without opening it', async ({ page }) =
     await filterExamples(page, 'a211oi_1');
     await exampleRow(page, 'sky130_fd_sc_hd__a211oi_1.gds').hover();
 
-    await expect.poll(async () => previewShapeCount(page), { timeout: 60000 }).toBe(74);
+    await expect.poll(async () => (await previewPicture(page))?.alt, { timeout: 60000 }).toBe('Preview of sky130_fd_sc_hd__a211oi_1.gds');
+    expect((await previewPicture(page)).drawn).toBeGreaterThan(0);
 
     //Looked at, not opened: the file behind the popup is untouched.
     expect(await openFile(page)).toBe(`${MOSFET}.gds`);
@@ -413,6 +462,35 @@ test('the Examples popup closes after picking one', async ({ page }) => {
     await expect(page.locator('#examplePicker')).toHaveCount(0);
 });
 
+///
+///**But not when the app opens its own example**, which is nobody's choice out of the list: one pointed at while the
+///app is still starting stays up as the example arrives under it.
+///
+///It used to shut. The app's own open went the way a press on a row goes, list and all, so a list opened in that
+///window was snatched away a moment later - and embedding.spec, which opens it that early to choose a row a page
+///brought in, lost it whenever the machine was slow. Filed as a flake under load on 2026-10-07, and found on
+///2026-11-02 to be this. The manifests are held back here so the list is surely open first: the app's own open
+///waits on them.
+///
+test('a list opened while the app is starting stays up as its own example arrives', async ({ page }) => {
+    await page.route(/(examples|designs)\.json$/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await route.continue();
+    });
+
+    await gotoApp(page);
+
+    await page.locator('#examplesButton').click();
+    await expect(page.locator('#examplePicker')).toBeVisible();
+
+    //Open before the example is, which is the whole of the case.
+    expect(await openFile(page)).toBeFalsy();
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
+
+    await expect(page.locator('#examplePicker')).toBeVisible();
+});
+
 test('the router resolves the viewer at the root, and says so for anything else', async ({ page }) => {
     await gotoApp(page);
     await expect(page.locator('#gdsSVG')).toBeVisible();
@@ -464,9 +542,9 @@ test('the buttons in the view bar are all one size', async ({ page }) => {
     //
     //The 3D view's own contribution, as the yardstick.
     //
-    //Admire used to be it, and Admire is not in the bar any more - it is a control about the view rather
-    //than about the file, and it sits on the canvas now with the other two of those. The download this
-    //view adds is the one left that arrives from somewhere else, which is what made Admire worth measuring.
+    //Admire used to be it, and Admire is not in the bar any more - it is a switch in the view's settings,
+    //under the cube, after a while on the canvas. The download this view adds is the one left that arrives
+    //from somewhere else, which is what made Admire worth measuring.
     //
     const yardstick = await measure('Download 3D model');
 
@@ -512,7 +590,7 @@ test('the download button is an icon in the corner of the view', async ({ page }
 
     //An icon, with the words in the tooltip rather than on it.
     await expect(button).toHaveText('');
-    await expect(button).toHaveAttribute('title', /Save this view as an SVG/);
+    await expect(button).toHaveAttribute('title', /Save this view as a picture/);
     await expect(button.locator('svg')).toHaveCount(1);
 
     const view = await page.locator('#svgWrapper').boundingBox();
@@ -522,6 +600,48 @@ test('the download button is an icon in the corner of the view', async ({ page }
     expect(view.x + view.width - (at.x + at.width)).toBeLessThan(30);
     expect(view.y + view.height - (at.y + at.height)).toBeLessThan(30);
     expect(at.x).toBeGreaterThan(view.x + (view.width / 2));
+});
+
+///
+///**One camera, and a menu of what it saves.** It was two buttons side by side, the camera for an SVG and a picture
+///for a PNG, which had to be told apart by their tooltips. The camera opens a menu that names both now, above it and
+///inside the view, and a press anywhere else puts it away the way the bar's menus go.
+///
+test('the camera opens a menu of a PNG and an SVG, and a press elsewhere shuts it', async ({ page }) => {
+    await gotoExample(page, MOSFET, 'View2DSvg');
+
+    await expect(page.locator('#gdsSVG')).toBeVisible();
+
+    //The one camera in the corner, where there were two - and alone there now that the assistant's spark is in the bar.
+    await expect(page.locator('.viewAction:not(.viewActionTop)')).toHaveCount(1);
+    await expect(page.locator('#imageMenu')).toHaveCount(0);
+
+    await page.locator('#downloadImage').click();
+
+    await expect(page.locator('#imageMenu')).toBeVisible();
+    await expect(page.locator('#downloadImage')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#imageMenu #downloadPng')).toContainText('PNG');
+    await expect(page.locator('#imageMenu #downloadSvg')).toContainText('SVG');
+
+    //Above the camera and inside the view, so it never opens off the bottom of the window.
+    const view = await page.locator('#svgWrapper').boundingBox();
+    const menu = await page.locator('#imageMenu').boundingBox();
+    const camera = await page.locator('#downloadImage').boundingBox();
+
+    expect(menu.y + menu.height).toBeLessThanOrEqual(camera.y);
+    expect(menu.x + menu.width).toBeLessThanOrEqual(view.x + view.width);
+
+    //A press on the drawing puts it away.
+    await page.mouse.click(view.x + 40, view.y + (view.height / 2));
+
+    await expect(page.locator('#imageMenu')).toHaveCount(0);
+
+    //And a second press on the camera does too.
+    await page.locator('#downloadImage').click();
+    await expect(page.locator('#imageMenu')).toBeVisible();
+
+    await page.locator('#downloadImage').click();
+    await expect(page.locator('#imageMenu')).toHaveCount(0);
 });
 
 ///
@@ -756,7 +876,13 @@ test('the file picker is filtered to the formats the app opens', async ({ page }
 ///onto a line of its own. It used to be behind a media query for that reason; the fence is 1em at every
 ///width now, which is less than the narrow setting used to be, so the widths below are what says so.
 ///
-///Measured in the bar's widest state - a drawing tool on, so the merge switch is in the row too.
+///Measured in the bar's widest state: a drawing tool on, so the merge switch is in the row; an edit made, so
+///the undo pair is; and Share and the settings gear at the far end.
+///
+///**The edit was missing**, and the row was two rows the moment there was anything to undo. Measured with a
+///tool in hand and nothing yet done, this passed at 1280 while the bar somebody actually had - one edit in -
+///had dropped its end onto a line of its own. Share and the settings gear at its end made it wider again, and
+///the editor is held wide enough for all of it from 1280 up now; see #mainAppContainer in Viewer.razor.css.
 ///
 test.describe('the toolbar fits on one line', () => {
     for (const width of [1280, 1366, 1399, 1400, 1440, 1920])
@@ -768,10 +894,20 @@ test.describe('the toolbar fits on one line', () => {
 
             await expect(page.locator('#toolGroup button').first()).toBeVisible();
 
-            //Select brings the merge switch in, which is the widest the bar ever gets.
+            //Select brings the merge switch in.
             await page.locator('#selectTool').click();
 
             await expect(page.locator('#joinToggle')).toBeVisible();
+
+            //And a shape taken out brings the undo pair, which is the widest the bar ever gets.
+            const shape = await shapeBox(page);
+
+            await page.mouse.click(shape.x + (shape.width / 2), shape.y + (shape.height / 2));
+            await page.mouse.click(shape.x + (shape.width / 2), shape.y + (shape.height / 2));
+            await page.keyboard.press('Delete');
+
+            await expect(page.locator('#undoEdit')).toBeVisible();
+            await expect(page.locator('.toolbarEnd #shareButton')).toBeVisible();
 
             const rows = await page.evaluate(() => {
                 const tops = new Set();
@@ -785,6 +921,68 @@ test.describe('the toolbar fits on one line', () => {
             expect(rows).toBe(1);
         });
     }
+});
+
+///
+///Share and the settings gear end the bar, either side of the title bar's switch and full screen - Share first and
+///the gear last of all - and stay when the title bar is put away. The PDK manager's chip stood before Share for a
+///day (2026-10-18) and went again; the PDK button over the layer panel is its way in.
+///
+///Not in the title bar, which is the one thing on the page somebody can hide and would take them with it.
+///Down here they are the same box as the two between them, so the end of the bar is one size.
+///
+test('Share and the settings gear end the bar, and stay when the title bar goes', async ({ page }) => {
+    await gotoExample(page, MOSFET, '2d');
+
+    const ends = await page.locator('.toolbarEnd button').evaluateAll(buttons => buttons.map(button => {
+        const box = button.getBoundingClientRect();
+
+        return { id: button.id, w: Math.round(box.width * 10), h: Math.round(box.height * 10) };
+    }));
+
+    expect(ends.map(one => one.id)).toEqual(['shareButton', 'bannerToggle', 'fullScreen', 'settingsMenu']);
+
+    const gear = ends[ends.length - 1];
+
+    for (const one of ends)
+        expect({ w: one.w, h: one.h }).toEqual({ w: gear.w, h: gear.h });
+
+    //Gone from the title bar, which keeps About.
+    await expect(page.locator('.top-row #shareButton')).toHaveCount(0);
+    await expect(page.locator('.top-row #settingsMenu')).toHaveCount(0);
+    await expect(page.locator('.top-row').getByText('About', { exact: true })).toBeVisible();
+
+    await page.locator('#bannerToggle').click();
+
+    await expect(page.locator('.top-row')).toHaveCount(0);
+    await expect(page.locator('#shareButton')).toBeVisible();
+    await expect(page.locator('#settingsMenu')).toBeVisible();
+});
+
+///
+///Share and the gear each stand off the window's pair between them, further than the two in it stand apart.
+///
+///Three things at the end rather than four: Share, the window's pair, and the gear. Their gaps are one number,
+///and the pair's own is the tools' gap - see .toolbarEnd and .toolbarEndSpace in app.css.
+///
+test('Share and the gear stand off the pair between them', async ({ page }) => {
+    await gotoExample(page, MOSFET, '2d');
+
+    await expect(page.locator('#bannerToggle')).toBeVisible();
+
+    const gaps = await page.evaluate(() => {
+        const box = one => document.querySelector(one).getBoundingClientRect();
+
+        return {
+            share: box('#bannerToggle').left - box('#shareButton').right,
+            pair: box('#fullScreen').left - box('#bannerToggle').right,
+            gear: box('#settingsMenu').left - box('#fullScreen').right
+        };
+    });
+
+    expect(gaps.pair).toBeGreaterThan(2);
+    expect(gaps.share).toBeGreaterThan(gaps.pair * 1.5);
+    expect(gaps.gear).toBeCloseTo(gaps.share, 1);
 });
 
 ///
@@ -1052,6 +1250,9 @@ test('the full-screen button lines up with the rest of the bar', async ({ page }
         const grid = document.querySelector('.toolbarGrid');
         const button = document.querySelector('#fullScreen').getBoundingClientRect();
 
+        //The bar's last control, which is the settings gear: full screen is one of the pair ahead of it.
+        const last = document.querySelector('#settingsMenu').getBoundingClientRect();
+
         return {
             full: box('#fullScreen'),
             peer: box('#historyButton'),
@@ -1080,7 +1281,7 @@ test('the full-screen button lines up with the rest of the bar', async ({ page }
             ends: [
                 Math.round(document.querySelector('#newLayout').getBoundingClientRect().left
                     - document.querySelector('.viewToolbar').getBoundingClientRect().left),
-                Math.round(document.querySelector('.viewToolbar').getBoundingClientRect().right - button.right)
+                Math.round(document.querySelector('.viewToolbar').getBoundingClientRect().right - last.right)
             ]
         };
     });
@@ -1095,11 +1296,11 @@ test('the full-screen button lines up with the rest of the bar', async ({ page }
     expect(lined.clear).toBeGreaterThan(40);
 
     //
-    //And inset from its end of the bar by what the first control is inset from the other.
+    //And the end of the bar inset from its edge by what the first control is inset from the other.
     //
     //This column had its gutter taken off, on the reading that the bar's own padding was enough for the
     //last thing in a row. What that produced was 22px of air at the left end and 12 at the right - a
-    //difference small enough to pass for a rendering artefact and large enough to look wrong.
+    //difference small enough to pass for a rendering artifact and large enough to look wrong.
     //
     expect(lined.ends[0]).toBe(lined.ends[1]);
     expect(lined.ends[0]).toBeGreaterThan(0);

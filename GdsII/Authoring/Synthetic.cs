@@ -6,10 +6,12 @@ namespace GdsII
     ///
     ///Layouts made to order, for measuring against.
     ///
-    ///**Nothing in this repository is big enough to be slow.** The 897 bundled cells are all under 60 KB, the
-    ///largest count any end-to-end test asserts is 74 shapes, and the wall this exists to find sits somewhere
-    ///around twenty thousand. So every performance claim about this app has been made about a file that does
-    ///not exist, and the first honest step is to be able to make one.
+    ///**Nothing in this repository was big enough to be slow.** The 897 bundled cells are all under 60 KB,
+    ///the largest count any end-to-end test asserted was 74 shapes, and the wall this exists to find sits
+    ///somewhere around twenty thousand. So every performance claim about this app had been made about a file
+    ///that did not exist, and the first honest step was to be able to make one. Most of the designs bundled
+    ///since are past that wall - up to two hundred thousand shapes flattened - but at the sizes they happen
+    ///to be, where this makes whatever size is asked for.
     ///
     ///Generated rather than committed. A half-million-element layout is a large file to keep in a repository
     ///forever, it would be checked by the corpus test on every run, and the one thing a benchmark fixture must

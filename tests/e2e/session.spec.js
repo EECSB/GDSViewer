@@ -6,7 +6,7 @@
 //here reloads for real rather than calling the storage API, because a session that saves and never
 //restores would pass any test that did not.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, hideLayer, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, MOSFET_POLYGONS, SKY130_CELL, fillsDrawn, captureScene, cameraPosition, leaveCell } = require('./helpers');
+const { storedSession, gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox, hideLayer, svgCounts, selectView, selectBackground, selectExample, editorText, saveEditorText, expectEditorLoaded, MOSFET, MOSFET_POLYGONS, SKY130_CELL, fillsDrawn, captureScene, cameraPosition, leaveCell, shapeBox, importLayermap } = require('./helpers');
 
 ///
 ///Waits for the session to name the file given, so a reopen is not racing the save that follows a load.
@@ -15,28 +15,7 @@ const { gotoApp, gotoExample, expectLoaded, openFile, layerPairs, layerCheckbox,
 ///can read the session from the file *before* the one just opened.
 ///
 async function expectSessionHolds(page, exampleName) {
-    await expect.poll(async () => page.evaluate(async () => {
-        const value = await window.gdsStorage.get('gdsviewer.session');
-
-        if (value === null)
-            return '';
-
-        //
-        //**Decoded the way AppStorage encoded it.** A session under the threshold is stored as plain JSON
-        //behind a marker and one over it is deflated and base64'd, and which side of that line a session
-        //falls on depends on how many settings the app has - so a helper that read the raw string would
-        //stop being able to see anything the day a field was added, having tested nothing in between.
-        //
-        if (value.startsWith('z')) {
-            const bytes = Uint8Array.from(atob(value.slice(1)), letter => letter.charCodeAt(0));
-
-            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-
-            return new Response(stream).text();
-        }
-
-        return value.slice(1);
-    }), { timeout: 60000 }).toContain(exampleName);
+    await expect.poll(async () => storedSession(page), { timeout: 60000 }).toContain(exampleName);
 }
 
 ///
@@ -89,9 +68,10 @@ test('an edit survives the browser being closed', async ({ page }) => {
 
     expect(messages.join(' ')).toContain('Saved');
 
-    //An edited file travels as bytes, so waiting on the name is not enough - wait for the payload.
+    //An edited file travels as bytes, so waiting on the name is not enough - wait for the bytes, which are
+    //kept beside the session rather than in it. See SavedSession.BytesApart.
     await expect.poll(async () => page.evaluate(async () => {
-        const value = await window.gdsStorage.get('gdsviewer.session');
+        const value = await window.gdsStorage.get('gdsviewer.session#bytes');
 
         if (value === null)
             return 0;
@@ -181,12 +161,16 @@ test('the example you chose from the picker is the one that comes back', async (
     await expectOpenFile(page, `${SKY130_CELL}.gds`);
 });
 
+///
+///A mapping goes into the PDK in use, through the PDK manager, since the layer panel's Import went there (2026-10-19) -
+///so what comes back is the PDK, kept in this browser beside the session, naming the file again.
+///
 test('a layer name loaded from a mapping comes back, with its color', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
     await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    await page.locator('#layerNamesImport').setInputFiles({
+    await importLayermap(page, {
         name: 'sky130.csv',
         mimeType: 'text/csv',
         buffer: Buffer.from('65,20,diff.drawing,#00ff00', 'utf8')
@@ -348,12 +332,129 @@ test('an unedited example is stored by name rather than by copying it', async ({
     expect(stored).toBeLessThan(1500);
 });
 
+///
+///**The file is written when it changes, and a save after that is the settings alone.**
+///
+///A session is saved far more often than its file changes - every pan that comes to rest is a save - and it
+///used to carry the file inside: after an edit, each of those saves serialized and compressed the whole file
+///again, which on an eight megabyte upload was a third of a second after every pan. The bytes are kept beside
+///the session now, under a key of their own, and written with the edit. What is counted here is the writes
+///themselves, since nothing on screen would differ.
+///
+test('the file is stored when it changes, and a pan after an edit stores the settings alone', async ({ page }) => {
+    await gotoExample(page, MOSFET, 'View2DSvg');
+
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+
+    //
+    //Every write from here on: which key, and how long the value was.
+    //
+    //Counted at IndexedDB's own put rather than by wrapping gdsStorage: Blazor's interop keeps the function it
+    //found for a name the first time it called it, so a wrapper put on afterwards never hears from it.
+    //
+    await page.evaluate(() => {
+        window.__writes = [];
+
+        const put = IDBObjectStore.prototype.put;
+
+        IDBObjectStore.prototype.put = function (value, key) {
+            window.__writes.push([key, String(value).length]);
+
+            return put.call(this, value, key);
+        };
+    });
+
+    const writesTo = (key) => page.evaluate((key) => window.__writes.filter(([written]) => written === key).length, key);
+
+    //An edit: a shape chosen, which enters its cell, and nudged a step to the right.
+    await page.locator('#selectTool').click();
+
+    const shape = await shapeBox(page);
+
+    await page.mouse.click(shape.x + (shape.width / 2), shape.y + (shape.height / 2));
+    await expect(page.locator('#selectionPanel')).toBeVisible();
+
+    await page.keyboard.press('ArrowRight');
+
+    //The file goes beside the session, once.
+    await expect.poll(async () => writesTo('gdsviewer.session#bytes'), { timeout: 30000 }).toBe(1);
+
+    //
+    //And into the history row, which the same save writes a few awaits later, bytes and all. Waited for too, or
+    //they land among the pan's writes below and read as the pan writing the file again - which on a busy machine
+    //they did, now and then.
+    //
+    await expect.poll(async () => writesTo('gdsviewer.history.Mosfet.gds#bytes'), { timeout: 30000 }).toBeGreaterThan(0);
+
+    //And then a pan, and the save it sets off once it has come to rest.
+    await page.evaluate(() => {
+        window.__writes = [];
+    });
+
+    await page.locator('#panTool').click();
+
+    const view = await page.locator('#gdsSVG').boundingBox();
+
+    await page.mouse.move(view.x + (view.width / 2), view.y + (view.height / 2));
+    await page.mouse.down();
+    await page.mouse.move(view.x + (view.width / 2) + 90, view.y + (view.height / 2) + 40, { steps: 6 });
+    await page.mouse.up();
+
+    await expect.poll(async () => writesTo('gdsviewer.session'), { timeout: 30000 }).toBeGreaterThan(0);
+
+    const writes = await page.evaluate(() => window.__writes);
+
+    //No bytes anywhere, and a session the size of its settings: Mosfet.gds alone is 2.6 KB, base64'd past 3.5.
+    expect(writes.filter(([key]) => key.endsWith('#bytes'))).toEqual([]);
+
+    for (const [key, length] of writes.filter(([key]) => key === 'gdsviewer.session'))
+        expect(length).toBeLessThan(1500);
+});
+
+///
+///**A session stored the way it used to be still opens** - with the file base64'd inside it, before the bytes
+///were kept apart. Sessions like that are sitting in browsers already, and one that would not read is a file
+///lost. Written into the store as the old app left it, then the page reopened on it.
+///
+test('a session stored with the file inside it, the way it used to be, still opens', async ({ page }) => {
+    await gotoExample(page, MOSFET);
+
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+
+    const placed = require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'placed.gds')).toString('base64');
+
+    await page.evaluate(async (bytes) => {
+        const session = JSON.stringify({ v: 2, e: '', n: 'placed', t: '.gds', b: bytes, w: '2d' });
+
+        //Raw behind its marker, which is one of the two ways AppStorage has always stored a value.
+        await window.gdsStorage.set('gdsviewer.session', 'r' + session);
+        await window.gdsStorage.remove('gdsviewer.session#bytes');
+
+        //And nothing written over it by this page before it goes - stopped at IndexedDB's own put, since
+        //Blazor's interop keeps the functions it has already found and would not see gdsStorage replaced.
+        IDBObjectStore.prototype.put = function () {
+            return null;
+        };
+
+        window.gdsExitSave.release();
+    }, placed);
+
+    await reopen(page);
+
+    await expectOpenFile(page, 'placed.gds');
+
+    //The fixture's own shapes: a square and three placements of a leaf.
+    await expect.poll(async () => (await svgCounts(page)).polygons, { timeout: 30000 }).toBe(4);
+});
+
 test('storage being unavailable costs the session, not the app', async ({ page }) => {
     //Refuse every write before the app starts, the way a private window or blocked site data would.
     await page.addInitScript(() => {
         window.addEventListener('DOMContentLoaded', () => {
-            if (window.gdsStorage)
+            if (window.gdsStorage) {
                 window.gdsStorage.set = async () => false;
+                window.gdsStorage.setTogether = async () => false;
+            }
 
             if (window.gdsLocalStorage)
                 window.gdsLocalStorage.set = () => false;
@@ -400,6 +501,41 @@ test('the exit handler writes the session where a closed tab would leave it', as
 });
 
 ///
+///**And what it writes comes back.** The handler writes the session the way the save handed it over -
+///encoded, marker and all - so the read that falls back to it has to decode it the way it decodes IndexedDB's
+///copy. It did not: the encoded text went to the session reader, which took it for no session at all, and
+///was carried into IndexedDB encoded a second time. The test above only looked at whether something landed.
+///
+///IndexedDB's copy is taken away first, because that is the only time this one is read: a browser where
+///IndexedDB is unavailable or full, or a save that never finished.
+///
+test('a session only the exit handler kept comes back', async ({ page }) => {
+    await gotoExample(page, MOSFET);
+
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+
+    await hideLayer(page);
+
+    const afterHiding = (await svgCounts(page)).polygons;
+    expect(afterHiding).toBeLessThan(MOSFET_POLYGONS);
+
+    //Fired until what it writes has the hidden layer in it: the snapshot is handed over at the end of the
+    //save the hide sets off, a moment after the layer goes.
+    await expect.poll(async () => {
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+
+        return storedSession(page, true);
+    }, { timeout: 60000 }).toContain('"h":["');
+
+    await page.evaluate(async () => window.gdsStorage.remove('gdsviewer.session'));
+
+    await reopen(page);
+
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(afterHiding);
+    await expect(layerCheckbox(page)).toHaveClass(/layerEyeOff/);
+});
+
+///
 ///The page giving its margins to the view is a setting, and comes back with everything else.
 ///
 ///It was grouped with the popups as a thing about right now rather than a thing about how you work. The
@@ -410,29 +546,33 @@ test('the exit handler writes the session where a closed tab would leave it', as
 ///back on a load at all - this is the four rems of padding the page wraps itself in, which nothing stops
 ///the app from setting for itself.
 ///
+///**Full screen to begin with, since 2026-11-03**, with the title bar over it: so this leaves it first and
+///comes back, where it used to go in first.
+///
 test('a view given the page margins still has them after a reload', async ({ page }) => {
     await gotoExample(page, MOSFET, 'View2DSvg');
 
-    await expect(page.locator('.viewerPageFull')).toHaveCount(0);
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
+    await expect(page.locator('.top-row')).toBeVisible();
 
     await page.locator('#fullScreen').click();
 
-    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
+    await expect(page.locator('.viewerPageFull')).toHaveCount(0);
 
     await expectSessionHolds(page, MOSFET);
 
     await reopen(page);
 
-    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
+    await expect(page.locator('.viewerPageFull')).toHaveCount(0);
 
     //And back again, so it is a setting rather than a door that only opens one way.
     await page.locator('#fullScreen').click();
 
-    await expect(page.locator('.viewerPageFull')).toHaveCount(0);
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
 
     await reopen(page);
 
-    await expect(page.locator('.viewerPageFull')).toHaveCount(0);
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
 });
 
 ///

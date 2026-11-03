@@ -101,6 +101,12 @@ namespace GDSViewer.Models
         ///layermap is not state the visitor arrived with - it is a fact about the process the page is
         ///showing - and putting it in the session would have the next file opened inherit it.
         ///
+        ///**So it names the page's files and is never the visitor's own**: the file the address opens, and any
+        ///example opened in that page, the way the bundled mapping names an example - but not an upload, and
+        ///after the visitor leaves, nothing but the file it named. See Viewer.razor's fetchLayerMap and
+        ///pageLayerMapForThisFile. It did not hold until 2026-10-14: the mapping was remembered like an Import,
+        ///and went onto every file the visitor opened from then on.
+        ///
         public string? LayerMap { get; init; }
 
         ///<summary>Nothing named, nothing to apply - the ordinary case, and worth not walking.</summary>

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace GdsII.Cli
 {
     ///<summary>
@@ -68,38 +70,26 @@ namespace GdsII.Cli
 
             foreach (string entry in list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                string[] halves = entry.Split('/');
-
-                if (halves.Length > 2 || !short.TryParse(halves[0], out short number))
+                //A pair by the one grammar for it - see LayerKey.TryParse, which reads the 65/? this tool prints
+                //for a data type it could not read, so that round-trips. Invariant, as every number on the command
+                //line is: these read under the current culture until 2026-11-03.
+                if (LayerKey.TryParse(entry, out LayerKey pair))
                 {
-                    error.WriteLine($"\"{entry}\" is not a layer. Write one as 65 or as 65/20, separated by commas.");
+                    specs.Add(new Spec(pair.Number, pair.DataType));
 
-                    return false;
+                    continue;
                 }
 
-                if (halves.Length == 1)
+                if (!entry.Contains('/') && short.TryParse(entry, NumberStyles.None, CultureInfo.InvariantCulture, out short number))
                 {
                     specs.Add(new Spec(number, null));
 
                     continue;
                 }
 
-                //The way this tool prints a data type it could not read, so it round-trips.
-                if (halves[1] == "?")
-                {
-                    specs.Add(new Spec(number, LayerKey.UnknownDataType));
+                error.WriteLine($"\"{entry}\" is not a layer. Write one as 65 or as 65/20, separated by commas.");
 
-                    continue;
-                }
-
-                if (!short.TryParse(halves[1], out short dataType))
-                {
-                    error.WriteLine($"\"{entry}\" is not a layer. Write one as 65 or as 65/20, separated by commas.");
-
-                    return false;
-                }
-
-                specs.Add(new Spec(number, dataType));
+                return false;
             }
 
             return true;

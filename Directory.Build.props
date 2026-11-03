@@ -16,15 +16,20 @@
       1.0.0 because the API is one worth committing to, not because nothing will be added to it.
 
       A first package at 0.x says "expect this to move under you", and the parts a consumer touches -
-      reading a file, walking the model, flattening, writing either format - have been settled for a
-      while and are pinned by 2,022 tests against 897 real layouts. Anything that would break them is a
-      2.0, which is what the number is for.
+      reading a file, walking the model, flattening, writing either format - had been settled for a
+      while, and were pinned by 2,022 tests against 897 real layouts when 1.0.0 was chosen. Anything that
+      would break them is a 2.0, which is what the number is for.
 
       1.1.0 adds the authoring side - Shapes, PathBuilder and BezierBuilder, and the edits that put what
       they produce into a file. Additive, so the minor: nothing a 1.0.0 consumer reads, walks, flattens
       or writes behaves differently.
+
+      1.2.0 adds the AI assistant's tools (AgentTools, which gds mcp serves too), SVG in, PNG and
+      mask bitmaps out, comparison, corners, marks, flattening to a file, KLayout's DRC reports read, and
+      the layer table's texture columns. Additive again: what changed in a public signature is an optional
+      parameter on the end, so a 1.1.0 consumer's code compiles and behaves as it did.
     -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
 
     <Authors>EECSB</Authors>
     <Copyright>Public domain (The Unlicense)</Copyright>

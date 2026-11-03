@@ -27,7 +27,7 @@ const CELL = 'sky130_fd_sc_hd__nand2_1';
 const LAYERMAP = 'resources/GDS%20Files/sky130-roles.csv';
 
 ///
-///Opens the app, waits for the file to be in the shell, and puts the editor full screen.
+///Opens the app, waits for the file to be in the shell, and sees the editor full screen.
 ///
 ///data-file rather than the layer sidebar, because the text view does not draw one - the same reason the
 ///suite's own helper reads it there.
@@ -35,7 +35,7 @@ const LAYERMAP = 'resources/GDS%20Files/sky130-roles.csv';
 ///**Full screen for every picture.** The page's own margins and the header take about a third of the frame
 ///otherwise, so a screenshot of the editor is mostly a screenshot of the page around it. The toolbar button
 ///is a CSS class rather than the browser's Fullscreen API - see Viewer.razor's viewerPageFull - which is why
-///it works here at all.
+///it works here at all. Where the app starts since 2026-11-03, so nothing is pressed for it.
 ///
 async function open(page, query) {
     await page.goto(`/${query}`);
@@ -43,8 +43,6 @@ async function open(page, query) {
     await expect
         .poll(async () => page.locator('#mainAppContainer').getAttribute('data-file'), { timeout: 120000 })
         .not.toBe('');
-
-    await page.locator('#fullScreen').click();
 
     await expect(page.locator('.viewerPageFull')).toBeVisible();
 
@@ -96,12 +94,12 @@ test('the 3D view', async ({ page }) => {
     //a stack: even spacing between films whose real separations are the whole point, and a contact drawn
     //floating in a gap it exists to bridge.
     //
-    //At nought, and with the bundled layermap's real heights under it, this is the wafer - li1 at 940 nm,
+    //At zero, and with the bundled layermap's real heights under it, this is the wafer - li1 at 940 nm,
     //met1 at 1370, mcon spanning exactly the 330 between them, touching at both ends. That is what the app
     //claims to draw and what the surrounding prose in the readme describes, so it is what the picture
     //should be.
     //
-    //Set rather than left alone: nought is the default today, and a picture that depends on a default is
+    //Set rather than left alone: zero is the default today, and a picture that depends on a default is
     //one that changes when the default does.
     //
     await page.locator('#layerSpacing').evaluate(slider => {
@@ -185,7 +183,7 @@ test('the examples picker', async ({ page }) => {
     //
     await page.locator('.examplePickerOption').first().hover();
 
-    await expect(page.locator('svg.examplePreview')).toBeVisible();
+    await expect(page.locator('img.examplePreview')).toBeVisible();
     await page.waitForTimeout(600);
 
     await shoot(page, 'examples');
@@ -285,12 +283,13 @@ test('measuring across the layout', async ({ page }) => {
 
     await page.locator('#measureTool').click();
 
-    const view = await page.locator('#gdsSVG').boundingBox();
+    //Across the transistor, corner to corner of its implant, so the reading is a diagonal rather than a width. From the
+    //shape rather than from numbers tuned to the frame, which put the far end off the drawing once the frame narrowed.
+    const across = await page.locator('#gdsSVG path.l93_44').first().boundingBox();
 
-    //Across the transistor, corner to corner, so the reading is a diagonal rather than a width.
-    await page.mouse.move(view.x + 420, view.y + 300);
+    await page.mouse.move(across.x, across.y);
     await page.mouse.down();
-    await page.mouse.move(view.x + 800, view.y + 480, { steps: 12 });
+    await page.mouse.move(across.x + across.width, across.y + across.height, { steps: 12 });
 
     await page.waitForTimeout(500);
 
@@ -319,24 +318,14 @@ test('fill patterns over the colors', async ({ page }) => {
 ///
 ///The rules, in the panel the layers usually have.
 ///
-///Loaded through the bundled deck rather than a fixture, because that is the button somebody actually
-///presses and a picture of a hand-fed deck would be a picture of something nobody does.
+///The bundled deck rather than a fixture, because it is the one a sky130 cell arrives with - the PDK in use's -
+///and a picture of a hand-fed deck would be a picture of something nobody does.
 ///
 test('the rules panel, with the bundled deck loaded', async ({ page }) => {
     await open(page, `?file=${CELL}&view=2d&layermap=${LAYERMAP}`);
     await drawn(page);
 
     await page.locator('#sidebarPanelRules').click();
-
-    //
-    //Offered only where nothing is loaded, which a bundled example is not any more.
-    //
-    //The deck now arrives with the example, the same way the layermap does - so on this cell the offer is
-    //already gone and pressing it waited thirty seconds for a control that had done its job. Pressed where
-    //it is there, skipped where it is not, so this keeps working whichever way that goes later.
-    //
-    if (await page.locator('#drcBundled').count() > 0)
-        await page.locator('#drcBundled').click();
 
     await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 
@@ -355,7 +344,9 @@ test('violations marked on the drawing', async ({ page }) => {
     await drawn(page);
 
     await page.locator('#sidebarPanelRules').click();
-    await page.locator('#sidebarInfo').click();
+    await page.locator('#sidebarPdkManager').click();
+    await page.locator('#pdkRulesTab').click();
+    await page.locator('#pdkHelp').click();
     await page.locator('#loadStrictDeck').click();
 
     await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
@@ -372,6 +363,230 @@ test('violations marked on the drawing', async ({ page }) => {
     await page.waitForTimeout(600);
 
     await shoot(page, 'rules-violations');
+});
+
+///
+///**The PDK manager**, from the PDK row at the top of the layer panel: the PDKs down its left, and the one in use saying
+///what it is - sky130's own README, with its metal stack drawn, where the lists of its layers and rules are picked under it.
+///
+test('the PDK manager, on sky130\'s README', async ({ page }) => {
+    await open(page, `?file=${CELL}&view=2d&layermap=${LAYERMAP}`);
+    await drawn(page);
+
+    await page.locator('#sidebarPdkManager').click();
+
+    await expect(page.locator('#pdkReadme h1')).toHaveText('SkyWater SKY130', { timeout: 30000 });
+
+    //Its pictures are files in the PDK, read in after the words.
+    await expect
+        .poll(async () => page.locator('#pdkReadme img').evaluateAll(pictures => pictures.every(each => each.complete && each.naturalWidth > 0)))
+        .toBe(true);
+
+    await page.waitForTimeout(600);
+
+    await shoot(page, 'pdk-manager');
+});
+
+///
+///**Structures made from numbers, on more than one layer**: a spiral inductor on sky130's met5, its underpass on met4 and
+///its vias on via4, each put down at the same point of a new layout - the three share their numbers, so they meet - and
+///the Generator's panel open on the spiral, saying what its numbers come to.
+///
+test('a spiral inductor from the Generator, its three layers lined up', async ({ page }) => {
+    await open(page, `?file=${MOSFET}&view=2d`);
+    await drawn(page);
+
+    await page.locator('#newLayout').click();
+    await page.locator('#layersSetPdk').click();
+    await page.locator('#pdkUse').click();
+
+    await expect(page.locator('.layerRow', { hasText: 'met5 (72/20)' })).toBeVisible({ timeout: 30000 });
+
+    const view = await page.locator('#gdsSVG').boundingBox();
+    const middle = { x: view.x + (view.width * 0.5), y: view.y + (view.height * 0.5) };
+
+    for (const [layer, kind] of [['met5 (72/20)', 'spiral'], ['met4 (71/20)', 'underpass'], ['via4 (71/44)', 'inductorvias']]) {
+        await page.locator('#drawTool').click();
+        await page.locator('.layerRow', { hasText: layer }).first().locator('.layerName').click();
+
+        await openGenerator(page);
+        await page.locator('#markKind').selectOption(kind);
+        await page.locator('#pickUpMark').click();
+
+        await expect(page.locator('#carryingStamp')).toBeVisible();
+
+        await page.mouse.move(middle.x, middle.y);
+        await page.mouse.down();
+        await page.mouse.up();
+
+        await expect(page.locator('#undoEdit')).toHaveAttribute('title', /Place/);
+
+        await page.keyboard.press('Escape');
+    }
+
+    await page.locator('#centerView').click();
+    await page.waitForTimeout(1000);
+
+    //Smaller, and left of and under where the menu hangs: the wheel zooms about the pointer, so out about a point low on
+    //the view's left edge.
+    await page.mouse.move(view.x + 30, view.y + (view.height * 0.8));
+
+    for (let notch = 0; notch < 5; notch++) {
+        await page.mouse.wheel(0, 100);
+        await page.waitForTimeout(150);
+    }
+
+    await page.waitForTimeout(1200);
+
+    await openGenerator(page);
+    await page.locator('#markKind').selectOption('spiral');
+
+    await expect(page.locator('#markNote')).toContainText('nH');
+    await page.waitForTimeout(400);
+
+    await shoot(page, 'generator');
+});
+
+///The Draw menu's Generator row, pointed at so its panel hangs open beside it.
+async function openGenerator(page) {
+    await page.locator('#drawTool').hover();
+    await page.locator('#markShape').hover();
+
+    await expect(page.locator('#markPanel')).toBeVisible();
+}
+
+///
+///The assistant, having looked at the cell and drawn what it was asked for.
+///
+///**The model's side is scripted** - Anthropic's API is intercepted and answers from the lines below, so a picture
+///costs nothing and comes out the same every time - and everything else is the app: the cards, the picture `look`
+///drew and sent, the rectangle in the view, picked out the way a paste leaves what it pasted. The scripted
+///answer names #1 because that is the number the rectangle really gets: nothing was numbered before it.
+///
+test('the assistant, having drawn what it was asked for', async ({ page }) => {
+    const replies = [
+        { content: [{ type: 'text', text: 'Let me look at the cell first.' }, { type: 'tool_use', id: 'toolu_1', name: 'look', input: {} }], stop_reason: 'tool_use' },
+        { content: [{ type: 'tool_use', id: 'toolu_2', name: 'draw_rectangle', input: { layer: 'met1', from: [1.6, 1.3], to: [2.4, 1.8] } }], stop_reason: 'tool_use' },
+        { content: [{ type: 'text', text: 'Done: a 0.8 by 0.5 µm met1 pad from x 1.6 to 2.4 and y 1.3 to 1.8 µm. It is #1, and one press of Undo takes it back.' }], stop_reason: 'end_turn' }
+    ];
+
+    let call = 0;
+
+    await page.route(url => (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== 'localhost', route => route.abort());
+
+    await page.route('https://api.anthropic.com/**', async route => {
+        const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({ status: 204, headers: cors });
+
+            return;
+        }
+
+        const reply = replies[Math.min(call, replies.length - 1)];
+
+        call++;
+
+        await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify(reply) });
+    });
+
+    await page.addInitScript(() => {
+        const saved = { Claude: { Name: 'Claude', ProviderType: 'Anthropic', ApiKey: 'not-a-real-key', MaxTokens: 8192 } };
+
+        window.localStorage.setItem('gdsviewer.llmConnections', 'r' + JSON.stringify(saved));
+    });
+
+    await open(page, `?file=${MOSFET}&view=2d`);
+    await drawn(page);
+
+    await page.locator('#askAiButton').click();
+    await page.locator('#aiPrompt').fill('Put a 0.8 by 0.5 µm met1 pad with its corner at x 1.6, y 1.3.');
+    await page.locator('#aiSend').click();
+
+    await page.locator('.aiCard[data-tool="draw_rectangle"] .aiApprove').click();
+
+    await expect(page.locator('.aiBubbleAssistant').last()).toContainText('Undo takes it back', { timeout: 30000 });
+    await expect(page.locator('.aiCard[data-tool="look"] .aiPicture')).toBeVisible();
+
+    //The change's diff is drawn after its card, which leaves the answer under it out of sight: down to the answer.
+    await page.waitForTimeout(800);
+    await page.locator('#aiTranscript').evaluate(transcript => transcript.scrollTop = transcript.scrollHeight);
+    await page.waitForTimeout(400);
+
+    await shoot(page, 'ask-ai');
+});
+
+///
+///**Share, writing an embed** - the readme's Embedding section starts here rather than at a block of code to copy
+///(2026-11-03, asked for). Taller than the other shots, so the popup's code box is in the frame with its switches.
+///
+test('the Share popup, writing the code to embed the viewer', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+
+    await open(page, `?file=${MOSFET}&view=2d`);
+    await drawn(page);
+
+    await page.locator('#shareButton').click();
+    await page.locator('#shareEmbedTab').click();
+    await page.locator('#shareMode').selectOption({ label: 'The drawing on its own' });
+
+    await expect(page.locator('#shareCode')).toHaveValue(/<iframe/);
+
+    //The address the published app writes, rather than the test server's - what a reader of the picture would get.
+    await page.locator('#shareCode').evaluate((code, origin) => {
+        code.value = code.value.split(origin + '/').join('https://eecs.blog/BlazorApps/GDSViewer/');
+    }, new URL(page.url()).origin);
+
+    await page.waitForTimeout(400);
+
+    const popup = await box(page, '#sharePopup');
+
+    await shoot(page, 'share-embed', { clip: { x: popup.x - 12, y: popup.y - 12, width: popup.width + 24, height: popup.height + 24 } });
+});
+
+///
+///**And what that code does**: the viewer in somebody else's page, as a reader of it sees it. The page is made up on
+///the spot - a heading, a paragraph, the frame - and the frame is the code the Share popup writes, pointed here.
+///
+test("the viewer embedded in a page of somebody else's", async ({ page, baseURL }) => {
+    const src = `${baseURL}/?file=${MOSFET}&view=2d&mode=viewer&banner=false&tree=false`;
+
+    await page.setContent(`
+        <body style="margin: 0; padding: 32px 48px; font-family: Georgia, serif; background: #fafafa; color: #222;">
+            <h1 style="margin: 0 0 8px; font-size: 28px;">A first look at a MOSFET's layout</h1>
+            <p style="margin: 0 0 20px; font-size: 16px; color: #555;">Scroll to zoom, drag to pan - the layout below is live.</p>
+            <iframe src="${src}" width="100%" height="520" style="border: 1px solid #ddd; border-radius: 6px;"
+                    title="GDS layout viewer"></iframe>
+        </body>`);
+
+    const frame = page.frameLocator('iframe');
+
+    await expect
+        .poll(async () => frame.locator('#gdsSVG path[class^="l"]').count(), { timeout: 120000 })
+        .toBeGreaterThan(0);
+
+    await page.waitForTimeout(1200);
+
+    await shoot(page, 'embedded');
+});
+
+///
+///**A tour card**, over the layers, with the picture it carries - the eye shutting one layer away, caught mid-loop.
+///
+test('the guided tour, at the layers', async ({ page }) => {
+    await open(page, `?file=${MOSFET}&view=2d`);
+    await drawn(page);
+
+    await page.locator('#settingsMenu').click();
+    await page.locator('#tourItem').click();
+
+    while (await page.locator('#tourTitle').textContent() !== 'Layers')
+        await page.keyboard.press('ArrowRight');
+
+    //Into the loop, where the poly row's eye is shut and its shape gone.
+    await page.waitForTimeout(2200);
+
+    await shoot(page, 'tour');
 });
 
 ///Clicks the middle of the first shape drawn on a given layer's path, so a test can choose *which* shape

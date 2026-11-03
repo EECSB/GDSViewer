@@ -81,7 +81,7 @@ namespace GdsII
         ///radius of 500 is at 353.553, and the nearest whole coordinate is 354 - which is 0.63 units further
         ///out than the circle. Rounding inward instead would guarantee the stronger claim and would bias
         ///every corner of every shape towards the middle, shrinking it systematically for a sub-nanometer
-        ///artefact nothing measures. Rounding to nearest is what every other tool does, so a circle drawn
+        ///artifact nothing measures. Rounding to nearest is what every other tool does, so a circle drawn
         ///here and one drawn elsewhere have their corners in the same places.
         ///
         public static List<Element.Point> Circle(int centerX, int centerY, int radius, int vertices = DefaultVertices)
@@ -155,8 +155,8 @@ namespace GdsII
         ///**Two loops, because GDSII has no hole.** The format stores a boundary and nothing else, so a
         ///shape with a hole in it is either two elements or one keyhole - a channel whose two edges lie on
         ///top of each other. This hands back both loops and leaves that choice to the caller;
-        ///<see cref="Booleans.Combine"/> with <see cref="BooleanOperation.Not"/> is what cuts one from the
-        ///other where the keyhole is wanted.
+        ///<see cref="Booleans.Combine(IEnumerable{IReadOnlyList{Element.Point}}, IEnumerable{IReadOnlyList{Element.Point}}, BooleanOperation)"/>
+        ///with <see cref="BooleanOperation.Not"/> is what cuts one from the other where the keyhole is wanted.
         ///
         public static (List<Element.Point> Outside, List<Element.Point> Inside) Ring(
             int centerX,

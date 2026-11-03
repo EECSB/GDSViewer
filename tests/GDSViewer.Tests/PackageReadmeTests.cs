@@ -139,6 +139,30 @@ public class PackageReadmeTests
     }
 
     ///
+    ///Taking that placement apart again, which is the paragraph after the creating example: LEAF's path
+    ///written into TOP turned the way the instance turned it, and LEAF gone with its only placement.
+    ///
+    [Fact]
+    public void The_flattening_a_placement_example_runs()
+    {
+        var gds = GDS.NewLibrary("AUTHORED");
+        var top = Hierarchy.Named(gds, "TOP")!;
+        var run = new[] { new Element.Point(0, 900), new Element.Point(2000, 900) };
+
+        new AddStructure(gds, "LEAF", Paths.Records(new LayerKey(66, 20), run, 200, Paths.Ends.Flush)!).Apply();
+        new AddElement(gds, top, Hierarchy.PlacementRecords("LEAF", new Element.Point(3000, 0), false, 90), "Place").Apply();
+
+        var drawn = GdsFlattener.Flatten(gds).Elements.Single().Points.OrderBy(point => (point.X, point.Y)).ToList();
+
+        var leaf = top.Elements.First(element => Hierarchy.PlacedBy(element) == "LEAF");
+
+        new CompoundEdit("Flatten", Flattening.Edits(gds, top, new[] { leaf })!).Apply();
+
+        Assert.Equal(new[] { "TOP" }, Hierarchy.Names(gds));
+        Assert.Equal(drawn, GdsFlattener.Flatten(gds).Elements.Single().Points.OrderBy(point => (point.X, point.Y)).ToList());
+    }
+
+    ///
     ///The shapes, curves and routes example.
     ///
     ///**Named arguments on purpose**, exactly as the readme writes them. A snippet using `x:` against a
@@ -190,6 +214,25 @@ public class PackageReadmeTests
         var edited = GDS.FromText(text);
 
         Assert.Equal(gds.Records.Count, edited.Records.Count);
+    }
+
+    ///<summary>The assistant's tools: listed with their schemas, and one called the way a model calls it.</summary>
+    [Fact]
+    public void The_assistant_tools_example_runs()
+    {
+        var gds = GDS.NewLibrary("AUTHORED");
+        var session = new AgentSession(gds, new EditHistory());
+
+        var listed = new List<string>();
+
+        foreach (var tool in AgentTools.All)
+            listed.Add($"{tool.Name}: {tool.InputSchema().ToJsonString()}");
+
+        Assert.NotEmpty(listed);
+
+        var result = AgentTools.Call(session, "draw_rectangle", """{"layer": "68/20", "from": [0, 0], "to": [2, 0.5]}""");
+
+        Assert.Equal("Drew a 2 by 0.5 µm rectangle on 68/20 in TOP, from (0, 0) to (2, 0.5): #1.", result.Text);
     }
 
     ///<summary>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using GdsII;
 
 namespace GDSViewer.Tests;
@@ -389,6 +390,57 @@ derive gate = poly and diff");
         Assert.Empty(deck.Rules);
     }
 
+    ///<summary>
+    ///The grid a layer is drawn on, from the rules that check it: `*` for every layer the deck declares, a name
+    ///for the layers it is drawn on - a derivation's all the way down - and every such rule at once.
+    ///
+    ///What a tool asks before it works out a corner, so the corner lands where the check will look for it.
+    ///</summary>
+    [Fact]
+    public void A_layers_grid_is_what_every_off_grid_rule_on_it_asks_for_at_once()
+    {
+        var deck = DrcDeck.Parse(@"layer met1 68/20
+layer met2 69/20
+layer poly 66/20
+layer diff 65/20
+derive gate = poly and diff
+rule grid.1 offgrid * 5 ""Manufacturing grid""
+rule met2.grid offgrid met2 2 ""Met2 on even units""
+rule gate.grid offgrid gate 10");
+
+        Assert.Empty(deck.Problems);
+
+        Assert.Equal(5, deck.GridFor(new LayerKey(68, 20)));
+        Assert.Equal(10, deck.GridFor(new LayerKey(69, 20)));
+        Assert.Equal(10, deck.GridFor(new LayerKey(66, 20)));
+        Assert.Equal(10, deck.GridFor(new LayerKey(65, 20)));
+        Assert.Equal(new[] { "grid.1", "met2.grid" }, deck.GridRulesFor(new LayerKey(69, 20)).Select(rule => rule.Id));
+    }
+
+    ///<summary>A layer the deck does not declare is one the check does not look at, so there is no grid to draw it on.</summary>
+    [Fact]
+    public void A_layer_the_deck_does_not_declare_has_no_grid()
+    {
+        var deck = DrcDeck.Parse(@"layer met1 68/20
+rule grid.1 offgrid * 5");
+
+        Assert.Equal(1, deck.GridFor(new LayerKey(70, 20)));
+        Assert.Empty(deck.GridRulesFor(new LayerKey(70, 20)));
+        Assert.Equal(1, DrcDeck.Parse("layer met1 68/20").GridFor(new LayerKey(68, 20)));
+    }
+
+    ///<summary>The drawn layers behind a derivation come from the names alone, so they can be asked with nothing drawn.</summary>
+    [Fact]
+    public void The_layers_behind_a_derivation_are_the_decks_to_say()
+    {
+        var deck = DrcDeck.Parse(@"layer poly 66/20
+layer diff 65/20
+derive gate = poly and diff
+derive either = gate or poly");
+
+        Assert.Equal(new[] { new LayerKey(66, 20), new LayerKey(65, 20) }, deck.DrawnBehind("either"));
+    }
+
     #endregion **************************************************************************
 
 
@@ -543,6 +595,18 @@ rule met1.1 width met1 met2 140 ""Two layers for a width""");
         Assert.Equal(30, deck.Rules.Count);
     }
 
+    ///<summary>Its one grid rule puts every layer it declares on five units - which is what the assistant puts curves on.</summary>
+    [Fact]
+    public void The_bundled_deck_puts_every_layer_it_declares_on_five_units()
+    {
+        string path = Path.Combine(GdsTestData.SampleDirectory, "sky130A.drc");
+
+        var deck = DrcDeck.Parse(File.ReadAllText(path));
+
+        foreach (var key in deck.Layers.Values)
+            Assert.Equal(5, deck.GridFor(key));
+    }
+
     ///<summary>The derived layers a real deck cannot do without, present and pointing at drawn layers.</summary>
     [Fact]
     public void The_bundled_deck_derives_the_gate_from_poly_and_diff()
@@ -556,6 +620,147 @@ rule met1.1 width met1 met2 140 ""Two layers for a width""");
         Assert.Equal("poly", gate.First);
         Assert.Equal(BooleanOperation.And, Assert.Single(gate.Rest).Operation);
         Assert.Equal("diff", Assert.Single(gate.Rest).Operand);
+    }
+
+    ///<summary>
+    ///The gf180mcu deck that ships beside sky130's (2026-11-02), read as the app reads it, for the reason above - and its
+    ///layers are the layermap's own, under the same names on the same pairs, so what the rules check is what the layer
+    ///panel names. Every layer it declares is on the 5 nm grid.
+    ///</summary>
+    [Fact]
+    public void The_bundled_gf180mcu_deck_reads_clean()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "gf180mcuD.drc")));
+
+        Assert.Empty(deck.Problems);
+        Assert.Empty(deck.Refused);
+        Assert.True(deck.AllRulesUnderstood);
+
+        Assert.Equal(19, deck.Layers.Count);
+        Assert.Equal(2, deck.Derivations.Count);
+        Assert.Equal(56, deck.Rules.Count);
+
+        var names = LayerNames.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "gf180mcu-roles.csv")));
+
+        foreach (var layer in deck.Layers)
+        {
+            Assert.Equal(layer.Key, names.Names[layer.Value]);
+            Assert.Equal(5, deck.GridFor(layer.Value));
+        }
+    }
+
+    ///<summary>Its top metal is Metal5 under the MetalTop rules - 0.44 and 0.46 - where the metals below it are 0.28.</summary>
+    [Fact]
+    public void The_gf180mcu_decks_top_metal_follows_the_MetalTop_rules()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "gf180mcuD.drc")));
+
+        Assert.Equal(new LayerKey(81, 0), deck.Layers["Metal5"]);
+        Assert.Equal(440, deck.Rules.Single(rule => rule.Id == "MT.1").Value);
+        Assert.Equal(460, deck.Rules.Single(rule => rule.Id == "MT.2a").Value);
+        Assert.Equal(280, deck.Rules.Single(rule => rule.Id == "M4.1").Value);
+    }
+
+    ///<summary>
+    ///The ihp-sg13g2 deck the same way (2026-11-02): read clean, its layers the layermap's own, all on the 5 nm grid.
+    ///</summary>
+    [Fact]
+    public void The_bundled_ihp_sg13g2_deck_reads_clean()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "sg13g2.drc")));
+
+        Assert.Empty(deck.Problems);
+        Assert.Empty(deck.Refused);
+        Assert.True(deck.AllRulesUnderstood);
+
+        Assert.Equal(22, deck.Layers.Count);
+        Assert.Single(deck.Derivations);
+        Assert.Equal(68, deck.Rules.Count);
+
+        var names = LayerNames.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "ihp-sg13g2-roles.csv")));
+
+        foreach (var layer in deck.Layers)
+        {
+            Assert.Equal(layer.Key, names.Names[layer.Value]);
+            Assert.Equal(5, deck.GridFor(layer.Value));
+        }
+    }
+
+    ///
+    ///**Every rule in it is IHP's, at IHP's value**: its id is in the SG13G2 rule tables the PDK publishes as text,
+    ///main_rules.md and extra_rules.md, vendored at OtherResources/IHP - and its value is that table's, in microns or
+    ///square microns there and nanometers or square nanometers here. A value mistyped, or a rule invented under an id
+    ///that sounds right, fails here. The grid rule is the one id of the deck's own, stated in rules 3.1 rather than in
+    ///a table.
+    ///
+    [Fact]
+    public void Every_ihp_sg13g2_rule_is_ihps_own_at_ihps_value()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "sg13g2.drc")));
+        var tables = new Dictionary<string, double>();
+
+        foreach (string table in new[] { "main_rules.md", "extra_rules.md" })
+        {
+            foreach (string line in File.ReadAllLines(Path.Combine(GdsTestData.RepositoryRoot, "OtherResources", "IHP", table)))
+            {
+                string[] cells = line.Trim().Trim('|').Split('|').Select(cell => cell.Trim()).ToArray();
+
+                if (cells.Length < 3 || !double.TryParse(cells[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+                    continue;
+
+                tables.TryAdd(cells[0], value);
+            }
+        }
+
+        int held = 0;
+
+        foreach (var rule in deck.Rules.Where(rule => rule.Id != "grid.1"))
+        {
+            Assert.True(tables.TryGetValue(rule.Id, out double microns), $"{rule.Id} is not in IHP's rule tables");
+
+            double scale = 1000;
+
+            if (rule.Check == DrcCheck.Area || rule.Check == DrcCheck.HoleArea)
+                scale = 1_000_000;
+
+            Assert.True(Math.Round(microns * scale) == rule.Value, $"{rule.Id} is {rule.Value} here and {microns} in IHP's table");
+
+            held++;
+        }
+
+        Assert.Equal(67, held);
+    }
+
+    ///
+    ///**Its width and space rules measure as distance on exactly the layers IHP allows at 45 degrees**, as IHP's own
+    ///rules do - Activ, GatPoly, the five metals and the two top metals (rules 3.1) - and as squares everywhere else.
+    ///Measured as squares, a 45-degree line reads 1.41 times nearer its neighbor than it is, and IHP's own sg13g2_tielo
+    ///turns its poly that way; the deck's header has the measurements. Pinned so the choice stays one.
+    ///
+    [Fact]
+    public void The_ihp_sg13g2_deck_measures_its_45_degree_layers_as_distance()
+    {
+        var deck = DrcDeck.Parse(File.ReadAllText(Path.Combine(GdsTestData.SampleDirectory, "sg13g2.drc")));
+        var angled = new[] { "Activ", "GatPoly", "Metal1", "Metal2", "Metal3", "Metal4", "Metal5", "TopMetal1", "TopMetal2" };
+        int asDistance = 0;
+
+        foreach (var rule in deck.Rules)
+        {
+            bool sizedOnce = (rule.Check == DrcCheck.Width || rule.Check == DrcCheck.Space) && rule.Operands.Count == 1;
+
+            if (sizedOnce && angled.Contains(rule.Operands[0]))
+            {
+                Assert.Equal(DrcMetric.Euclidean, rule.Metric);
+
+                asDistance++;
+            }
+            else
+            {
+                Assert.Null(rule.Metric);
+            }
+        }
+
+        Assert.Equal(18, asDistance);
     }
 
     #endregion **************************************************************************
@@ -624,4 +829,180 @@ rule met1.1 width met1 met2 140 ""Two layers for a width""");
         Assert.Equal(DrcCheck.Width, after.Rules[0].Check);
         Assert.Equal("The first", after.Rules[0].Description);
     }
+
+    ///<summary>
+    ///Every rule line out - one this build refuses too, and one written in capitals, since the reader takes
+    ///the keyword either way - and the rest of the deck as it was written: the layers and the derivation the
+    ///next rule will name, and the comment.
+    ///</summary>
+    [Fact]
+    public void Taking_every_rule_out_leaves_the_rest_of_the_deck()
+    {
+        string text = string.Join(
+            "\n",
+            "# a deck",
+            "layer poly 66/20",
+            "layer diff 65/20",
+            "derive gate = poly and diff",
+            "rule poly.1 width poly 150 \"Poly width\"",
+            "  RULE poly.4 spaceparallel poly 75 \"Not measurable here\"",
+            "");
+
+        string left = DrcDeck.WithoutRules(text);
+
+        Assert.Equal(string.Join("\n", "# a deck", "layer poly 66/20", "layer diff 65/20", "derive gate = poly and diff", ""), left);
+
+        var deck = DrcDeck.Parse(left);
+
+        Assert.Empty(deck.Rules);
+        Assert.Empty(deck.Refused);
+        Assert.Equal(2, deck.Layers.Count);
+    }
+
+    #region Writing ********************************************************************
+
+    ///
+    ///Every kind of rule the PDK manager's form makes, read and written back out as the line it was read from - the
+    ///check, its layers, the value, the description and each qualifier, in the order the bundled deck writes them. That
+    ///is what lets the form write into the deck's text, which is what a deck is, rather than keep a list beside it.
+    ///
+    [Theory]
+    [InlineData("rule met1.1 width met1 140 \"Met1 width\"")]
+    [InlineData("rule met1.2 space met1 140 \"Met1 spacing\"")]
+    [InlineData("rule m12 space met1 met2 100 \"\"")]
+    [InlineData("rule nwell.7 notch nwell 1270 \"N-well notch\"")]
+    [InlineData("rule difftap.8 enclosure diff nwell 180 \"N-well enclosure of diffusion\"")]
+    [InlineData("rule met1.6 area met1 83000 \"Met1 area\"")]
+    [InlineData("rule met1.7 holearea met1 140000 \"Met1 hole area\"")]
+    [InlineData("rule met1.d density met1 300 \"Met1 fill\" window 100000 step 50000")]
+    [InlineData("rule ant.1 antenna met1 poly 400 \"Met1 antenna\"")]
+    [InlineData("rule grid.1 offgrid * 5 \"Off the grid\"")]
+    [InlineData("rule poly.4 space poly 75 \"Poly spacing\" parallel")]
+    [InlineData("rule met1.w width met1 140 \"Met1 width\" euclidean")]
+    [InlineData("rule licon.9 space met1 200 \"Licon spacing\" except nwell")]
+    public void A_rule_written_out_is_the_line_it_was_read_from(string line)
+    {
+        string layers = "layer met1 68/20\nlayer met2 69/20\nlayer nwell 64/20\nlayer diff 65/20\nlayer poly 66/20\n";
+
+        var read = DrcDeck.Parse(layers + line);
+
+        Assert.Empty(read.Problems);
+
+        Assert.Equal(line, DrcDeck.WriteRule(Assert.Single(read.Rules)));
+    }
+
+    ///<summary>The reader takes every double quote as the start or the end of a description, so one inside it cannot be written.</summary>
+    [Fact]
+    public void A_quote_in_a_description_is_written_as_an_apostrophe()
+    {
+        var rule = new DrcRule { Id = "m1", Check = DrcCheck.Width, Operands = new[] { "met1" }, Value = 140, Description = "The \"thin\" one" };
+
+        string line = DrcDeck.WriteRule(rule);
+
+        Assert.Equal("rule m1 width met1 140 \"The 'thin' one\"", line);
+        Assert.Equal("The 'thin' one", DrcDeck.Parse("layer met1 68/20\n" + line).Rules[0].Description);
+    }
+
+    ///<summary>A rule's line replaced, or taken out, where it is - the rest of the deck as it was written, comments and all.</summary>
+    [Fact]
+    public void A_line_is_replaced_or_taken_out_where_it_is()
+    {
+        string text = "# a deck\r\nlayer met1 68/20\r\nrule a width met1 140 \"A\"\r\n# the end\r\n";
+
+        Assert.Equal("# a deck\nlayer met1 68/20\nrule a width met1 150 \"A\"\n# the end\n", DrcDeck.WithLine(text, 3, "rule a width met1 150 \"A\""));
+        Assert.Equal("# a deck\nlayer met1 68/20\n# the end\n", DrcDeck.WithLine(text, 3, null));
+    }
+
+    [Fact]
+    public void A_line_the_deck_does_not_have_changes_nothing()
+    {
+        string text = "layer met1 68/20\nrule a width met1 140 \"A\"";
+
+        Assert.Equal(text, DrcDeck.WithLine(text, 0, "x"));
+        Assert.Equal(text, DrcDeck.WithLine(text, 3, "x"));
+    }
+
+    ///<summary>Under the last rule, so it lands among the rules - not under the list of rules left out that closes the bundled deck.</summary>
+    [Fact]
+    public void A_rule_added_lands_under_the_last_rule()
+    {
+        string text = string.Join("\n", "layer met1 68/20", "rule a width met1 140 \"A\"", "", "# Not here: poly.2", "");
+
+        string added = DrcDeck.WithRuleAdded(text, "rule b space met1 140 \"B\"");
+
+        Assert.Equal(string.Join("\n", "layer met1 68/20", "rule a width met1 140 \"A\"", "rule b space met1 140 \"B\"", "", "# Not here: poly.2", ""), added);
+        Assert.Equal(2, DrcDeck.Parse(added).Rules.Count);
+    }
+
+    [Fact]
+    public void A_rule_added_to_a_deck_with_none_goes_at_its_end()
+    {
+        Assert.Equal("layer met1 68/20\nrule b width met1 140 \"B\"\n", DrcDeck.WithRuleAdded("layer met1 68/20\n\n", "rule b width met1 140 \"B\""));
+        Assert.Equal("rule b width met1 140 \"B\"\n", DrcDeck.WithRuleAdded("", "rule b width met1 140 \"B\""));
+    }
+
+    ///
+    ///Lines an AI model wrote, each put where its kind goes: a layer under the layers with the comment over it kept over
+    ///it, a derive under the derives, a rule under the rules - and each kind in the order it came.
+    ///
+    [Fact]
+    public void Lines_added_each_land_where_their_kind_goes()
+    {
+        string text = string.Join("\n", "layer met1 68/20", "derive wide = met1 and met1", "rule a width met1 140 \"A\"", "", "# Not here: poly.2", "");
+
+        string added = DrcDeck.WithLinesAdded(text, new[]
+        {
+            "",
+            "# Met9, from the manual",
+            "layer met9 99/20",
+            "rule m9.1 width met9 300 \"Met9 width\"",
+            "derive thick = met9 and met1",
+            "rule m9.2 space met9 300 \"Met9 spacing\"",
+            "  # left out: m9.3, needs an extension check"
+        });
+
+        Assert.Equal(string.Join("\n",
+            "layer met1 68/20",
+            "# Met9, from the manual",
+            "layer met9 99/20",
+            "derive wide = met1 and met1",
+            "derive thick = met9 and met1",
+            "rule a width met1 140 \"A\"",
+            "rule m9.1 width met9 300 \"Met9 width\"",
+            "rule m9.2 space met9 300 \"Met9 spacing\"",
+            "# left out: m9.3, needs an extension check",
+            "",
+            "# Not here: poly.2",
+            ""), added);
+
+        var parsed = DrcDeck.Parse(added);
+
+        Assert.Equal(3, parsed.Rules.Count);
+        Assert.Empty(parsed.Problems);
+    }
+
+    ///<summary>Into a deck with none of a kind: layers ahead of everything, a derive under them, rules at the end.</summary>
+    [Fact]
+    public void Lines_added_to_an_empty_deck_come_out_in_the_order_the_reader_needs()
+    {
+        string added = DrcDeck.WithLinesAdded("", new[] { "rule a width met1 140 \"A\"", "derive m = met1 and met1", "layer met1 68/20" });
+
+        Assert.Equal(string.Join("\n", "layer met1 68/20", "derive m = met1 and met1", "rule a width met1 140 \"A\"", ""), added);
+        Assert.Single(DrcDeck.Parse(added).Rules);
+    }
+
+    ///<summary>A layer the form offered from the PDK's own, declared under the deck's last layer - or ahead of everything in a deck with none.</summary>
+    [Fact]
+    public void A_layer_declared_lands_under_the_last_layer()
+    {
+        string text = string.Join("\n", "# a deck", "layer met1 68/20", "derive both = met1 or met1", "rule a width met1 140 \"A\"");
+
+        Assert.Equal(
+            string.Join("\n", "# a deck", "layer met1 68/20", "layer met2 69/20", "derive both = met1 or met1", "rule a width met1 140 \"A\""),
+            DrcDeck.WithLayerDeclared(text, "met2", new LayerKey(69, 20)));
+
+        Assert.Equal("layer met2 69/20\nrule a width met2 140 \"A\"", DrcDeck.WithLayerDeclared("rule a width met2 140 \"A\"", "met2", new LayerKey(69, 20)));
+    }
+
+    #endregion **************************************************************************
 }

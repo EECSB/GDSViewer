@@ -1,0 +1,66 @@
+@*
+    The note over the view while something loads: what is loading, and Cancel. The shell says what and does the
+    cancel - see its loadingWhat and cancelLoad.
+
+    Its own component so that it can be drawn again on its own as a load's file goes in, when the stage it shows
+    changes and nothing renders the page around it until the view arriving has drawn - the 3D view's merge is seconds
+    of a real chip, which the note spent saying the file was still being read. Rendering the page itself there is not
+    the same thing: it runs what follows a render of the page - a restored session's settings, a link's - into the
+    middle of the load, ahead of the draw they are meant to land after. See Refresh.
+*@
+@if (What.Length > 0)
+{
+    @*
+        data-stage says whether the file has gone in yet - reading until it has, drawing after - which is the
+        difference between what a cancel has to put back. See the shell's cancelLoad.
+
+        The status is the message alone, so what is read out is what is loading rather than that and the name of the
+        button beside it.
+    *@
+    <div id="viewLoading" class="viewLoading" data-stage="@stage()">
+        <span class="viewLoadingSpinner" aria-hidden="true"></span>
+        <span role="status" aria-live="polite">@What&hellip;</span>
+
+        @if (Cancelable)
+        {
+            <button type="button" id="cancelLoad" class="viewLoadingCancel" @onclick="OnCancel"
+                    title="Stop loading, and go back to what was on screen">
+                Cancel
+            </button>
+        }
+    </div>
+}
+
+@code {
+    ///<summary>What is loading, as the note says it - or empty, for no note.</summary>
+    [Parameter]
+    public string What { get; set; } = "";
+
+    ///<summary>Whether the load offers Cancel, which the way back from one does not - see Pacer.CanCancel.</summary>
+    [Parameter]
+    public bool Cancelable { get; set; }
+
+    ///
+    ///Asks whether the load's file has gone in yet. Asked rather than handed over, because a value is only as new as
+    ///the page's last render, and Refresh draws the note without one.
+    ///
+    [Parameter]
+    public Func<bool>? FileIn { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    ///<summary>Draws the note again, and nothing else on the page: for a load whose file has just gone in.</summary>
+    public void Refresh()
+    {
+        StateHasChanged();
+    }
+
+    private string stage()
+    {
+        if (FileIn is not null && FileIn())
+            return "drawing";
+
+        return "reading";
+    }
+}

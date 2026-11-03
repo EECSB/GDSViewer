@@ -54,7 +54,8 @@ namespace GDSViewer.Tests
         {
             var points = DxfCurves.Arc(0, 0, radius, 0, 2 * Math.PI, Tolerance);
 
-            Assert.True(WorstSagitta(points, 0, 0, radius) <= Tolerance * 1.000001,
+            Assert.True(
+                WorstSagitta(points, 0, 0, radius) <= Tolerance * 1.000001,
                 $"radius {radius} came out {WorstSagitta(points, 0, 0, radius)} off with {points.Count} points");
         }
 

@@ -12,6 +12,12 @@ namespace GDSViewer.Tests;
 ///a problem it was not exercising. So what is checked here is that the thing generated is the thing asked
 ///for: the count, the arrangement, and that it is a real file another reader would take.
 ///
+///**Run on its own.** Two of these lower <see cref="GdsFlattener.MostElements"/>, which is one number for the
+///whole process - and every other test that flattens a file ran alongside them, so a bundled design flattened
+///while the ceiling stood at five hundred came back cut short and failed for nothing it had done. It did:
+///`DesignTests.Every_design_opens_whole`, once, in a full run. See <see cref="FlattenerCeiling"/>.
+///
+[Collection(nameof(FlattenerCeiling))]
 public class SyntheticTests
 {
     #region A file another reader would take ****************************************
@@ -131,10 +137,10 @@ public class SyntheticTests
     ///
     ///A layer whose shapes never touch is a layer `MergeByLayer` finishes instantly - so a generator that
     ///spaced them out would hide the one measured cliff from the benchmark built to find it. Checked by
-    ///merging: overlapping neighbours come back as fewer outlines than there were shapes.
+    ///merging: overlapping neighbors come back as fewer outlines than there were shapes.
     ///
     [Fact]
-    public void Neighbours_on_a_layer_overlap()
+    public void Neighbors_on_a_layer_overlap()
     {
         var layout = GdsFlattener.Flatten(new GDS(Synthetic.Layout(400, layers: 4).Serialize()));
 
@@ -232,4 +238,15 @@ public class SyntheticTests
     }
 
     #endregion **********************************************************************
+}
+
+///
+///The tests that change the flattener's ceiling, run after every other test and with nothing beside them.
+///
+///DisableParallelization is what xUnit has for one shared setting: a collection marked with it runs by itself
+///once the parallel ones are done, so nothing that flattens can see the ceiling lowered under it.
+///
+[CollectionDefinition(nameof(FlattenerCeiling), DisableParallelization = true)]
+public class FlattenerCeiling
+{
 }

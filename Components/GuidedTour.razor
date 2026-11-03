@@ -1,0 +1,333 @@
+@*
+    The guided tour: the app's parts one at a time, a hole in a shade over the page for each and a card saying what
+    it is for.
+
+    **Started, never sprung.** From Settings, from the command palette, or by "Show me" on the question the page asks
+    as it opens (TourQuestion, 2026-11-03) - never on its own, where a card over the page would stand in the way of the
+    first thing somebody came to do, and of every test that starts as one.
+    Back and Next - arrows since 2026-11-03 - or the arrow keys move through it; Escape, the cross or Done ends it.
+
+    **Only the steps this page can show.** Which parts are here is asked once, as the walk starts: over the 3D view
+    the drawing and its tools are not, and the count says "6 of 14" rather than going from 5 of 17 to 8. Where each
+    piece goes, and keeping every key from the page while the tour is open, is tour.js's.
+*@
+@implements IAsyncDisposable
+@inject IJSRuntime js
+
+@if (Visible)
+{
+    <div id="tourBlocker" class="tourBlocker"></div>
+    <div id="tourShade" class="tourShade"></div>
+
+    <div id="tourCard" class="tourCard" role="dialog" aria-modal="true" aria-labelledby="tourTitle" tabindex="-1"
+         @ref="card">
+        <button type="button" id="tourClose" class="tourClose" aria-label="End the tour" title="End the tour (Esc)"
+                @onclick="close">×</button>
+
+        <div id="tourTitle" class="tourTitle">@current.Title</div>
+
+        @if (current.Picture is not null)
+        {
+            <TourPicture @key="current.Picture" Name="@current.Picture" />
+        }
+
+        <div class="tourText">@current.Text</div>
+
+        <div class="tourFoot">
+            <span id="tourCount" class="tourCount">@(at + 1) of @showing.Count</span>
+
+            @*Arrows, and a check on the last card (2026-11-03, asked for - they were words).*@
+            <button type="button" id="tourBack" class="buttonStyle2 smallButton actionIcon tourButton" disabled="@(at == 0)"
+                    aria-label="Back" title="Back (←)" @onclick="back">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M13 8H3.4M7.4 3.6 3 8l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.8"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+            <button type="button" id="tourNext" class="buttonStyle2 smallButton actionIcon tourButton"
+                    aria-label="@(last() ? "Done" : "Next")" title="@(last() ? "Done" : "Next (→)")" @onclick="next">
+                @if (last())
+                {
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M2.8 8.4 6.3 11.9 13.2 4.6" fill="none" stroke="currentColor" stroke-width="1.9"
+                              stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M3 8h9.6M8.6 3.6 13 8l-4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.8"
+                              stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                }
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    ///<summary>
+    ///One stop: the part it is about, by selector - null for the app as a whole - what its card says, and the
+    ///picture on it, if it has one - see TourPicture.
+    ///</summary>
+    private sealed record TourStep(string? Target, string Title, string Text, string? Picture = null);
+
+    ///
+    ///The stops, in the order somebody meets the parts: what the app is, where files come from, how to look at one,
+    ///how to change it, how to check it, and how to get it back out. The PDK, Compare, Share and Settings joined them
+    ///on 2026-11-01, asked for with the docs brought up to date; History, and pictures on five of them, on 2026-11-03.
+    ///
+    ///**The first and last are about the whole app**, so they always show - which is also what stops a walk past
+    ///missing parts from walking off either end.
+    ///
+    private static readonly IReadOnlyList<TourStep> Steps = new List<TourStep>
+    {
+        new(
+            null,
+            "Welcome to GDS Viewer",
+            "Open a chip layout, look at it in 2D, in 3D or as the records inside it, change it, check it against design rules, or ask an AI to change it. It all runs here in your browser, and your files stay on this computer."),
+        new(
+            "#examplesButton",
+            "Examples",
+            "Over a thousand real sky130, GF180 and IHP layouts to look round, from one transistor to whole chips. Point at one for a preview, and click to open it."),
+        new(
+            "label[for=\"fileUpload\"]",
+            "Your own files",
+            "Open a GDSII, OASIS, DXF or SVG file from this computer, drop one on the drawing, or start an empty layout with New. Every file gets a tab of its own, so opening one closes nothing, and a double-click on a tab renames its file."),
+        new(
+            "#historyButton",
+            "History",
+            "Every file you have opened from this computer or changed, kept as you left it. Point at one for a preview, and click to open it again where you were."),
+        new(
+            "#viewPick",
+            "Three views",
+            "The same file as a flat drawing, as a 3D stack of its layers, or as its records. Each view remembers where you left it, and in 3D the cube opens that view's settings and backdrop.",
+            "views"),
+        new(
+            "#gdsSVG",
+            "The drawing",
+            "Scroll to zoom and drag to pan. Click a shape to choose it, and double-click a cell to step inside it and edit there."),
+        new(
+            "#toolGroup",
+            "Tools",
+            "Pan, select, measure, move and draw - or press P, S, M, V and D. Draw makes rectangles, polygons, paths, text and pictures, and its Generator makes structures from a few numbers: alignment marks, test structures, inductors, couplers, antennas, a clock tree, pads.",
+            "draw"),
+        new(
+            "#layerSidebar",
+            "Layers",
+            "Every layer in the file: an eye to hide it, a lock to fade it out of reach, and a gear for its name, its color and its height in 3D.",
+            "layers"),
+        new(
+            "#sidebarPdkManager",
+            "The PDK",
+            "The process this layout is drawn in, which names its layers and brings the rules. sky130, GF180 and IHP's SG13G2 come built in. Press it for the PDK manager, where PDKs are read about, brought in from a zip, edited or written with the AI, and put in use."),
+        new(
+            "#sidebarPanelRules",
+            "Design rules",
+            "Check the layout against the PDK's rules and step through what fails. A fault you have looked at and accepted can be waived."),
+        new(
+            "#cellTreeButton",
+            "The cell tree",
+            "Every cell, where each one is placed and what each placement draws, beside the 2D view or the 3D one. Press a placement to go to it; in 2D, right-click a row to rename, copy or delete the cell."),
+        new(
+            "#askAiButton",
+            "AI assistant",
+            "Describe a change in words and the assistant makes it, checked against the rules, one undo step at a time. Ask with a file, a photo, a screenshot or your voice; every chat is kept. It uses a key of your own, set under AI settings.",
+            "ai"),
+        new(
+            "#compareButton",
+            "Compare",
+            "In the 2D view, lay another file over this one, layer by layer, and step through every place where one draws something the other does not.",
+            "compare"),
+        new(
+            "#downloadGds",
+            "Download",
+            "Save the file as GDSII, OASIS or DXF, or as an SVG, a PNG or mask pictures - whatever the format beside this button says."),
+        new(
+            "#shareButton",
+            "Share",
+            "A link to what is open - the file, the view, even where you are looking - or the code to embed it in a page of your own."),
+        new(
+            "#settingsMenu",
+            "Settings",
+            "Dark mode, the frame rate, the AI's models and keys and the MCP server that lets Claude work on this tab, the PDK manager, this tour - and a game: drive a car, or fly a plane, over the layers in 3D."),
+        new(
+            null,
+            "That is the tour",
+            "Ctrl+K (⌘K on a Mac) opens a palette of everything here, found by name. Ctrl+Z takes back any change, even after a reload. The tour is under Settings whenever you want it again.")
+    };
+
+    ///<summary>The steps this walk shows, by their place in <see cref="Steps"/> - every one until the page has been asked.</summary>
+    private List<int> showing = everyStep();
+
+    ///<summary>Whether <see cref="showing"/> has been worked out for this walk.</summary>
+    private bool asked;
+
+    ///<summary>The step on the card, by its place in <see cref="showing"/>.</summary>
+    private int at;
+
+    ///<summary>The step last put on the page, so a render that changed nothing does not place it again. -1 while closed.</summary>
+    private int shown = -1;
+
+    ///<summary>Which way the last move went: a step whose part has gone is passed in the same direction.</summary>
+    private int heading = 1;
+
+    private ElementReference card;
+
+    ///<summary>This, for tour.js to hand the tour's keys to.</summary>
+    private DotNetObjectReference<GuidedTour>? self;
+
+    private TourStep current => Steps[showing[at]];
+
+    private static List<int> everyStep()
+    {
+        return Enumerable.Range(0, Steps.Count).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible)
+        {
+            if (shown >= 0)
+            {
+                shown = -1;
+
+                await stop();
+            }
+
+            return;
+        }
+
+        //The card is out of sight until tour.js places it, so the count before this is never seen.
+        if (!asked)
+        {
+            string?[] targets = Steps.Select(each => each.Target).ToArray();
+            bool[] present = await js.InvokeAsync<bool[]>("tour.present", (object)targets);
+
+            showing = everyStep().Where(each => present[each]).ToList();
+            asked = true;
+
+            StateHasChanged();
+
+            return;
+        }
+
+        if (shown == at)
+            return;
+
+        bool first = shown < 0;
+
+        if (first)
+        {
+            self ??= DotNetObjectReference.Create(this);
+
+            await js.InvokeVoidAsync("tour.start", self);
+        }
+
+        //Past a step whose part has gone since the walk started - a window narrowed to a phone's. The two about the
+        //whole app always show, so this ends.
+        while (!await js.InvokeAsync<bool>("tour.place", current.Target))
+        {
+            int then = at + heading;
+
+            if (then < 0 || then >= showing.Count)
+                break;
+
+            at = then;
+        }
+
+        shown = at;
+
+        if (first)
+        {
+            try
+            {
+                await card.FocusAsync();
+            }
+            catch { }
+        }
+
+        //The walk may have moved past a step, and the card is still saying the one it started from.
+        StateHasChanged();
+    }
+
+    ///
+    ///Escape and the arrows, from tour.js, which holds every key while the tour is open so the page behind does not
+    ///act on them too. **The right arrow stops at the last step** rather than ending the tour - that is Done's to say.
+    ///
+    [JSInvokable]
+    public async Task OnTourKey(string key)
+    {
+        if (key == "Escape")
+            await close();
+        else if (key == "ArrowRight" && at < showing.Count - 1)
+            await next();
+        else if (key == "ArrowLeft")
+            back();
+
+        StateHasChanged();
+    }
+
+    ///<summary>Whether this is the last card, where Next is Done.</summary>
+    private bool last()
+    {
+        return at == showing.Count - 1;
+    }
+
+    private async Task next()
+    {
+        if (last())
+        {
+            await close();
+
+            return;
+        }
+
+        heading = 1;
+        at++;
+    }
+
+    private void back()
+    {
+        if (at == 0)
+            return;
+
+        heading = -1;
+        at--;
+    }
+
+    private async Task close()
+    {
+        at = 0;
+        heading = 1;
+        asked = false;
+        showing = everyStep();
+
+        await stop();
+
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task stop()
+    {
+        try
+        {
+            await js.InvokeVoidAsync("tour.stop");
+        }
+        catch { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (shown >= 0)
+            await stop();
+
+        self?.Dispose();
+    }
+}

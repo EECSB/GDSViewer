@@ -186,11 +186,37 @@ public class TextFormatTests
         Assert.Contains("WIBBLE", error.Message);
     }
 
-    ///<summary>TryParse alone would accept a bare number as an enum value that does not exist.</summary>
+    ///
+    ///A record of a type the enum has no name for prints as its type word, and has to come back through the
+    ///text the way it went out - so a bare number is that word, and the record's data type is its low byte, as
+    ///it is when reading bytes. 0x1F02 declares INT2.
+    ///
     [Fact]
-    public void A_number_is_not_accepted_as_a_record_type()
+    public void An_unknown_record_type_round_trips_through_its_number()
     {
-        Assert.Throws<InvalidDataException>(() => TextFormat.ParseRecords("5: 600 \n"));
+        var unknown = new GDS.Record(0x1F02, new Int2Data(7).Encode());
+
+        var gds = new GDS(GdsTestData.ReadSample(GdsTestData.MosfetSample));
+
+        gds.Records.Insert(gds.Records.Count - 1, unknown);
+
+        string text = gds.AsText();
+
+        Assert.Contains("7938: 7 \n", text);
+
+        var back = TextFormat.ParseRecords(text);
+
+        Assert.Equal(gds.Records.Count, back.Count);
+        Assert.Equal((short)0x1F02, (short)back[^2].Type);
+        Assert.Equal((short)7, ((Int2Data)back[^2].Data!).Value);
+    }
+
+    ///<summary>TryParse alone would accept a number for a name - but a word that is not a record type is still a typo.</summary>
+    [Fact]
+    public void A_word_that_is_not_a_record_type_is_still_refused()
+    {
+        Assert.Throws<InvalidDataException>(() => TextFormat.ParseRecords("LAYERS: 5 \n"));
+        Assert.Throws<InvalidDataException>(() => TextFormat.ParseRecords("5x: 600 \n"));
     }
 
     [Fact]
@@ -275,6 +301,37 @@ public class TextFormatTests
 
         Assert.True(GdsTestData.HasLayerNumber(gds, 99));
         Assert.False(GdsTestData.HasLayerNumber(gds, 1));
+    }
+
+    ///<summary>
+    ///**What was known about a layer is kept through a save from the text**, for every layer the text still draws on:
+    ///a layermap's name, a color, a height. Only the records are new - the layers are the ones they were, and a save
+    ///dropped diff (65/20) to 65/20. A layer the text has moved off is not brought back, and one it has moved onto
+    ///arrives as a new layer would, with no name.
+    ///</summary>
+    [Fact]
+    public void A_text_read_back_keeps_what_was_known_about_each_layer_it_still_draws_on()
+    {
+        var gds = new GDS(GdsTestData.MinimalLibrary(layer: 1));
+        var key = gds.AdditionalInformation.Layers.Keys.Single(one => one.Number == 1);
+        var layer = gds.AdditionalInformation.Layers[key];
+
+        layer.Name = "met1";
+        layer.Color = "#123456";
+        layer.CustomHeight = 1376;
+
+        gds.Deserialize(gds.AsText());
+
+        var kept = gds.AdditionalInformation.Layers[key];
+
+        Assert.Equal("met1", kept.Name);
+        Assert.Equal("#123456", kept.Color);
+        Assert.Equal(1376, kept.CustomHeight);
+
+        gds.Deserialize(gds.AsText().Replace("LAYER: 1 ", "LAYER: 99 "));
+
+        Assert.False(gds.AdditionalInformation.Layers.ContainsKey(key));
+        Assert.Null(gds.AdditionalInformation.Layers.Values.Single().Name);
     }
 
     ///<summary>A save that will not parse has to leave the loaded file alone, not half replaced.</summary>
@@ -429,16 +486,22 @@ public class TextFormatTests
         Assert.Contains("at least 4 coordinate pairs", error.Message);
     }
 
+    ///<summary>
+    ///A boundary saved without its closing point is closed, exactly as a file that arrives like that is - the
+    ///save path and the open path keep one set of rules. This used to be refused, until a real file needed
+    ///the open path relaxed; see ToleranceTests.
+    ///</summary>
     [Fact]
-    public void A_boundary_that_does_not_close_is_refused()
+    public void A_boundary_that_does_not_close_is_closed_on_save()
     {
         var gds = new GDS(GdsTestData.MinimalLibrary(xy: new[] { 0, 0, 10, 0, 10, 10, 0, 0 }));
 
-        //Four pairs, but the last does not return to the first.
-        var error = Assert.Throws<InvalidDataException>(() =>
-            gds.Deserialize(gds.AsText().Replace("XY: 0 0 10 0 10 10 0 0  ", "XY: 0 0 10 0 10 10 0 10  ")));
+        //Four pairs, and the last does not return to the first.
+        gds.Deserialize(gds.AsText().Replace("XY: 0 0 10 0 10 10 0 0  ", "XY: 0 0 10 0 10 10 0 10  "));
 
-        Assert.Contains("close on the point it starts from", error.Message);
+        var xy = Assert.IsType<Int4Data>(gds.Records.Single(record => record.Type == RecordType.XY).Data);
+
+        Assert.Equal(new[] { 0, 0, 10, 0, 10, 10, 0, 10, 0, 0 }, xy.Values);
     }
 
     ///<summary>And it still holds when the machine's culture is hostile, since the dump is the go-between.</summary>
@@ -460,4 +523,46 @@ public class TextFormatTests
     }
 
     #endregion ************************************************************************
+
+    #region Strings ********************************************************************
+
+    ///<summary>A string is what it says: "0x10" is four characters on a label, where the hex rule turned it into one control character.</summary>
+    [Fact]
+    public void A_string_that_starts_like_hex_is_the_string()
+    {
+        var record = Single("STRING: 0x10 \n");
+
+        Assert.Equal("0x10", ((AsciiData)record.Data!).Value);
+    }
+
+    ///
+    ///The three characters a line cannot carry are escaped on the way out and read back on the way in. A string holding
+    ///a newline was dumped over two lines, and the second could not be read as a record.
+    ///
+    [Fact]
+    public void A_string_with_a_newline_or_a_backslash_in_it_round_trips()
+    {
+        var label = new Record(0x1906, new AsciiData("a\nb\\c\rd").Encode());
+
+        var builder = new System.Text.StringBuilder();
+
+        label.Data!.AppendText(builder);
+
+        Assert.Equal("a\\nb\\\\c\\rd", builder.ToString());
+
+        var back = Single($"STRING: {builder} \n");
+
+        Assert.Equal("a\nb\\c\rd", ((AsciiData)back.Data!).Value);
+    }
+
+    [Fact]
+    public void A_backslash_that_escapes_nothing_is_refused_with_the_line()
+    {
+        var error = Assert.Throws<InvalidDataException>(() => TextFormat.ParseRecords("HEADER: 600 \nSTRING: a\\qb \n"));
+
+        Assert.Contains("Line 2", error.Message);
+        Assert.Contains("backslash", error.Message);
+    }
+
+    #endregion *************************************************************************
 }

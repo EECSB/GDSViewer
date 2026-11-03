@@ -1,8 +1,10 @@
 //Opening a layout big enough to hurt.
 //
-//**The case the suite has never had.** Every bundled example is under 60 KB and the largest count any other
-//spec asserts is 74 shapes, against a wall somewhere around twenty thousand - so nothing here has ever been
-//measured in a browser, and every performance claim about this app was made about desktop .NET.
+//**The case the suite had never had.** Every bundled example was under 60 KB and the largest count any
+//other spec asserted was 74 shapes, against a wall somewhere around twenty thousand - so nothing here had
+//ever been measured in a browser, and every performance claim about this app was made about desktop .NET.
+//The designs bundled since are past that wall, but only at the sizes they happen to be; this makes the
+//size it needs.
 //
 //`gds bench` measures the library, where a profiler works. This measures the half the library hands over: the
 //marshal, the parse of a multi-megabyte markup string, and the layout and raster of however many nodes came
@@ -16,7 +18,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { gotoApp, shapeCount, shapeBox, downloadBytes , otherShapeClearOfPanel, openedOnItsOwn, uploadFile } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, downloadBytes , otherShapeClearOfPanel, uploadOpenedOnItsOwn, saveImage, selectView } = require('./helpers');
 
 ///
 ///Where the generated fixtures live: outside the repo, so nothing here is ever committed or swept up by the
@@ -33,18 +35,70 @@ const MADE = path.join(os.tmpdir(), 'gdsviewer-bench');
 ///
 const SHAPES = 20000;
 
-function generate(shapes) {
+///How long one generation may take, and so how old a lock can get before it is taken to be left over.
+const GENERATION_TIMEOUT = 300000;
+
+///
+///**Made once, however many workers ask for it.** The tests below run in parallel and every worker runs this
+///describe's beforeAll, so on a run where the file was not in tmp yet each of them started its own `dotnet run`
+///of the CLI at the same moment. Several MSBuilds building one project into one obj/ folder is a build that
+///fails: two of six did on 2026-09-23, each saying nothing but "The build failed", while the ones that got
+///through were writing the same file at once.
+///
+///So the first worker to create the lock file makes the fixture, and the rest wait for the lock to go. It is
+///written under a name of its own and renamed into place, so what a waiting worker finds is always whole. A
+///lock older than a generation is allowed to take is one a killed run left behind, and is cleared.
+///
+async function generate(shapes) {
     fs.mkdirSync(MADE, { recursive: true });
 
     const file = path.join(MADE, `flat-${shapes}.gds`);
+    const lock = `${file}.lock`;
 
-    if (fs.existsSync(file))
-        return file;
+    while (!fs.existsSync(file)) {
+        let held = null;
 
-    execFileSync(
-        'dotnet',
-        ['run', '-c', 'Release', '--project', 'GdsII.Cli', '--', 'generate', '--shapes', String(shapes), '-o', file],
-        { cwd: path.join(__dirname, '..', '..'), stdio: 'pipe', timeout: 300000 });
+        try {
+            held = fs.openSync(lock, 'wx');
+        }
+        catch (error) {
+            if (error.code !== 'EEXIST')
+                throw error;
+        }
+
+        if (held == null) {
+            const taken = fs.statSync(lock, { throwIfNoEntry: false });
+
+            if (taken != null && Date.now() - taken.mtimeMs > GENERATION_TIMEOUT)
+                fs.rmSync(lock, { force: true });
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            continue;
+        }
+
+        const partial = path.join(MADE, `flat-${shapes}.${process.pid}.partial.gds`);
+        const started = Date.now();
+
+        try {
+            //Asked again with the lock in hand: whoever held it last may have finished in between.
+            if (!fs.existsSync(file)) {
+                execFileSync(
+                    'dotnet',
+                    ['run', '-c', 'Release', '--project', 'GdsII.Cli', '--', 'generate', '--shapes', String(shapes), '-o', partial],
+                    { cwd: path.join(__dirname, '..', '..'), stdio: 'pipe', timeout: GENERATION_TIMEOUT });
+
+                fs.renameSync(partial, file);
+
+                console.log(`fixture: generated ${path.basename(file)} in ${Math.round((Date.now() - started) / 1000)} s`);
+            }
+        }
+        finally {
+            fs.rmSync(partial, { force: true });
+            fs.closeSync(held);
+            fs.rmSync(lock, { force: true });
+        }
+    }
 
     return file;
 }
@@ -52,16 +106,18 @@ function generate(shapes) {
 ///
 ///Opens a generated layout and hands back how long the browser took to draw it.
 ///
-///**Waited on the new count, not on any count.** The app opens the bundled Mosfet on load, so eighteen
+///**Waited on the new count, not on any count.** The app opens the bundled Mosfet on load, so twenty
 ///polygons are already there - a poll for "more than none" is satisfied before the upload has done anything
 ///and reports the time it took to measure the file that was already open.
+///
+///**And not on a question that is not coming.** Uploaded over the app's own Mosfet, the file is opened without
+///asking whether to bring it in - so a minute spent waiting for that question was every open this reported, all
+///sixty seconds of it. See uploadOpenedOnItsOwn, which stops waiting once the file is opened.
 ///
 async function openAndTime(page, file, shapes) {
     const started = Date.now();
 
-    await uploadFile(page, file);
-
-    await openedOnItsOwn(page, 60000);
+    await uploadOpenedOnItsOwn(page, file, 60000);
 
     await expect.poll(async () => shapeCount(page), { timeout: 240000 })
         .toBeGreaterThan(shapes / 2);
@@ -78,7 +134,7 @@ test.describe('a layout of twenty thousand shapes', () => {
     ///them ran out of time anyway.
     ///
     ///What that timeout reports is worse than slow, it is misleading. The poll gives up still counting the
-    ///eighteen polygons of the bundled Mosfet, which is exactly what a file that never uploaded looks like -
+    ///twenty polygons of the bundled Mosfet, which is exactly what a file that never uploaded looks like -
     ///so a runner too slow to finish the draw reads as the app failing to open the file at all.
     ///
     ///The numbers are the whole point of this file and they are worth having; they are worth having from a
@@ -96,8 +152,8 @@ test.describe('a layout of twenty thousand shapes', () => {
 
     let file;
 
-    test.beforeAll(() => {
-        file = generate(SHAPES);
+    test.beforeAll(async () => {
+        file = await generate(SHAPES);
     });
 
     test.beforeEach(async ({ page }) => {
@@ -159,51 +215,45 @@ test.describe('a layout of twenty thousand shapes', () => {
     ///it might have been the whole of what was being measured. It was not, but the only way to find out was
     ///to measure the frame where it happens.
     ///
-    ///What this reports is the gap between one animation frame and the next while the viewBox is moving,
-    ///which is what "smooth" actually means. Recorded rather than bounded: a threshold in milliseconds is a
-    ///number that depends on the machine, and this suite runs on a shared CI runner. The node count above is
-    ///the assertion; this is the figure.
+    ///What this reports is the gap between one animation frame and the next while a drag is moving the view,
+    ///which is what "smooth" actually means. The drag is the app's own, a pointer move a frame: it used to set
+    ///the viewBox here directly, which was what a pan did until a pan started moving the picture already
+    ///drawn instead - see showViewBox in JavaScriptInterOp.js - and from then on it would have been timing a
+    ///raster no drag ever asks for. Recorded rather than bounded: a threshold in milliseconds is a number that
+    ///depends on the machine, and this suite runs on a shared CI runner. The node count above is the assertion;
+    ///this is the figure.
     ///
     test('pans a frame at a time, and says what a frame costs', async ({ page }) => {
         await openAndTime(page, file, SHAPES);
 
         const deltas = await page.evaluate(async (steps) => {
             const svg = document.getElementById('gdsSVG');
-            const box = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+            const rect = svg.getBoundingClientRect();
+            const x0 = rect.left + (rect.width / 2);
+            const y0 = rect.top + (rect.height / 2);
+            const options = (x, y, buttons) => ({ bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: buttons, clientX: x, clientY: y });
+            const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
             const gaps = [];
 
-            await new Promise(resolve => {
-                let step = 0;
-                let last = performance.now();
+            //The first move the page sees is swallowed - see isFirstClick - so it is spent here, before the press.
+            svg.dispatchEvent(new PointerEvent('pointermove', options(x0, y0, 0)));
+            svg.dispatchEvent(new PointerEvent('pointerdown', options(x0, y0, 1)));
 
-                function frame() {
-                    //A hundredth of the view a step, so the whole picture stays on screen and every frame
-                    //has the same amount to draw as the one before it.
-                    const moved = (box[2] / 100) * step;
+            //The first frame is thrown away: it carries whatever the page was doing beforehand.
+            let last = await frame();
 
-                    svg.setAttribute('viewBox', `${box[0] + moved} ${box[1]} ${box[2]} ${box[3]}`);
+            for (let step = 1; step <= steps; step++) {
+                //Two pixels a step, so the whole picture stays on screen and every frame has the same amount to
+                //show as the one before it.
+                svg.dispatchEvent(new PointerEvent('pointermove', options(x0 + (step * 2), y0, 1)));
 
-                    const now = performance.now();
+                const now = await frame();
 
-                    //The first is thrown away: it carries whatever the page was doing beforehand.
-                    if (step > 0)
-                        gaps.push(now - last);
+                gaps.push(now - last);
+                last = now;
+            }
 
-                    last = now;
-                    step++;
-
-                    if (step > steps) {
-                        svg.setAttribute('viewBox', box.join(' '));
-                        resolve();
-
-                        return;
-                    }
-
-                    requestAnimationFrame(frame);
-                }
-
-                requestAnimationFrame(frame);
-            });
+            svg.dispatchEvent(new PointerEvent('pointerup', options(x0 + (steps * 2), y0, 0)));
 
             return gaps;
         }, 60);
@@ -217,9 +267,9 @@ test.describe('a layout of twenty thousand shapes', () => {
     });
 
     ///
-    ///**Panning is pure JS** - a viewBox attribute, no Blazor round trip - so what is measured here is the
-    ///browser re-rastering however many nodes are on screen, and nothing else. It is the number that decides
-    ///whether culling is needed at all.
+    ///**Panning is pure JS** - no Blazor round trip, and while the drag lasts not even a viewBox: the picture
+    ///already drawn is moved, and the viewBox goes on once it stops. So what is measured here is Playwright's
+    ///round trip and the move itself, through the page's real input.
     ///
     test('pans, and says how long a frame takes', async ({ page }) => {
         await openAndTime(page, file, SHAPES);
@@ -269,7 +319,7 @@ test.describe('a layout of twenty thousand shapes', () => {
 
         const started = page.waitForEvent('download');
 
-        await page.locator('#downloadImage').click();
+        await saveImage(page, 'svg');
 
         const svg = (await downloadBytes(await started)).toString('utf8');
 
@@ -313,5 +363,58 @@ test.describe('a layout of twenty thousand shapes', () => {
         await expect(page.locator('#undoEdit')).toBeVisible({ timeout: 240000 });
 
         console.log(`edit: ${Date.now() - started} ms from drop to redrawn`);
+    });
+
+    ///
+    ///**Opening in 3D**, which no instrument measured until the 2026-11-03 audit said so: from the press on the 3D
+    ///button to the last layer's mesh put in the scene. A mesh is a layer - see Viewer3D - so the count is the layers.
+    ///
+    ///Timed by the scene itself: Object3D.add is wrapped before the press, and every mesh carrying outlines is a
+    ///layer's slab arriving. Done once none has arrived for two seconds. Recorded rather than bounded, as the rest are.
+    ///
+    test('opens in 3D, and says how long it took', async ({ page }) => {
+        await openAndTime(page, file, SHAPES);
+
+        await page.evaluate(async () => {
+            const THREE = await import('three');
+            const original = THREE.Object3D.prototype.add;
+
+            window.__slabsAt = [];
+
+            THREE.Object3D.prototype.add = function (...objects) {
+                for (const object of objects) {
+                    if (object.userData != null && object.userData.outlines != null)
+                        window.__slabsAt.push(performance.now());
+                }
+
+                return original.apply(this, objects);
+            };
+        });
+
+        const pressed = await page.evaluate(() => performance.now());
+
+        await selectView(page, 'View3D');
+
+        await expect.poll(async () => page.evaluate(() => window.__slabsAt.length), { timeout: 240000 }).toBeGreaterThan(0);
+
+        //Until no layer has arrived for two seconds.
+        let seen = -1;
+
+        while (true) {
+            const now = await page.evaluate(() => window.__slabsAt.length);
+
+            if (now === seen)
+                break;
+
+            seen = now;
+
+            await page.waitForTimeout(2000);
+        }
+
+        const last = await page.evaluate(() => window.__slabsAt[window.__slabsAt.length - 1]);
+
+        console.log(`3D open: ${Math.round(last - pressed)} ms to the last of ${seen} layer meshes`);
+
+        expect(seen).toBeGreaterThan(0);
     });
 });

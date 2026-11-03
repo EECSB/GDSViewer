@@ -50,8 +50,8 @@ namespace GdsII
         ///none.
         ///
         ///The window and the step come from the rule's own operands rather than being fixed, because a rule
-        ///states both: `density met1 100000 50000 300` is a hundred-micron window stepped fifty microns,
-        ///needing 30%. Stepping by less than the width is the point - a window stepped by its own width
+        ///states both: `density met1 300 window 100000 step 50000` is a hundred-micron window stepped fifty
+        ///microns, needing 30%. Stepping by less than the width is the point - a window stepped by its own width
         ///misses a sparse patch that straddles two of them.
         ///
         ///Minimum only. A maximum-density rule is the same sweep with the comparison turned round, and no
@@ -424,6 +424,258 @@ namespace GdsII
             return words;
         }
 
+        ///<summary>
+        ///A deck's text with every rule line taken out, and everything else left as it was written.
+        ///
+        ///The layers and derivations stay, and so do the comments and blank lines: what is asked for is an
+        ///empty list of rules, not a different deck - so the next rule added has the layers it names already
+        ///defined. A rule this build cannot measure goes too, since it is a rule line like any other.
+        ///
+        ///By the same first word the reader goes by, so a line it would read as a rule is exactly a line this
+        ///takes out.
+        ///</summary>
+        public static string WithoutRules(string text)
+        {
+            var kept = new List<string>();
+
+            foreach (string line in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                string trimmed = line.Trim();
+
+                if (trimmed.Length > 0 && !trimmed.StartsWith('#'))
+                {
+                    var words = tokenize(trimmed);
+
+                    if (words.Count > 0 && words[0].Text.ToLowerInvariant() == "rule")
+                        continue;
+                }
+
+                kept.Add(line);
+            }
+
+            return string.Join("\n", kept);
+        }
+
+        #endregion **************************************************************************
+
+
+
+        #region Writing *********************************************************************
+
+        ///
+        ///One rule as a line of the deck, which <see cref="Parse"/> reads back as the same rule - for the PDK manager's
+        ///rule form, which builds a rule out of boxes and writes it into the text, the text being what a deck is.
+        ///
+        ///In the order the bundled deck writes a rule: the id, the check, its layers, the value and the description, then
+        ///whatever qualifies it. A double quote in the description becomes an apostrophe, since the reader takes every
+        ///quote as the start or the end of one.
+        ///
+        public static string WriteRule(DrcRule rule)
+        {
+            var line = new StringBuilder();
+
+            line.Append("rule ").Append(rule.Id).Append(' ').Append(rule.Check.ToString().ToLowerInvariant());
+
+            foreach (string operand in rule.Operands)
+                line.Append(' ').Append(operand);
+
+            line.Append(' ').Append(rule.Value.ToString(CultureInfo.InvariantCulture));
+            line.Append(" \"").Append(rule.Description.Replace('"', '\'')).Append('"');
+
+            if (rule.Except is string except && except.Length > 0)
+                line.Append(" except ").Append(except);
+
+            if (rule.Window > 0)
+                line.Append(" window ").Append(rule.Window.ToString(CultureInfo.InvariantCulture));
+
+            if (rule.Step > 0)
+                line.Append(" step ").Append(rule.Step.ToString(CultureInfo.InvariantCulture));
+
+            if (rule.Metric is DrcMetric metric)
+                line.Append(' ').Append(MetricWord(metric));
+
+            return line.ToString();
+        }
+
+        ///<summary>The word a deck writes a metric as - `parallel` for projection, as a rule manual says it. See takeMetric.</summary>
+        public static string MetricWord(DrcMetric metric)
+        {
+            if (metric == DrcMetric.Projection)
+                return "parallel";
+
+            return metric.ToString().ToLowerInvariant();
+        }
+
+        ///
+        ///A deck's text with its line <paramref name="number"/> - counted from one, as <see cref="DrcRule.Line"/> is -
+        ///made <paramref name="line"/>, or taken out when that is null. Everything else stays as it was written, and a
+        ///number the text has no line for changes nothing.
+        ///
+        public static string WithLine(string text, int number, string? line)
+        {
+            var lines = linesOf(text);
+
+            if (number < 1 || number > lines.Count)
+                return text;
+
+            if (line is null)
+                lines.RemoveAt(number - 1);
+            else
+                lines[number - 1] = line;
+
+            return string.Join("\n", lines);
+        }
+
+        ///
+        ///A deck's text with a rule line added under its last rule, or at its end when it has none - so a rule added lands
+        ///among the rules rather than under whatever closes the file, which in the bundled deck is the list of the rules
+        ///left out on purpose.
+        ///
+        public static string WithRuleAdded(string text, string line)
+        {
+            var lines = linesOf(text);
+            int last = lastLineStarting(lines, "rule");
+
+            if (last < 0)
+            {
+                while (lines.Count > 0 && lines[^1].Trim().Length == 0)
+                    lines.RemoveAt(lines.Count - 1);
+
+                lines.Add(line);
+                lines.Add("");
+            }
+            else
+            {
+                lines.Insert(last + 1, line);
+            }
+
+            return string.Join("\n", lines);
+        }
+
+        ///
+        ///A deck's text with `layer <paramref name="name"/> <paramref name="key"/>` declared under its last layer line, or
+        ///ahead of everything else when it has none - for a rule the form built on one of the PDK's layers that the deck
+        ///did not name yet.
+        ///
+        public static string WithLayerDeclared(string text, string name, LayerKey key)
+        {
+            var lines = linesOf(text);
+            int last = lastLineStarting(lines, "layer");
+
+            lines.Insert(last + 1, $"layer {name} {key}");
+
+            return string.Join("\n", lines);
+        }
+
+        ///
+        ///A deck's text with lines written somewhere else - by an AI model, in the PDK manager - each put where its kind
+        ///goes: a `layer` under the last layer, or ahead of everything when there is none; a `derive` under the last
+        ///derive, or under the last layer; a rule, or anything else, under the last rule, or at the end. A comment goes in
+        ///with the line after it, which it is about, and comments with nothing after them go in with the rules.
+        ///
+        ///**Each kind kept in the order it came**, since the next of a kind lands under the one put in before it - and a
+        ///derive placed under the layers is still under every layer it can name, the new ones included.
+        ///
+        public static string WithLinesAdded(string text, IEnumerable<string> added)
+        {
+            var lines = linesOf(text);
+            var waiting = new List<string>();
+
+            foreach (string line in added)
+            {
+                string trimmed = line.Trim();
+
+                if (trimmed.Length == 0)
+                    continue;
+
+                if (trimmed.StartsWith('#'))
+                {
+                    waiting.Add(trimmed);
+
+                    continue;
+                }
+
+                waiting.Add(trimmed);
+
+                var words = tokenize(trimmed);
+                string keyword = "";
+
+                if (words.Count > 0)
+                    keyword = words[0].Text.ToLowerInvariant();
+
+                put(lines, keyword, waiting);
+                waiting.Clear();
+            }
+
+            if (waiting.Count > 0)
+                put(lines, "rule", waiting);
+
+            return string.Join("\n", lines);
+        }
+
+        ///<summary>A run of lines under the last of their kind - see <see cref="WithLinesAdded"/>.</summary>
+        private static void put(List<string> lines, string keyword, List<string> run)
+        {
+            int last;
+
+            if (keyword == "layer")
+            {
+                last = lastLineStarting(lines, "layer");
+            }
+            else if (keyword == "derive")
+            {
+                last = lastLineStarting(lines, "derive");
+
+                if (last < 0)
+                    last = lastLineStarting(lines, "layer");
+            }
+            else
+            {
+                last = lastLineStarting(lines, "rule");
+
+                if (last < 0)
+                {
+                    while (lines.Count > 0 && lines[^1].Trim().Length == 0)
+                        lines.RemoveAt(lines.Count - 1);
+
+                    lines.AddRange(run);
+                    lines.Add("");
+
+                    return;
+                }
+            }
+
+            lines.InsertRange(last + 1, run);
+        }
+
+        ///<summary>The text's lines, however it ends them, for the edits above to work on.</summary>
+        private static List<string> linesOf(string text)
+        {
+            if (text.Length == 0)
+                return new List<string>();
+
+            return text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
+        }
+
+        ///<summary>Where the last line the reader would take as <paramref name="keyword"/> is, or -1 for none - by its first word, as the reader goes.</summary>
+        private static int lastLineStarting(List<string> lines, string keyword)
+        {
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                string trimmed = lines[i].Trim();
+
+                if (trimmed.Length == 0 || trimmed.StartsWith('#'))
+                    continue;
+
+                var words = tokenize(trimmed);
+
+                if (words.Count > 0 && words[0].Text.ToLowerInvariant() == keyword)
+                    return i;
+            }
+
+            return -1;
+        }
+
         #endregion **************************************************************************
 
 
@@ -460,30 +712,13 @@ namespace GdsII
         }
 
         ///<summary>
-        ///`68/20` into a pair.
-        ///
-        ///Invariant, and for the same reason the layermap parses invariantly: these are field numbers out of
-        ///a data file rather than prose, and a comma-decimal locale would read them fine while being the
-        ///wrong thing to have asked.
+        ///`68/20` into a pair, by the one grammar for it - <see cref="LayerKey.TryParse"/>, invariant, since these
+        ///are field numbers out of a data file rather than prose - less the `68/?` the CLI prints for a data type it
+        ///could not read, which names nothing a deck can check.
         ///</summary>
         private static bool tryParsePair(string field, out LayerKey key)
         {
-            key = default;
-
-            string[] halves = field.Split('/');
-
-            if (halves.Length != 2)
-                return false;
-
-            if (!short.TryParse(halves[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out short number))
-                return false;
-
-            if (!short.TryParse(halves[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out short dataType))
-                return false;
-
-            key = new LayerKey(number, dataType);
-
-            return true;
+            return LayerKey.TryParse(field, out key) && key.DataType != LayerKey.UnknownDataType;
         }
 
         #endregion **************************************************************************
@@ -917,6 +1152,129 @@ namespace GdsII
         private bool isDeclared(string name)
         {
             return Layers.ContainsKey(name) || namesDerivation(name);
+        }
+
+        ///<summary>
+        ///The drawn layers a name is made of - itself when it is one, and what its derivation reads all the
+        ///way down when it is not.
+        ///
+        ///**What lets a violation say which cell it came from.** A marker is a region a boolean produced
+        ///and belongs to no element, so the way back into the hierarchy is through the elements that
+        ///contributed to it - and those sit on the drawn layers underneath whatever the rule happened to
+        ///name. A rule about a gate has to end up looking at poly and diff.
+        ///
+        ///The deck's to answer rather than a layout's, since it is a walk over names and needs nothing
+        ///drawn - which is what lets a tool ask it before anything is.
+        ///</summary>
+        public List<LayerKey> DrawnBehind(string name)
+        {
+            var keys = new List<LayerKey>();
+
+            drawnBehind(name, keys, new HashSet<string>());
+
+            return keys;
+        }
+
+        private void drawnBehind(string name, List<LayerKey> keys, HashSet<string> seen)
+        {
+            //Also what stops a circle from walking forever, which is worth having here as well as in the
+            //sort: this is reachable on a deck whose cycle was reported and carried on from.
+            if (!seen.Add(name))
+                return;
+
+            if (Layers.TryGetValue(name, out var key))
+            {
+                if (!keys.Contains(key))
+                    keys.Add(key);
+
+                return;
+            }
+
+            foreach (var derivation in Derivations)
+            {
+                if (derivation.Name != name)
+                    continue;
+
+                foreach (string operand in derivation.Operands)
+                    drawnBehind(operand, keys, seen);
+            }
+        }
+
+        #endregion **************************************************************************
+
+
+
+        #region The manufacturing grid ******************************************************
+
+        ///<summary>
+        ///The drawn layers an off-grid rule looks at: every layer the deck declares for `*`, and what its
+        ///operand is drawn on otherwise.
+        ///
+        ///**One answer for the check and for whatever draws to pass it**, so a tool putting its corners on
+        ///the grid puts them there on exactly the layers the check would look at. Why `*` stops at the
+        ///declared layers is the check's to say - see <see cref="Drc"/>'s off-grid rule.
+        ///</summary>
+        internal List<LayerKey> GriddedBy(DrcRule rule)
+        {
+            if (rule.Operands[0] == EveryLayer)
+                return Layers.Values.Distinct().ToList();
+
+            return DrawnBehind(rule.Operands[0]);
+        }
+
+        ///<summary>The off-grid rules that look at a drawn layer, in the order they were written. A grid of one asks nothing and is left out.</summary>
+        public List<DrcRule> GridRulesFor(LayerKey layer)
+        {
+            var rules = new List<DrcRule>();
+
+            foreach (var rule in Rules)
+            {
+                if (rule.Check == DrcCheck.OffGrid && rule.Value > 1 && GriddedBy(rule).Contains(layer))
+                    rules.Add(rule);
+            }
+
+            return rules;
+        }
+
+        ///<summary>
+        ///The grid a drawn layer's corners have to sit on, in database units - one when no off-grid rule
+        ///looks at the layer.
+        ///
+        ///**For something that draws, rather than for the check.** A corner worked out - a circle's, an
+        ///arc's, a stroke of lettering's - lands wherever the arithmetic puts it, and rounded to the
+        ///database unit that is nearly always between two grid points. Rounded to this instead, it is
+        ///where the check wants it.
+        ///
+        ///**Every rule that looks at the layer, at once.** Two asking for 5 and for 2 make 10, the finest
+        ///grid whose points are on both. A deck rarely has more than one; sky130's is `grid.1`, five over
+        ///every layer it declares - and a layer the deck does not declare has no grid here, since the check
+        ///does not look at it either.
+        ///</summary>
+        public int GridFor(LayerKey layer)
+        {
+            long grid = 1;
+
+            foreach (var rule in GridRulesFor(layer))
+                grid = leastCommonMultiple(grid, Math.Min(rule.Value, int.MaxValue));
+
+            return (int)grid;
+        }
+
+        ///<summary>Of two numbers no bigger than an int holds, held to that too - a grid past it is no grid anything could be drawn on.</summary>
+        private static long leastCommonMultiple(long left, long right)
+        {
+            long divisor = left;
+            long other = right;
+
+            while (other != 0)
+            {
+                long carried = divisor % other;
+
+                divisor = other;
+                other = carried;
+            }
+
+            return Math.Min(left / divisor * right, int.MaxValue);
         }
 
         #endregion **************************************************************************

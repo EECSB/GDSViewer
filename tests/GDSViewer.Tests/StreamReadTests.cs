@@ -257,7 +257,7 @@ public class StreamReadTests
     #region The corpus ***************************************************************
 
     ///<summary>
-    ///Every bundled file, both ways. A disagreement on one cell out of 897 is exactly the kind of thing a
+    ///Every bundled file, both ways. A disagreement on one file out of 1,220 is exactly the kind of thing a
     ///second reader introduces, and exactly what a single hand-picked sample would miss.
     ///</summary>
     [Fact]

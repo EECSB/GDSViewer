@@ -429,4 +429,63 @@ public class RecordDecodingTests
     }
 
     #endregion *************************************************************************
+
+    #region Strings ********************************************************************
+
+    ///
+    ///A byte over 127 is a character under Latin-1 and goes out as it came in - "µm" is B5 6D - where ASCII decoding
+    ///turned it into a question mark and wrote that back, the one record a byte-for-byte round trip changed.
+    ///
+    [Fact]
+    public void A_string_with_a_byte_over_127_round_trips_under_latin_1()
+    {
+        var record = SingleRecord(RecordType.STRING, new byte[] { 0xB5, 0x6D });
+
+        Assert.Equal("µm", ((AsciiData)record.Data!).Value);
+        Assert.Equal(new byte[] { 0xB5, 0x6D }, record.Data!.Encode());
+    }
+
+    ///<summary>Every trailing null is padding, not only one: a writer that sizes its names up front pads with more.</summary>
+    [Fact]
+    public void Every_trailing_null_comes_off_a_string()
+    {
+        var record = SingleRecord(RecordType.STRNAME, new byte[] { (byte)'A', (byte)'B', 0, 0 });
+
+        Assert.Equal("AB", ((AsciiData)record.Data!).Value);
+    }
+
+    ///<summary>Which is what lets a placement find the cell: `AB` with two nulls was a name no SREF to `AB` could match, and its geometry was not drawn.</summary>
+    [Fact]
+    public void A_placement_finds_a_cell_whose_name_was_padded_with_two_nulls()
+    {
+        byte[] stamps = GdsTestData.Timestamps();
+
+        byte[] stream = GdsTestData.Concat(
+            GdsTestData.Record(RecordType.HEADER, GdsTestData.Int2(600)),
+            GdsTestData.Record(RecordType.BGNLIB, stamps),
+            GdsTestData.Record(RecordType.LIBNAME, GdsTestData.Ascii("L")),
+            GdsTestData.Record(RecordType.UNITS, GdsTestData.Concat(GdsTestData.Real8(0.001), GdsTestData.Real8(1e-9))),
+            GdsTestData.Record(RecordType.BGNSTR, stamps),
+            GdsTestData.Record(RecordType.STRNAME, (byte)'A', (byte)'B', 0, 0),
+            GdsTestData.Record(RecordType.BOUNDARY),
+            GdsTestData.Record(RecordType.LAYER, GdsTestData.Int2(1)),
+            GdsTestData.Record(RecordType.DATATYPE, GdsTestData.Int2(0)),
+            GdsTestData.Record(RecordType.XY, GdsTestData.Int4(GdsTestData.ClosedSquare(100))),
+            GdsTestData.Record(RecordType.ENDEL),
+            GdsTestData.Record(RecordType.ENDSTR),
+            GdsTestData.Record(RecordType.BGNSTR, stamps),
+            GdsTestData.Record(RecordType.STRNAME, GdsTestData.Ascii("TOP")),
+            GdsTestData.Record(RecordType.SREF),
+            GdsTestData.Record(RecordType.SNAME, GdsTestData.Ascii("AB")),
+            GdsTestData.Record(RecordType.XY, GdsTestData.Int4(0, 0)),
+            GdsTestData.Record(RecordType.ENDEL),
+            GdsTestData.Record(RecordType.ENDSTR),
+            GdsTestData.Record(RecordType.ENDLIB));
+
+        var drawn = GdsFlattener.Flatten(new GDS(stream)).Elements;
+
+        Assert.Single(drawn);
+    }
+
+    #endregion *************************************************************************
 }

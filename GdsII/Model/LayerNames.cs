@@ -28,10 +28,20 @@ namespace GdsII
     ///GDS3D asks for in its process definition file. Every column past the third is optional, so a
     ///three-column mapping written for an older build of this app still reads.
     ///
+    ///**An eleventh and twelfth carry the 3D view's texture**: a picture's file name - beside the CSV, in the folder
+    ///or the zip the two came in - and how big one repeat of it is, in database units like the stack. Last on the
+    ///row, so every reader that stops at the tenth still reads the rest of it as it always did.
+    ///
     ///Blank lines and `#` comments are skipped, whitespace around a field is trimmed, and a header row
     ///naming the columns is recognized and skipped so that a spreadsheet's own export works.
+    ///
+    ///**A field in double quotes may hold a comma**, the way a spreadsheet writes one - which is how a name with a
+    ///comma in it is written here too: `65,20,"poly, gate"`. Only where a field starts with a quote, so every file
+    ///without one reads as it always did. See splitFields and csvField.
+    ///
+    ///**Or a KLayout .lyp**, for the names and the colors it carries - see LayerNames.LayerProperties.cs.
     ///</summary>
-    public class LayerNames
+    public partial class LayerNames
     {
         #region Constants *******************************************************************
 
@@ -85,6 +95,15 @@ namespace GdsII
         ///</summary>
         public Dictionary<LayerKey, int> PatternSizes { get; } = new Dictionary<LayerKey, int>();
 
+        ///<summary>
+        ///The picture each layer's surface is drawn with in 3D, by its file name, where a row said. Sparse, like the
+        ///rest. See <see cref="Layer.Texture"/>.
+        ///</summary>
+        public Dictionary<LayerKey, string> Textures { get; } = new Dictionary<LayerKey, string>();
+
+        ///<summary>How big one repeat of each layer's texture is, in database units, where a row said. Sparse.</summary>
+        public Dictionary<LayerKey, int> TextureSizes { get; } = new Dictionary<LayerKey, int>();
+
         ///<summary>What could not be read, by line number. A file is read as far as it can be.</summary>
         public List<string> Problems { get; } = new List<string>();
 
@@ -96,6 +115,18 @@ namespace GdsII
         ///</summary>
         public int Count
         {
+            get { return Pairs.Count; }
+        }
+
+        ///
+        ///Every layer this mapping says anything about, by its pair, in the order the pairs sort.
+        ///
+        ///**Also the layers a file was left with**, when the mapping is the one a session kept: that writes a row for
+        ///each layer something was said about, drawn on or not - see <see cref="Named"/> - so these are what puts a
+        ///named layer with nothing on it back, which the file's own records cannot.
+        ///
+        public IReadOnlyList<LayerKey> Pairs
+        {
             get
             {
                 return Names.Keys
@@ -105,8 +136,11 @@ namespace GdsII
                     .Concat(Fills.Keys)
                     .Concat(PatternColors.Keys)
                     .Concat(PatternSizes.Keys)
+                    .Concat(Textures.Keys)
+                    .Concat(TextureSizes.Keys)
                     .Distinct()
-                    .Count();
+                    .OrderBy(key => key)
+                    .ToList();
             }
         }
 
@@ -131,6 +165,23 @@ namespace GdsII
             if (string.IsNullOrWhiteSpace(text))
                 return names;
 
+            //
+            //**A KLayout layer-properties file** is read for what it has - see readLayerProperties - and is told from a
+            //CSV by its first character, which no row of one can be.
+            //
+            if (isLayerProperties(text))
+            {
+                names.readLayerProperties(text);
+
+                return names;
+            }
+
+            //
+            //A byte order mark, which a spreadsheet's "CSV UTF-8" puts at the front and a file read as bytes keeps:
+            //left there, it is part of the first field, and a header row reads as a layer number that is not one.
+            //
+            text = text.TrimStart('\uFEFF');
+
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
             for (int i = 0; i < lines.Length; i++)
@@ -146,7 +197,7 @@ namespace GdsII
             if (trimmed.Length == 0 || trimmed.StartsWith('#'))
                 return;
 
-            string[] fields = trimmed.Split(',');
+            string[] fields = splitFields(trimmed);
 
             if (fields.Length < 3)
             {
@@ -191,6 +242,7 @@ namespace GdsII
             bool roled = readRole(fields, key, lineNumber);
             bool filled = readFill(fields, key, lineNumber);
             bool patterned = readPattern(fields, key, lineNumber);
+            bool textured = readTexture(fields, key, lineNumber);
 
             //A row that sets nothing at all.
             //
@@ -199,8 +251,71 @@ namespace GdsII
             //it carried was thrown away at the door. A name is one of the things a row can set now, not the
             //condition for setting the others - and a row that says nothing is still worth reporting,
             //because that is what a file with its columns shifted looks like.
-            if (name.Length == 0 && color.Length == 0 && !stacked && !roled && !filled && !patterned)
+            if (name.Length == 0 && color.Length == 0 && !stacked && !roled && !filled && !patterned && !textured)
                 report($"Line {lineNumber} names no layer.");
+        }
+
+        ///
+        ///The 3D view's texture, when a row says: a picture's file name in the eleventh column, and how big one repeat
+        ///of it is, in database units, in the twelfth. Each on its own, like the pattern's two.
+        ///
+        ///**A name that stays beside the CSV**: a file name, or a path below the CSV's own folder - never one that
+        ///climbs out of it or starts at a drive or a root, which in a zip would be a file outside it and on a page would
+        ///be a fetch from wherever it pointed. Reported rather than ignored, for the reason the role is.
+        ///
+        private bool readTexture(string[] fields, LayerKey key, int lineNumber)
+        {
+            bool read = false;
+
+            string texture = field(fields, 10);
+
+            if (texture.Length > 0)
+            {
+                if (IsTextureName(texture))
+                {
+                    Textures[key] = texture;
+                    read = true;
+                }
+                else
+                    report($"Line {lineNumber}: \"{texture}\" is not a texture. Name a picture beside the CSV - a file name, or a path below its folder.");
+            }
+
+            string size = field(fields, 11);
+
+            if (size.Length == 0)
+                return read;
+
+            if (!tryParseStackValue(size, out int units) || units <= 0)
+            {
+                report($"Line {lineNumber}: \"{size}\" is not a texture size. Use a whole number of database units above nothing.");
+
+                return read;
+            }
+
+            TextureSizes[key] = units;
+
+            return true;
+        }
+
+        ///
+        ///Whether a texture's name stays beside the CSV that gives it: no climbing out with `..`, no root or drive to
+        ///start from, no backslashes, and nothing that names another place - see readTexture.
+        ///
+        public static bool IsTextureName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 200)
+                return false;
+
+            if (name.StartsWith('/') || name.Contains('\\') || name.Contains(':'))
+                return false;
+
+            foreach (string part in name.Split('/'))
+            {
+                if (part.Length == 0 || part == "." || part == "..")
+                    return false;
+            }
+
+            return true;
         }
 
         ///
@@ -424,6 +539,90 @@ namespace GdsII
                 Problems.Add(problem);
         }
 
+        ///
+        ///A row's fields, split at its commas - **except inside double quotes**, which is how a spreadsheet writes a
+        ///field that holds a comma, and how <see cref="Export"/> writes a name that has one: `65,20,"poly, gate"`. A
+        ///doubled quote inside them is one quote, and a quote left open takes the rest of the line rather than the
+        ///row being lost.
+        ///
+        ///**Only a field that starts with one**, past any blank space - which is trimmed off a field anyway - so a
+        ///quote in the middle of a name is the character it looks like, as it always was. A row with no quote in
+        ///front of a field splits exactly as it did at every comma.
+        ///
+        ///Split by hand, rather than told apart by a CSV library: this library takes no packages, and the rule is a
+        ///loop.
+        ///
+        private static string[] splitFields(string line)
+        {
+            var fields = new List<string>();
+            var field = new StringBuilder();
+            int at = 0;
+
+            while (true)
+            {
+                int start = at;
+
+                while (at < line.Length && (line[at] == ' ' || line[at] == '\t'))
+                    at++;
+
+                if (at < line.Length && line[at] == '"')
+                {
+                    at++;
+
+                    while (at < line.Length)
+                    {
+                        if (line[at] != '"')
+                        {
+                            field.Append(line[at]);
+                            at++;
+
+                            continue;
+                        }
+
+                        if (at + 1 < line.Length && line[at + 1] == '"')
+                        {
+                            field.Append('"');
+                            at += 2;
+
+                            continue;
+                        }
+
+                        at++;
+
+                        break;
+                    }
+
+                    //Whatever is left before the comma is kept, rather than the row thrown away over it.
+                    while (at < line.Length && line[at] != ',')
+                    {
+                        field.Append(line[at]);
+                        at++;
+                    }
+                }
+                else
+                {
+                    at = start;
+
+                    while (at < line.Length && line[at] != ',')
+                    {
+                        field.Append(line[at]);
+                        at++;
+                    }
+                }
+
+                fields.Add(field.ToString());
+                field.Clear();
+
+                if (at >= line.Length)
+                    break;
+
+                //Past the comma, to the next field.
+                at++;
+            }
+
+            return fields.ToArray();
+        }
+
         #endregion **************************************************************************
 
 
@@ -499,6 +698,18 @@ namespace GdsII
                     touched = true;
                 }
 
+                if (Textures.TryGetValue(layer.Key, out string? texture))
+                {
+                    layer.Value.Texture = texture;
+                    touched = true;
+                }
+
+                if (TextureSizes.TryGetValue(layer.Key, out int units))
+                {
+                    layer.Value.TextureSize = units;
+                    touched = true;
+                }
+
                 if (touched)
                     applied++;
             }
@@ -542,6 +753,10 @@ namespace GdsII
                 layer.Value.Fill = LayerFill.None;
                 layer.Value.PatternColor = null;
                 layer.Value.PatternPixels = null;
+
+                //And the picture the 3D view draws it with, for the same reason.
+                layer.Value.Texture = null;
+                layer.Value.TextureSize = null;
             }
 
             information.RestorePaletteColors();
@@ -558,7 +773,7 @@ namespace GdsII
             //slider is currently holding the stack, so the only spacing it could pass is the default - which
             //collapses a spread stack and leaves the slider reading 700 over a layout stacked at 50. That is
             //the exact failure slider-carry.spec.js exists to catch. The caller knows the spacing; see
-            //Viewer.razor's clearLayerNames, which restacks the way RestoreStacking already does.
+            //Viewer.razor's reapplyPdk, which restacks the way RestoreStacking already does.
             //
         }
 
@@ -602,9 +817,9 @@ namespace GdsII
         ///columns that were not there. What is exported now is what the app is currently drawing, which is
         ///a file you can edit and load back.
         ///
-        ///The cost is real and worth naming: reading this back marks every layer as placed, so the 3D
-        ///view's spacing slider stops moving them. Reset stack on a row, or Clear on the names, puts that
-        ///back.
+        ///The cost is real and worth naming: reading this back marks every layer as placed, so each rests
+        ///where the export found it rather than in the even stack - the 3D view's spacing slider still
+        ///spreads them from there. Reset stack in a layer's settings puts one back.
         ///</summary>
         public static string Export(AdditionalGDSInformation information)
         {
@@ -639,7 +854,9 @@ namespace GdsII
             //came to carry the role's condition inside its own - and how the next column added would have
             //come to carry both.
             //
-            bool wantsSize = layer.PatternPixels is not null;
+            bool wantsTextureSize = layer.TextureSize is not null;
+            bool wantsTexture = wantsTextureSize || (layer.Texture is string texture && texture.Length > 0);
+            bool wantsSize = wantsTexture || layer.PatternPixels is not null;
             bool wantsMarks = wantsSize || (layer.PatternColor is string marks && marks.Length > 0);
             bool wantsFill = wantsMarks || layer.Fill != LayerFill.None;
             bool wantsRole = wantsFill || layer.Role != LayerRole.None;
@@ -651,7 +868,7 @@ namespace GdsII
             //function of how many layers this file happens to have - and this row is read back as a set of
             //decisions, so a derived value written here becomes one on the next load.
             //
-            //The stack is the half that hurt. A placed layer is a layer SetStackingOffsets refuses to move, so
+            //The stack is the half that hurt. A placed layer was then one SetStackingOffsets refused to move, so
             //a session that recorded the automatic heights came back with every layer that had a role pinned in
             //place - and the shipped sky130 mapping gives most of them one. The 3D view's spacing slider then
             //moved nothing at all the second time an example was opened, which read as a bug in the slider. It
@@ -672,14 +889,14 @@ namespace GdsII
                 .Append(',')
                 .Append(key.DataType.ToString(CultureInfo.InvariantCulture))
                 .Append(',')
-                .Append(name);
+                .Append(csvField(name));
 
             if (wantsColor || wantsStack || wantsRole)
             {
                 builder.Append(',');
 
                 if (wantsColor)
-                    builder.Append(layer.Color);
+                    builder.Append(csvField(layer.Color));
             }
 
             if (wantsStack || wantsRole)
@@ -713,16 +930,57 @@ namespace GdsII
                 builder.Append(',').Append(layer.Fill.ToString().ToLowerInvariant());
 
             if (wantsMarks)
-                builder.Append(',').Append(layer.PatternColor ?? "");
+                builder.Append(',').Append(csvField(layer.PatternColor ?? ""));
 
+            //Empty for a layer with a texture and the usual pattern size, which the reader takes as no size of its own.
             if (wantsSize)
-                builder.Append(',').Append(layer.PatternPixels!.Value.ToString(CultureInfo.InvariantCulture));
+            {
+                builder.Append(',');
+
+                if (layer.PatternPixels is int pixels)
+                    builder.Append(pixels.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (wantsTexture)
+                builder.Append(',').Append(csvField(layer.Texture ?? ""));
+
+            if (wantsTextureSize)
+                builder.Append(',').Append(layer.TextureSize!.Value.ToString(CultureInfo.InvariantCulture));
 
             builder.Append('\n');
         }
 
+        ///
+        ///A text column as a row can hold it - a name, a color, a picture: **in double quotes when it has a comma or a
+        ///quote in it**, a quote inside doubled, the way a spreadsheet writes one; and on one line, since a row is one.
+        ///Everything else goes out as it always did, so a file with no such name reads the same in any tool.
+        ///
+        ///**It used to go out as it was**, and a comma in a name split its row: `poly, gate` came back as `poly`, with
+        ///` gate` for its color and every column after it one place along - the role among them, so the layer stopped
+        ///carrying a net. A name typed in the app, or read off a DXF or an SVG, can hold any character. See splitFields.
+        ///
+        private static string csvField(string value)
+        {
+            var kept = new StringBuilder(value.Length);
+
+            foreach (char character in value)
+            {
+                if (char.IsControl(character))
+                    kept.Append(' ');
+                else
+                    kept.Append(character);
+            }
+
+            string text = kept.ToString();
+
+            if (!text.Contains(',') && !text.Contains('"'))
+                return text;
+
+            return "\"" + text.Replace("\"", "\"\"") + "\"";
+        }
+
         ///<summary>Names the columns for a spreadsheet, and is skipped on the way back in.</summary>
-        public const string HeaderRow = "#layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize\n";
+        public const string HeaderRow = "#layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize,texture,texturesize\n";
 
         #endregion **************************************************************************
     }

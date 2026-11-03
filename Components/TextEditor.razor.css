@@ -12,15 +12,59 @@
 }
 
 /*
+    The cell list and the editor, side by side, the list on the left where the 2D view keeps its tree.
+
+    The list is that tree's panel by class - .cellTree in app.css, with its width, its ground and its guide
+    lines - so the variable it is sized by is set here, as the 2D view's wrapper sets it there.
+*/
+.editorBody {
+    --cell-tree: 15rem;
+
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/*
     flex rather than -webkit-fill-available, which is what this was.
 
     That is a non-standard property Firefox does not implement, and it was doing the job that a flex child
     does properly - taking what the parent has left. min-height: 0, or it refuses to shrink below the
-    dump's own height and pushes the message strip off the bottom of the pane.
+    dump's own height and pushes the message strip off the bottom of the pane; min-width: 0, or it will not
+    give up the width the list takes when it opens.
 */
 #gdsTextEditor {
     flex: 1;
     min-height: 0;
+    min-width: 0;
+}
+
+/*
+    On a phone, the list over the editor rather than beside it: 15rem beside a 375-pixel screen leaves the text
+    a strip. A third of the pane at most, and the rows scroll inside it.
+*/
+@media (max-width: 767.98px) {
+    .editorBody {
+        flex-direction: column;
+    }
+
+    .textCells {
+        width: auto;
+        max-height: 35%;
+
+        border-right: none;
+        border-bottom: 1px solid #41464b61;
+    }
+
+    /*
+        And no picture, as the 2D tree has none on a phone: a finger is over nothing until it presses, which goes to
+        the cell - and a 15rem square would be most of a list held to a third of the pane. Its box goes with it.
+    */
+    .textCells .cellTreePreviewFrame,
+    .textCells .cellPreviewAuto,
+    .textCells .previewGrabber {
+        display: none;
+    }
 }
 
 /*

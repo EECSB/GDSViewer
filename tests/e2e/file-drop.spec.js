@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { gotoApp, gotoExample, MOSFET, MOSFET_POLYGONS, shapeCount, openFile, acceptsClosingWhatIsOpen } = require('./helpers');
+const { gotoApp, gotoExample, MOSFET, MOSFET_POLYGONS, shapeCount, openFile } = require('./helpers');
 
 ///
 ///Dropping a layout file onto the view.
@@ -55,9 +55,9 @@ async function textBeingDragged(page) {
 ///
 ///Whether anything is drawing the "drop to open" overlay.
 ///
-///Not pinned to a selector, because which box wears it is the thing the tests below are about: the 2D view
-///lights `.viewCanvas` and the other two light the pane, since only the 2D view has a sidebar inside the
-///pane to keep out of.
+///Not pinned to a selector, because which box wears it is the thing the tests below are about: the 2D and 3D
+///views light `.viewCanvas` and the text view lights the pane, since the two with a drawing have the cell tree
+///inside the pane to keep out of.
 ///
 function viewIsLit(page) {
     return page.locator('.fileDropOver').count();
@@ -148,14 +148,12 @@ test.describe('a layout file dropped on the view', () => {
     ///
     ///A file dropped on the app's own example, which mayOfferImport stands down for.
     ///
-    ///There is nothing to ask about - nothing on screen is the visitor's yet - so the drop falls through to
-    ///the plain confirm, exactly as the Open button does from the same state. Which is the point: the two
-    ///routes fall through together.
+    ///There is nothing to ask about - nothing on screen is the visitor's yet - so the drop opens the file in its
+    ///place, exactly as the Open button does from the same state, with no question and no second tab. Which is
+    ///the point: the two routes go through together.
     ///
-    test('replaces the app\'s own example after the plainer question', async ({ page }) => {
+    test('replaces the app\'s own example, and asks nothing', async ({ page }) => {
         await gotoApp(page);
-
-        acceptsClosingWhatIsOpen(page);
 
         const carrying = await fileBeingDragged(page);
 
@@ -331,7 +329,7 @@ test('a read-only page takes no dropped file', async ({ page }) => {
     //
     //gotoApp waits for the app, not for the layout - gotoExample is the one that waits for both, and it
     //cannot be used here because it has no way to say `mode=`. Reading the count straight after the goto
-    //caught it at nought on a loaded machine, and the assertion at the end then read the twenty that had
+    //caught it at zero on a loaded machine, and the assertion at the end then read the twenty that had
     //arrived in the meantime and called it a file the drop had opened. Which is the wrong way round: the
     //count was the one that moved, not the drop.
     //

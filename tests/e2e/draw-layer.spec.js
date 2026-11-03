@@ -58,13 +58,15 @@ test('the rows are a readout until the Draw tool is out', async ({ page }) => {
 });
 
 ///
-///One row, and the first the file has - which is where startDrawingShapes puts it.
+///One row, and the first the file has - which is where startDrawingShapes puts it with nothing chosen.
 ///
 ///Worth pinning now the dropdown has gone, because the mark is the only thing that says where a shape will
-///land. Two rows marked, or none, would leave that unanswerable from the screen.
+///land. Two rows marked, or none, would leave that unanswerable from the screen. Pan first, to put down the
+///shape enterCell chose: a chosen shape's layer is where the pen opens otherwise - see chosen-layers.spec.
 ///
 test('exactly one row is marked, and it is the first layer the file has', async ({ page }) => {
     await enterCell(page);
+    await panTool(page).click();
     await page.locator('#drawTool').click();
 
     await expect(page.locator('.layerRowDrawing')).toHaveCount(1);
@@ -190,6 +192,26 @@ test('the click chooses the layer and opens no name box', async ({ page }) => {
     await page.locator('.layerRow').nth(3).locator('.layerName').click();
 
     await expect(page.locator('.layerNameBox')).toHaveCount(0);
+});
+
+///
+///With the settings up as well, one press on a row answers both: it is the layer a shape goes on, and the
+///layer the settings show. Both are questions about the row that was pressed.
+///
+test('with a layer\'s settings up, a press on a row picks it to draw on and shows its settings', async ({ page }) => {
+    await enterCell(page);
+    await page.locator('#drawTool').click();
+
+    await page.locator('.layerRow').nth(1).locator('.layerSettingsButton').click();
+    await expect(page.locator('.layerSettingsField')).toBeVisible();
+
+    const listed = await layersListed(page);
+
+    await page.locator('.layerRow').nth(3).locator('.layerName').click();
+
+    expect(await drawingLayer(page)).toBe(listed[3]);
+    await expect(page.locator('.layerRow').nth(3).locator('.layerSettingsButton')).toHaveClass(/layerSettingsButtonOn/);
+    await expect(page.locator('.layerRow').nth(1).locator('.layerSettingsButton')).not.toHaveClass(/layerSettingsButtonOn/);
 });
 
 ///

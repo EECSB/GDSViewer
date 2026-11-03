@@ -11,8 +11,9 @@ const { gotoExample, shapeCount, shapePoints, shapeBox, snapToGrid, chooseShape,
 
 const UNITS_PER_MICRON = 1000;
 
+//With the page's margins, which the clicks' pixels were measured in - see gotoExample.
 test.beforeEach(async ({ page }) => {
-    await gotoExample(page, 'Mosfet', 'View2DSvg');
+    await gotoExample(page, 'Mosfet', 'View2DSvg', false, false);
 
     await expect.poll(async () => shapeCount(page), { timeout: 60000 }).toBeGreaterThan(0);
 
@@ -362,7 +363,7 @@ test.describe('changing one afterwards', () => {
     ///
     ///**Two widths, meaning two different things.**
     ///
-    ///The toolbar holds the width of the *next* path; the panel holds the width of the chosen one. One
+    ///The Draw menu's Path row holds the width of the *next* path; the panel holds the width of the chosen one. One
     ///control for both would silently move whichever was not being looked at.
     ///
     test('the panel does not move the width the tool will draw with', async ({ page }) => {

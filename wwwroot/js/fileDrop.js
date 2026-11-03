@@ -4,8 +4,8 @@
 //**Through the file input rather than around it.** A drop hands over a FileList, which is exactly what the
 //Open dialog hands over - so this sets that list on the hidden input Open already uses and lets the input's
 //own change event carry it across. Everything after that is the upload path that was there before: the offer
-//to bring the file in as a cell instead of replacing what is open, the confirm for when there is nothing to
-//import, the history entry, the parse errors, the alert about a second file. A drop that read the bytes
+//to bring the file in as a cell instead of replacing what is open, the tab the file gets, the history entry,
+//the parse errors, the alert about a second file. A drop that read the bytes
 //itself and handed them to C# by another route would be a second copy of all of that, and the copy is where
 //the two would drift.
 //
@@ -48,8 +48,11 @@ function carriesFiles(event) {
 ///**The pane is the permission; the canvas is the target.** `#viewPane` is where the shell says whether this
 ///page opens files at all, but it is not only the drawing: the 2D view puts the cell tree in a column inside
 ///it, so a file held anywhere over the pane lit a box that was mostly a list of cell names. `.viewCanvas` is
-///the drawing and its own furniture, which is the thing being offered. The 3D and text views have no such
-///box and take the pane, which for them is the same rectangle.
+///the drawing and its own furniture, which is the thing being offered. The 3D view has one too since its tree
+///came beside the scene (2026-10-17); the text view has none and takes the pane, which for it is the same rectangle.
+///
+///**Or a box of its own that takes files**, marked with the id of the input they go to - the PDK manager's list,
+///which takes a whole PDK's zip (2026-10-18). Asked first, since that window can sit over the view.
 ///
 function zoneUnder(event) {
     if (!carriesFiles(event))
@@ -59,6 +62,11 @@ function zoneUnder(event) {
 
     if (target == null || typeof target.closest !== 'function')
         return null;
+
+    const own = target.closest('[data-drop-into]');
+
+    if (own != null)
+        return own;
 
     const pane = target.closest('#viewPane');
 
@@ -154,7 +162,24 @@ function onDrop(event) {
     if (zone == null)
         return;
 
-    const input = document.getElementById('fileUpload');
+    //
+    //**A picture let go over the 2D drawing goes onto it**, as shapes on the layer being drawn on, where it was let
+    //go - asked for 2026-10-19 - rather than being opened as a layout, which a picture is not. Through the Draw
+    //menu's own input for a picture, the way a layout goes through Open's: see handDroppedPicture.
+    //
+    const dropped = event.dataTransfer.files;
+
+    if (zone.dataset.dropInto == null
+        && zone.querySelector('#gdsSVG') != null
+        && dropped != null
+        && dropped.length > 0
+        && typeof handDroppedPicture === 'function'
+        && Array.from(dropped).every(isPictureFile)
+        && handDroppedPicture(event, dropped[0]))
+        return;
+
+    //The box's own input, or Open's for the drawing.
+    const input = document.getElementById(zone.dataset.dropInto || 'fileUpload');
 
     if (input == null)
         return;

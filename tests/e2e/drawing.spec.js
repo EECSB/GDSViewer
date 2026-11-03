@@ -7,8 +7,9 @@
 const { test, expect } = require('@playwright/test');
 const { gotoApp, shapeCount, shapeBox, shapePoints, layersListed, snapToGrid, chooseShape, openGridMenu, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
 
+//With the page's margins: CLEAR and the clicks below are pixels in the view they made - see gotoExample.
 test.beforeEach(async ({ page }) => {
-    await gotoApp(page);
+    await gotoApp(page, '?full=false');
 
     await uploadFile(page, 'e2e/fixtures/placed.gds');
 
@@ -78,6 +79,9 @@ test.describe('drawing', () => {
         await expect(page.locator('#drawRefusal')).toContainText('a new shape goes in a cell');
         await expect(page.locator('#drawRefusal')).toContainText('cell tree');
 
+        //In the error red: nothing happened, where a hint is orange - see the next test.
+        await expect(page.locator('#drawRefusal')).toHaveCSS('background-color', 'rgba(179, 0, 0, 0.9)');
+
         //And nothing was taken up: the pencil is not lit and Pan still is.
         await expect(page.locator('#drawTool')).not.toHaveClass(/toolButtonOn/);
 
@@ -88,6 +92,20 @@ test.describe('drawing', () => {
 
         await expect(page.locator('#drawTool')).toBeEnabled();
         await expect(page.locator('#drawTool')).toHaveAttribute('title', /Drag out a rectangle/);
+    });
+
+    ///
+    ///**Orange unless something failed.** A hint about the gesture in hand used the pink the refusal above
+    ///is now told apart from - a pink close enough to red that an instruction read as something gone wrong.
+    ///
+    test('a drawing hint is in the orange, not an error color', async ({ page }) => {
+        await enterLeaf(page);
+
+        await page.locator('#drawTool').click();
+        await chooseShape(page, '#polygonShape');
+
+        await expect(page.locator('#drawHint')).toBeVisible();
+        await expect(page.locator('#drawHint')).toHaveCSS('background-color', 'rgba(255, 109, 0, 0.92)');
     });
 
     ///The same refusal from the keyboard, which never touched the button and so was never gated by it.
@@ -382,7 +400,7 @@ test.describe('vertex handles', () => {
 ///
 ///Drawing onto a layer and becoming part of what is already there.
 ///
-///The union itself is BooleansTests' problem and the Union button's; what is only checkable here is the
+///The union itself is BooleanTests' problem and the Union button's; what is only checkable here is the
 ///switch - that it changes what a drag does rather than what a later button press does, that it costs one
 ///press of undo and not two, and that a shape drawn clear of everything is still simply a shape.
 ///
@@ -656,7 +674,7 @@ test.describe('joining as you draw', () => {
     ///and a shape that finds itself goes into the union twice and is deleted twice. A long drag never
     ///notices, which is why this one is short.
     ///
-    test('a shape nudged onto its neighbour does not find itself on the way', async ({ page }) => {
+    test('a shape nudged onto its neighbor does not find itself on the way', async ({ page }) => {
         await enterLeaf(page);
         await page.locator('#drawTool').click();
 
@@ -909,6 +927,10 @@ test.describe('the shape menu', () => {
         await expect(page.locator('#rectangleShape .shapePickArrow')).toHaveCount(0);
         await expect(page.locator('#polygonShape .shapePickArrow')).toHaveCount(0);
         await expect(page.locator('#labelShape .shapePickArrow')).toHaveCount(0);
+
+        //Text and Image have none since their boxes went (2026-10-19): what they make is sized by its frame.
+        await expect(page.locator('#textShape .shapePickArrow')).toHaveCount(0);
+        await expect(page.locator('#imageShape .shapePickArrow')).toHaveCount(0);
     });
 
     ///

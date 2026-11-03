@@ -101,8 +101,139 @@ public class SvgWriterTests
 
         //One path for the layer, with a subpath per shape and the elements they came from beside it.
         Assert.Contains(
-            $"<path class=\"{SvgWriter.ClassFor(layer.Key)}\" fill-rule=\"nonzero\" data-elements=\"0\" d=\"M0,0L10,0L10,10Z\"/>",
+            $"<path class=\"{SvgWriter.ClassFor(layer.Key)}\" fill-rule=\"nonzero\" data-elements=\"0\" d=\"M0,0h10v10Z\"/>",
             svg);
+    }
+
+    ///
+    ///**A shape is its first corner and then a step to each of the others.** A layout's edges are level or
+    ///upright, so the step along one is a single number as long as the edge, where the corner it reaches is
+    ///two as long as the layout is wide - and all a view's rebuild does is move this text into the page.
+    ///
+    ///Every corner is still written, the closing one a ring repeats included, because the corner-drag
+    ///preview and the specs count corners by their place.
+    ///
+    [Fact]
+    public void A_shape_is_written_as_steps_from_its_first_corner()
+    {
+        var layout = LayoutOf(Polygon(TestLayer(), 1000, 2000, 1400, 2000, 1400, 1700, 1000, 1700, 1000, 2000));
+
+        Assert.Contains("d=\"M1000,2000h400v-300h-400v300Z\"", SvgWriter.Build(layout, Visible(5), 0.5f));
+    }
+
+    ///A slanted edge is one step both ways, and a corner given twice is a step of nothing rather than one fewer corner.
+    [Fact]
+    public void A_slanted_edge_steps_both_ways_and_a_repeated_corner_stays()
+    {
+        var layout = LayoutOf(Polygon(TestLayer(), 0, 0, 30, -40, 30, -40, 40, -40));
+
+        Assert.Contains("d=\"M0,0l30,-40h0h10Z\"", SvgWriter.Build(layout, Visible(5), 0.5f));
+    }
+
+    ///Two corners can be further apart than an int reaches, so a step is worked out and written as a long.
+    [Fact]
+    public void A_step_wider_than_an_int_is_written_whole()
+    {
+        var layout = LayoutOf(Polygon(TestLayer(), -2_000_000_000, 0, 2_000_000_000, 0));
+
+        Assert.Contains("d=\"M-2000000000,0h4000000000Z\"", SvgWriter.Build(layout, Visible(5), 0.5f));
+    }
+
+    ///Two shapes on a layer are two moves with nothing between them, and an open run is left unclosed.
+    [Fact]
+    public void Shapes_on_a_layer_follow_one_another_and_a_run_stays_open()
+    {
+        var run = Polygon(TestLayer(), 20, 20, 30, 20, 30, 50);
+
+        run.IsOpen = true;
+
+        var layout = LayoutOf(Polygon(TestLayer(), 0, 0, 10, 0, 10, 10), Polygon(TestLayer(), 5, 5, 6, 5, 6, 6), run);
+
+        string svg = SvgWriter.Build(layout, Visible(5), 0.5f);
+
+        Assert.Contains("data-elements=\"0 1\" d=\"M0,0h10v10ZM5,5h1v1Z\"", svg);
+        Assert.Contains("data-elements=\"2\" d=\"M20,20h10v30\"", svg);
+    }
+
+    ///
+    ///**Read back the way the view reads it, every shape of every bundled cell is its own corners, one for
+    ///one** - a ring's closing repeat, a path's outline, a corner given twice, all of it. The corner-drag
+    ///preview moves the nth corner by its handle's number and the specs compare corners, so a corner gained
+    ///or lost between the file and the text would be a shape that previews one edit and makes another.
+    ///
+    [Fact]
+    public void Every_shape_of_every_bundled_cell_reads_back_as_its_own_corners()
+    {
+        int shapes = 0;
+
+        foreach (string path in GdsTestData.CellSampleFiles())
+        {
+            var layout = GdsFlattener.Flatten(new GDS(File.ReadAllBytes(path)));
+            string svg = SvgWriter.Build(layout, SvgWriter.AllLayers(layout), 0.5f, false);
+
+            foreach (System.Text.RegularExpressions.Match drawn in System.Text.RegularExpressions.Regex.Matches(svg, "data-elements=\"([0-9 ]*)\" d=\"([^\"]*)\""))
+            {
+                var elements = drawn.Groups[1].Value.Split(' ').Select(int.Parse).ToList();
+                var subpaths = System.Text.RegularExpressions.Regex.Split(drawn.Groups[2].Value, "(?=M)").Where(part => part.Length > 0).ToList();
+
+                Assert.Equal(elements.Count, subpaths.Count);
+
+                for (int i = 0; i < elements.Count; i++)
+                {
+                    var corners = layout.Elements[elements[i]].Points.Select(point => ((long)point.X, (long)point.Y)).ToList();
+
+                    Assert.Equal(corners, CornersOf(subpaths[i]));
+                }
+
+                shapes += elements.Count;
+            }
+        }
+
+        //113,444 of them across the 897 cells, so a reading that quietly matched nothing cannot pass.
+        Assert.True(shapes > 100_000, $"Only {shapes} shapes were read back.");
+    }
+
+    ///
+    ///A subpath read back into corners, as `subpaths` in viewGeometry.js reads it - for the commands this
+    ///writer uses, which are all it may use: anything else fails the test that meets it.
+    ///
+    private static List<(long X, long Y)> CornersOf(string subpath)
+    {
+        var tokens = System.Text.RegularExpressions.Regex.Matches(subpath, "[A-Za-z]|-?[0-9]+").Select(match => match.Value).ToList();
+        var corners = new List<(long X, long Y)>();
+
+        long x = 0;
+        long y = 0;
+        int at = 0;
+
+        while (at < tokens.Count)
+        {
+            string command = tokens[at++];
+
+            if (command == "Z")
+                continue;
+
+            if (command == "M")
+            {
+                x = long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+                y = long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+            }
+            else if (command == "h")
+                x += long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+            else if (command == "v")
+                y += long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+            else if (command == "l")
+            {
+                x += long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+                y += long.Parse(tokens[at++], CultureInfo.InvariantCulture);
+            }
+            else
+                throw new InvalidOperationException($"'{command}' is not a command the writer uses, in {subpath}");
+
+            corners.Add((x, y));
+        }
+
+        return corners;
     }
 
     ///
@@ -323,8 +454,10 @@ public class SvgWriterTests
 
         string svg = SvgWriter.Build(layout, CheckboxItem.VisibleLayers(layers), 0.5f);
 
-        Assert.Single(svg.Split("M"), part => part.Contains("20,0"));
-        Assert.DoesNotContain("10,0", svg);
+        //The shown layer's square, by its element and its corners, and nothing of the hidden one's.
+        Assert.Contains("data-elements=\"1\" d=\"M0,0h20v20Z\"", svg);
+        Assert.DoesNotContain("data-elements=\"0\"", svg);
+        Assert.DoesNotContain("h10v10", svg);
     }
 
     #endregion ************************************************************************
@@ -544,7 +677,7 @@ public class SvgWriterTests
         layers[0].IsSelected = false;
 
         Assert.DoesNotContain(Key(5), CheckboxItem.VisibleLayers(layers));
-        Assert.DoesNotContain("10,0", SvgWriter.Build(layout, CheckboxItem.VisibleLayers(layers), 0.5f));
+        Assert.DoesNotContain("data-elements=\"0\"", SvgWriter.Build(layout, CheckboxItem.VisibleLayers(layers), 0.5f));
     }
 
     #endregion ************************************************************************
@@ -566,7 +699,7 @@ public class SvgWriterTests
 
         string svg = GdsTestData.UnderHostileCulture(() => SvgWriter.Build(layout, Visible(5), 0.5f));
 
-        Assert.Contains("d=\"M-600,600L550,600L550,-1100Z\"", svg);
+        Assert.Contains("d=\"M-600,600h1150v-1700Z\"", svg);
         Assert.DoesNotContain("!", svg);
     }
 
@@ -738,8 +871,9 @@ public class SvgWriterTests
     }
 
     ///
-    ///A label is never dropped for being small. Its size on screen is fixed by the view rather than by the
-    ///layout, so the extent of its anchor says nothing at all about whether it can be read.
+    ///A label is never dropped for being small. Its box is its anchor, a point, so the extent says nothing
+    ///at all about how big its name is drawn - that is a question about the zoom, answered once for every
+    ///label by the test below.
     ///
     [Fact]
     public void A_label_is_never_too_small_to_draw()
@@ -752,6 +886,25 @@ public class SvgWriterTests
             layout, Visible(5), 0.5f, Visible(5), null, null, 1000000);
 
         Assert.Contains("gate", svg);
+    }
+
+    ///
+    ///**Whether a name can be read is the zoom's question**, since every name is drawn the same number of
+    ///layout units tall: sixty, which is five pixels at twelve units a pixel and a quarter of one at the RGB
+    ///mixer's fit. Twenty-three thousand of those were what made a pan of that design take 1.8 seconds a
+    ///frame, so a view asks this and hands over no labeled layers when the answer is no.
+    ///
+    ///An unknown scale is never a reason to leave something out.
+    ///
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(12, true)]
+    [InlineData(12.5, false)]
+    [InlineData(244, false)]
+    public void A_name_is_drawn_from_five_pixels_tall(double unitsPerPixel, bool legible)
+    {
+        Assert.Equal(legible, SvgWriter.LabelsLegibleAt(unitsPerPixel));
     }
 
     #endregion **********************************************************************
@@ -1084,14 +1237,15 @@ public class SvgWriterTests
         Assert.NotEmpty(drawn);
 
         //Something with an outline or an area, rather than a comment or a stray attribute.
-        Assert.True(drawn.Contains("<path") || drawn.Contains("<rect") || drawn.Contains("<circle"),
+        Assert.True(
+            drawn.Contains("<path") || drawn.Contains("<rect") || drawn.Contains("<circle"),
             $"{icon} drew no shape");
     }
 
     ///
     ///Each one is a different picture.
     ///
-    ///The set is nineteen glyphs and several are near neighbours - left against right, union against
+    ///The set is twenty-five glyphs and several are near neighbors - left against right, union against
     ///exclude - so a copied line that was never edited is the likely mistake here, and it is one nobody
     ///would see at fifteen pixels.
     ///
@@ -1109,7 +1263,8 @@ public class SvgWriterTests
             if (seen.TryGetValue(drawn, out var other))
                 same = other;
 
-            Assert.False(seen.ContainsKey(drawn),
+            Assert.False(
+                seen.ContainsKey(drawn),
                 $"{icon} draws the same picture as {same}");
 
             seen.Add(drawn, icon);

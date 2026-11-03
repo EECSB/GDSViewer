@@ -25,8 +25,9 @@ Only the seven files the app actually needs are vendored:
 
 Deliberately **not** vendored:
 
-- `vs/basic-languages/**` — the app registers its own `GDS` Monarch grammar in
-  [`../js/MonacoInterop.js`](../js/MonacoInterop.js) and uses no built-in language. Note that
+- `vs/basic-languages/**` — the app registers its own Monarch grammars in
+  [`../js/MonacoInterop.js`](../js/MonacoInterop.js), `GDS` for a file's text, `gdsdeck` for the PDK
+  manager's rules editor and `gdslayermap` for its layermap editor, and uses no built-in language. Note that
   `editor.main.js` contains lazy-load stubs for every built-in language, so if a built-in language is
   ever selected its grammar file has to be vendored too or the load 404s.
 - `vs/language/**` — the JSON/CSS/HTML/TypeScript language services and their workers. Unused, and

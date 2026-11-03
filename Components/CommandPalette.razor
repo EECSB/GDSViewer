@@ -1,0 +1,212 @@
+@*
+    The command palette: a box to type into, and the things the app can do that match what is typed.
+
+    **Commands the app already has, found by name** rather than new ones - each is a button on the page or a method
+    the page already runs (see Viewer.paletteCommands) - so this is a way to them and not a second copy. Ctrl+K opens
+    it from anywhere, and closes it again; the arrows move through what matches, Enter runs the one picked out, and
+    Escape or a press outside it closes it. See commandPalette.js for the key.
+*@
+@using GDSViewer.Models
+@inject IJSRuntime js
+
+@if (Visible)
+{
+    <div id="commandPaletteBackdrop" class="commandPaletteBackdrop" @onclick="close"></div>
+
+    <div id="commandPalette" class="commandPalette" role="dialog" aria-label="Commands">
+        <input id="commandSearch" class="commandSearch" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Type a command, or a few letters of one" aria-controls="commandList"
+               @ref="search" @bind="query" @bind:event="oninput" @bind:after="queryChanged" @onkeydown="onKey" />
+
+        @{
+            var shown = matching();
+        }
+
+        @if (shown.Count == 0)
+        {
+            <div class="commandNone">Nothing does that here.</div>
+        }
+        else
+        {
+            <div id="commandList" class="commandList" role="listbox">
+                @for (int i = 0; i < shown.Count; i++)
+                {
+                    int index = i;
+                    var command = shown[i];
+
+                    <div id="@($"command{index}")" class="commandItem @(index == picked ? "commandItemPicked" : "")"
+                         role="option" aria-selected="@(index == picked ? "true" : "false")"
+                         @onclick="() => run(command)" @onmousemove="() => pick(index)">
+                        <span class="commandName">@command.Name</span>
+
+                        @if (command.Group.Length > 0)
+                        {
+                            <span class="commandGroup">@command.Group</span>
+                        }
+
+                        @if (command.Keys.Length > 0)
+                        {
+                            <kbd class="commandKeys">@command.Keys</kbd>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Visible { get; set; }
+
+    ///<summary>Everything the page can do from here, in the order it lists them - which is the order of a list with nothing typed.</summary>
+    [Parameter]
+    public IReadOnlyList<PaletteCommand> Commands { get; set; } = Array.Empty<PaletteCommand>();
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string query = "";
+
+    ///<summary>Which of the commands shown is picked out, by its place - what Enter runs.</summary>
+    private int picked = 0;
+
+    private ElementReference search;
+
+    ///<summary>Whether the box has been given the focus since the palette opened, so it is given it once.</summary>
+    private bool focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Visible)
+        {
+            focused = false;
+
+            return;
+        }
+
+        if (focused)
+            return;
+
+        focused = true;
+
+        try
+        {
+            await search.FocusAsync();
+        }
+        catch { }
+    }
+
+    ///
+    ///The commands that answer to what is typed, best first.
+    ///
+    ///**Every word typed has to begin a word** of the name, the group or the other words a command answers to - so
+    ///"zoom in" finds Zoom in and not Zoom out, and "go to" finds the tabs and not Draw, whose "polygon" and
+    ///"Tools" hold both letters, just not at the start. Best first is the name starting with the first word, then
+    ///a word of the name starting with it, then anything else, each kept in the order the page lists them.
+    ///
+    private List<PaletteCommand> matching()
+    {
+        var typed = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        if (typed.Length == 0)
+            return Commands.ToList();
+
+        var found = new List<(PaletteCommand Command, int Rank, int Order)>();
+
+        for (int i = 0; i < Commands.Count; i++)
+        {
+            var command = Commands[i];
+            var its = $"{command.Name} {command.Group} {command.Words}".Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (!typed.All(word => its.Any(each => each.StartsWith(word, StringComparison.OrdinalIgnoreCase))))
+                continue;
+
+            found.Add((command, rankOf(command.Name, typed[0]), i));
+        }
+
+        return found.OrderBy(each => each.Rank).ThenBy(each => each.Order).Select(each => each.Command).ToList();
+    }
+
+    private static int rankOf(string name, string word)
+    {
+        if (name.StartsWith(word, StringComparison.OrdinalIgnoreCase))
+            return 0;
+
+        if (name.Contains(" " + word, StringComparison.OrdinalIgnoreCase))
+            return 1;
+
+        return 2;
+    }
+
+    ///<summary>Something new typed: the best of what now matches is picked out, rather than whatever was at the same place before.</summary>
+    private void queryChanged()
+    {
+        picked = 0;
+    }
+
+    private void pick(int index)
+    {
+        picked = index;
+    }
+
+    private async Task onKey(KeyboardEventArgs e)
+    {
+        var shown = matching();
+
+        if (e.Key == "Escape")
+        {
+            await close();
+
+            return;
+        }
+
+        if (shown.Count == 0)
+            return;
+
+        if (e.Key == "ArrowDown")
+        {
+            picked = (picked + 1) % shown.Count;
+
+            await reveal();
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            picked = (picked + shown.Count - 1) % shown.Count;
+
+            await reveal();
+        }
+        else if (e.Key == "Enter")
+        {
+            await run(shown[Math.Min(picked, shown.Count - 1)]);
+        }
+    }
+
+    private async Task reveal()
+    {
+        try
+        {
+            await js.InvokeVoidAsync("commandPalette.reveal", $"#command{picked}");
+        }
+        catch { }
+    }
+
+    ///
+    ///Closes the palette and does the command - closed first, so it is not left over the dialog or the view the
+    ///command opens.
+    ///
+    private async Task run(PaletteCommand command)
+    {
+        await close();
+
+        await command.Run();
+    }
+
+    private async Task close()
+    {
+        query = "";
+        picked = 0;
+
+        await OnClose.InvokeAsync();
+    }
+}

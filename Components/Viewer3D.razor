@@ -1,4 +1,5 @@
-﻿@using GdsII;
+﻿@using System.Runtime.InteropServices;
+@using GdsII;
 @using GDSViewer.Models;
 
 @using Layer = GdsII.Layer;
@@ -7,67 +8,312 @@
 
 @inject IJSRuntime js;
 @inject NavigationManager Navigation;
+@inject TextureStore textures;
 
-@implements IDisposable
+@implements IAsyncDisposable
 
-<div class="viewWrapper">
-    <div id="container"></div>
+@*
+    The scene, and beside it the file's cells - see CellTree3D.
 
-    @*
-        The three ways of getting the layout onto something you wear or hold, together.
+    **The scene and everything over it in a box of their own**, the way the 2D view puts its drawing in .viewCanvas:
+    the tree is a column of the wrapper, and what is placed over the scene - the frame rate, the headset row, the
+    game's panels - is placed against the scene rather than against the wrapper, so the tree opening moves none of
+    it onto itself. The canvas is sized from #container, which three.js watches - see resizeToContainer.
+*@
+<div id="threeWrapper" class="viewWrapper">
+    <div class="viewCanvas">
+        <div id="container"></div>
 
-        VR and AR are built by three.js and put in here by the interop rather than positioned one at a
-        time, which is what they used to be: two wrappers pulled back up over the canvas by an offset each,
-        so moving the pair meant editing two numbers in a JS file and hoping. This row owns where they go.
+        @*The live link's chip, in the bottom left as in the 2D view - see Corner.*@
+        @Corner
 
-        The one in the markup is ours - a headset can enter VR from the page it is already on, but a phone
-        has to be told which page, and a QR code is how. Ordered after them, since it is the fallback of
-        the three rather than the first thing to reach for.
-    *@
-    <div id="xrButtons" class="xrButtons">
-        <button type="button" id="openOnPhone" class="xrButton" @onclick="getQRCode"
-                title="Show a QR code of this page, to open the same file and view on a phone or headset">
-            <img class="xrButtonIcon" src="./resources/Images/Icons/qr.png" alt="" />
-            OPEN ON PHONE
-        </button>
+        @*The frame rate, while Debug info is on. Empty here: frameMeter.js fills it, the same as in the 2D view.*@
+        @if (DebugInfo)
+        {
+            <div id="frameMeter" class="frameMeter" aria-hidden="true"></div>
+        }
+
+        @*
+            The three ways of getting the layout onto something you wear or hold, together.
+
+            VR and AR are built by three.js and put in here by the interop rather than positioned one at a
+            time, which is what they used to be: two wrappers pulled back up over the canvas by an offset each,
+            so moving the pair meant editing two numbers in a JS file and hoping. This row owns where they go.
+
+            The one in the markup is ours - a headset can enter VR from the page it is already on, but a phone
+            has to be told which page, and a QR code is how. Ordered after them, since it is the fallback of
+            the three rather than the first thing to reach for.
+        *@
+        <div id="xrButtons" class="xrButtons">
+            <button type="button" id="openOnPhone" class="xrButton" @onclick="getQRCode"
+                    title="Show a QR code of this page, to open the same file and view on a phone or headset">
+                <img class="xrButtonIcon" src="./resources/Images/Icons/qr.png" alt="" />
+                OPEN ON PHONE
+            </button>
+        </div>
+
+        @*
+            The chip game: a little car driven over the tops of the layers. See ChipGame in js/ThreeInterop.js.
+
+            Started and stopped from the shell's Settings menu - see ToggleGame - so all the view itself shows is
+            this, while it runs.
+        *@
+        @if (gameRunning)
+        {
+            @*
+                What the keys do, and which layer the car is on. The two empty boxes are filled in by the interop -
+                the layer as the car moves, the message when something happens - which is why they have ids.
+
+                **The car's keys, the plane's or the jet's**, by which one is being played: the interop puts gameHudPlane or
+                gameHudJet on the panel - see ChipGame.showVehicle - and the stylesheet shows that one's list and hides the
+                rest. gameForAir is the plane's and the jet's both.
+
+                **Its × puts it away**, and Settings, Game controls brings it back - see ChipGame.setPanel. The interop
+                listens for the press, since it is what keeps whether the panel is open, with the rest of the game's options.
+
+                **A key and a word or two**, in two columns, since 2026-11-03: each line had been a sentence - the missile's
+                said what it was fired at, and a line said how long the weapons take to overheat - which the game itself
+                shows, and the panel was a wall of text. How a game is played is in the docs; this is what the keys are.
+            *@
+            <div id="gameHud" class="gameHud">
+                <div class="gameHudHead">
+                    <div id="gameLayer" class="gameLayer"></div>
+                    <button type="button" id="gameHudClose" class="buttonStyle2 closeButton gameHudClose"
+                            aria-label="Close the game's panel" title="Close the panel. Settings, Game controls opens it again">&times;</button>
+                </div>
+                <div class="gameKeys gameForCar">
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Drive, or the arrows</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Space</kbd></span><span>Jump, hold to fly</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Shift</kbd></span><span>Boost</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Mouse</span><span>Look round</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>P</kbd></span><span>Plane, then jet</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>V</kbd></span><span>First or third person</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>H</kbd><span class="gameKeyOr">/</span><kbd>M</kbd></span><span>Horn / sound</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>R</kbd><span class="gameKeyOr">/</span><kbd>Esc</kbd></span><span>Restart / stop</span></div>
+                </div>
+                <div class="gameKeys gameForPlane">
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>W</kbd><kbd>S</kbd></span><span>Faster, slower</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>A</kbd><kbd>D</kbd></span><span>Yaw</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>↑</kbd><kbd>↓</kbd></span><span>Pitch</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>←</kbd><kbd>→</kbd></span><span>Roll</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Mouse</span><span>Stick: the middle level, the edges loop</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Click<span class="gameKeyOr">/</span><kbd>F</kbd></span><span>Gun</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Space</kbd></span><span>Level out</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Shift</kbd></span><span>Boost</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>P</kbd></span><span>Jet</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>V</kbd></span><span>First or third person</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>H</kbd><span class="gameKeyOr">/</span><kbd>M</kbd></span><span>Horn / sound</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>R</kbd><span class="gameKeyOr">/</span><kbd>Esc</kbd></span><span>Restart / stop</span></div>
+                </div>
+                <div class="gameKeys gameForJet">
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>W</kbd><kbd>S</kbd></span><span>Faster, slower</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>A</kbd><kbd>D</kbd></span><span>Yaw</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>↑</kbd><kbd>↓</kbd></span><span>Pitch</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>←</kbd><kbd>→</kbd></span><span>Roll</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Mouse</span><span>Stick: the middle level, the edges loop</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Click<span class="gameKeyOr">/</span><kbd>F</kbd></span><span>Gun</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps">Right-click<span class="gameKeyOr">/</span><kbd>G</kbd></span><span>Missile</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Space</kbd></span><span>Level out</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>Shift</kbd></span><span>Afterburner</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>P</kbd></span><span>Car</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>V</kbd></span><span>First or third person</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>H</kbd><span class="gameKeyOr">/</span><kbd>M</kbd></span><span>Horn / sound</span></div>
+                    <div class="gameKey"><span class="gameKeyCaps"><kbd>R</kbd><span class="gameKeyOr">/</span><kbd>Esc</kbd></span><span>Restart / stop</span></div>
+                </div>
+
+                @*
+                    What the game is played with: what is being played and from where, the top speed, the size and how small
+                    that goes, how far the view reaches, which way the stick goes, lock on, limit jump, the layers' texture,
+                    the neon, the sound and the music.
+
+                    Set and read by the interop rather than bound here - see ChipGame.showOptions and onOption - since
+                    the game is what uses them and this browser is what keeps them. No values in the markup either, so
+                    a render of this component never puts back what somebody has just dragged. The two lists have their
+                    options, which are what they offer rather than what is chosen.
+
+                    Lock on is guardrails and climbing: the car cannot drive off the edge of what it is on, and drives
+                    up any wall it is pointed into - a via, and the metal over it. Limit jump is a meter of four jumps
+                    that fills again by itself - see chipGame's charge. Both are the car's alone, so they are shown for
+                    the car; Invert pitch is the plane's and the jet's, and shown for them.
+
+                    **Headed Settings**, under the rule that parts them from the keys; the heading names the group for a
+                    screen reader too.
+                *@
+                <div class="gameOptions" role="group" aria-labelledby="gameOptionsHead">
+                    <div id="gameOptionsHead" class="gameOptionsHead">Settings</div>
+
+                    <label class="gameOption" for="gameVehicle"
+                           title="The car, the plane or the jet. P goes through them in turn">
+                        <span class="gameOptionName">Vehicle</span>
+                        <select id="gameVehicle" class="gameOptionPick">
+                            <option value="car">Car</option>
+                            <option value="plane">Plane</option>
+                            <option value="jet">Jet</option>
+                        </select>
+                    </label>
+
+                    <label class="gameOption" for="gameView"
+                           title="Behind it, or from the driver's seat. V switches it too">
+                        <span class="gameOptionName">View</span>
+                        <select id="gameView" class="gameOptionPick">
+                            <option value="third">Third person</option>
+                            <option value="first">First person</option>
+                        </select>
+                    </label>
+
+                    <label class="gameOption" for="gameTopSpeed"
+                           title="How fast the car goes flat out, in its own widths a second - the plane two and a half times that, and the jet five. Shift still boosts on top of it">
+                        <span class="gameOptionName">Top speed</span>
+                        <input id="gameTopSpeed" type="range" min="0.5" max="15" step="0.5" />
+                        <output id="gameTopSpeedSaid" class="gameOptionSaid" for="gameTopSpeed"></output>
+                    </label>
+
+                    @*
+                        The size, and after it a box for how small the slider goes - the way the layers' Distance has a box
+                        for how far its slider reaches. The slider's least is the box's, put on by the interop; the 0.01
+                        here is only the least there is. A row rather than a label, since a label holds one control.
+
+                        **Named for what is being played** - Car size, Plane size or Jet size - by the stylesheet, the way the
+                        key lists are. It said Car size in the plane and the jet, which have the one size between them.
+                    *@
+                    <div class="gameOption"
+                         title="How big the car, the plane or the jet is, against the car this layout gets: a tenth of it to start with, and half of it at the most. Its speed and its jump go with it">
+                        <label class="gameOptionName" for="gameCarSize"><span class="gameForCar">Car size</span><span class="gameForPlane">Plane size</span><span class="gameForJet">Jet size</span></label>
+                        <input id="gameCarSize" type="range" min="0.01" max="0.5" step="0.01" />
+                        <output id="gameCarSizeSaid" class="gameOptionSaid" for="gameCarSize"></output>
+                        <input id="gameCarSmallest" class="gameOptionLeast" type="number" min="0.01" max="0.45" step="0.01"
+                               aria-label="How small the size slider goes"
+                               title="How small the size slider goes, from a hundredth of the car this layout gets to 0.45 of it. Enter sets it" />
+                    </div>
+
+                    <label class="gameOption" for="gameDrawDistance"
+                           title="How far the view reaches, as a share of the chip's width. All draws all of it; less fades the far side into the background. The 3D view's own draw distance, set to All as the game starts and put back when it stops">
+                        <span class="gameOptionName">Draw distance</span>
+                        <input id="gameDrawDistance" type="range" min="0.05" max="1" step="0.05" />
+                        <output id="gameDrawDistanceSaid" class="gameOptionSaid" for="gameDrawDistance"></output>
+                    </label>
+
+                    @*The neon's haze - see GAME_HAZE_REACHES in js/ThreeInterop.js. Both are grayed out with Neon glow off, which has none.*@
+                    <label class="gameOption" for="gameHaze"
+                           title="How far the neon's haze reaches before it hides what is behind it: left is thicker and nearer, right thinner and further, and the far end has none. 1× is where it starts">
+                        <span class="gameOptionName">Haze reach</span>
+                        <input id="gameHaze" type="range" min="-3" max="3" step="0.5" />
+                        <output id="gameHazeSaid" class="gameOptionSaid" for="gameHaze"></output>
+                    </label>
+
+                    <div class="gameOptionChecks">
+                        <label class="gameOptionCheck"
+                               title="The haze thins as the camera climbs, so the chip shows from up high. Unticked, it stays as thick as it is down by the chip, however high you fly">
+                            <input id="gameHazeClimbs" type="checkbox" />
+                            Haze thins with height
+                        </label>
+
+                        <label class="gameOptionCheck gameForAir"
+                               title="Up and the mouse forward pull the nose up, rather than push it down the way a stick does">
+                            <input id="gameInvertPitch" type="checkbox" />
+                            Invert pitch
+                        </label>
+
+                        <label class="gameOptionCheck gameForCar"
+                               title="Guardrails: the car cannot drive off the edge of what it is on. And it climbs any wall it drives into - a via up to the metal over it. A jump is still the way off">
+                            <input id="gameLockOn" type="checkbox" />
+                            Lock on
+                        </label>
+
+                        <label class="gameOptionCheck gameForCar"
+                               title="Four jumps, one a press, coming back by themselves at one every two seconds. Run dry, the meter has to fill all the way - eight seconds - before the car jumps again">
+                            <input id="gameLimitJump" type="checkbox" />
+                            Limit jump
+                        </label>
+
+                        <label class="gameOptionCheck"
+                               title="A grid on the layers' tops, their walls shaded and the metal polished - and a layer's own texture, where it has one. The 3D view's Show textures, ticked as the game starts and put back when it stops">
+                            <input id="gameTexture" type="checkbox" />
+                            Apply texture
+                        </label>
+
+                        <label class="gameOptionCheck"
+                               title="The layers' edges and the grid on their tops lit in each layer's own color over darker faces, a glow round everything bright - the electrons, the shots, the flame - the backdrop dimmed, and a haze over the distance">
+                            <input id="gameNeon" type="checkbox" />
+                            Neon glow
+                        </label>
+
+                        <label class="gameOptionCheck" title="The engine, the tires on a hard turn or a hard stop, a blip for every jump, the horn and the shots. M switches it too">
+                            <input id="gameSound" type="checkbox" />
+                            Sound
+                        </label>
+
+                        <label class="gameOptionCheck" title="A tune for each: synthwave in the car, 8-bit in the plane and the jet. Sound off silences it too">
+                            <input id="gameMusic" type="checkbox" />
+                            Music
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            @*
+                Across the top of the view: the score, and under it Limit jump's meter - a cell a jump, filled by the interop
+                as the jumps come back, and hidden unless the jumps are limited in the car. See ChipGame.showHud.
+
+                In the plane and the jet the weapons' heat is there instead: a bar for the gun and, in the jet, one for the
+                missiles, filled by the interop as they heat - see ChipGame.showHeat. Not in the jet in first person, where
+                its HUD says it.
+            *@
+            <div class="gameTop">
+                <div class="gameScore" title="Ten for every electron driven into or shot down">
+                    Score <output id="gameScore">0</output>
+                </div>
+
+                <div id="gameJumps" class="gameJumps" hidden title="Jumps left. Run dry, it has to fill again before the next">
+                    <span class="gameJumpsName">Jumps</span>
+                    <span class="gameJumpCell"><span class="gameJumpFill"></span></span>
+                    <span class="gameJumpCell"><span class="gameJumpFill"></span></span>
+                    <span class="gameJumpCell"><span class="gameJumpFill"></span></span>
+                    <span class="gameJumpCell"><span class="gameJumpFill"></span></span>
+                </div>
+
+                <div id="gameHeat" class="gameHeat" hidden>
+                    <span id="gameHeatGun" class="gameHeatOne"
+                          title="How hot the gun is. Three seconds of fire overheats it, and then it fires nothing until it has cooled all the way - five seconds">
+                        <span class="gameHeatName">Gun</span>
+                        <span class="gameHeatCell"><span class="gameHeatFill"></span></span>
+                    </span>
+                    <span id="gameHeatMissiles" class="gameHeatOne"
+                          title="How hot the missiles are. Three seconds of fire overheats them, and then they fire nothing until they have cooled all the way - five seconds">
+                        <span class="gameHeatName">Missiles</span>
+                        <span class="gameHeatCell"><span class="gameHeatFill"></span></span>
+                    </span>
+                </div>
+            </div>
+
+            @*
+                Where the gun's rounds go, in the plane and the jet - the jet's only from behind it, its HUD being the sight in
+                first person - and in the jet a bracket round the electron a missile would go after. Put over their places on
+                screen every frame by the interop - see ChipGame.showSights.
+            *@
+            <div id="gameCrosshair" class="gameCrosshair" hidden></div>
+            <div id="gameLock" class="gameLock" hidden></div>
+
+            @*
+                The jet's HUD, in the middle of the view: its pitch ladder, heading, speed, height and bank, drawn by the interop
+                every frame while the jet is flown in first person - see ChipGame.showJetHud - and the pointer through it to the
+                view.
+            *@
+            <canvas id="gameJetHud" class="gameJetHud" hidden aria-hidden="true"></canvas>
+
+            <div id="gameToast" class="gameToast" aria-live="polite"></div>
+        }
     </div>
 
     @*
-        Admire, in the corner of the thing it moves.
-
-        **It is about the view rather than about the file**, which is what everything else in the bar above
-        is - and the two controls already down here on the canvas are the other two of those. In the bar it
-        was a word among file formats and backgrounds; down here it is next to Enter VR and Open On Phone,
-        which is the company it keeps.
-
-        Bottom right rather than in their row: that row is centered on the middle of the view and holds the
-        ways of *leaving* it for a headset or a phone. This does something to the view you are in, so it
-        gets the corner opposite nothing, the same margin, and the same height.
-
-        Same look as them too - the dark panel the whole row wears, which is legible over a light scene and
-        a dark one both. Lit blue while it is running, since a still picture of a moving camera cannot say
-        whether the camera is moving.
+        The file's cells down the left of the scene, while the shell's Cells switch is on - the 2D view's tree, read
+        rather than worked on: a press on a placement or a shape puts the camera on it. See CellTree3D.
     *@
-    <button type="button" id="admire" class="xrButton admireButton @(cinematicViewToggle ? "admireOn" : "")"
-            @onclick="cinematicView"
-            aria-pressed="@(cinematicViewToggle ? "true" : "false")"
-            title="Slowly orbit the camera around the layout. Press again to stop">
-        @*
-            An eye, drawn as one on purpose.
-
-            The first attempt was an orbit - a ring seen edge-on with the layout at its center - and it
-            came out as an eye with something wrong inside it, because at fifteen pixels that is what a
-            ring with a dot in it is. This is the same shape drawn deliberately: a lid arched over a lid,
-            and a pupil that fills the space between them rather than floating in it. What the button does
-            is give you a look at the thing, which is what an eye says.
-        *@
-        <svg class="admireIcon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-            <path d="M0.9 8s2.7-4.6 7.1-4.6S15.1 8 15.1 8s-2.7 4.6-7.1 4.6S0.9 8 0.9 8z"
-                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-            <circle cx="8" cy="8" r="2.1" fill="currentColor" />
-        </svg>
-        ADMIRE
-    </button>
+    @if (CellTreeOpen)
+    {
+        <CellTree3D Gds="Gds" Layout="layout" OnClosed="OnCellTreeClosed" OnGoTo="goTo"
+                    AutoPreview="AutoPreview" OnAutoPreviewChanged="OnAutoPreviewChanged" />
+    }
 
     @*Fixed to the window rather than to this corner of it, so it does not matter where in here it sits.*@
     <QR @ref="qrCodeComponent" />
@@ -92,17 +338,37 @@
     ///
     ///**Reference equality against the file, which is the only thing that says the geometry changed.** The
     ///spacing slider, a layer toggle and a redraw all hand the same object back; a different object is a
-    ///different file, or a session restored. An edit mutates a library in place and so would slip past this,
-    ///which is why the 2D view re-flattens unconditionally after one - but there is no editor here, and
-    ///switching views destroys this component, so coming back from an edit rebuilds from nothing anyway.
+    ///different file, or a session restored. An edit mutates a library in place and so slips past this, which
+    ///is why the 2D view re-flattens unconditionally after one. There is no editor here, but the file can still
+    ///change under this view - the assistant's window stays up across views, and the MCP server edits whichever
+    ///one is showing - so the shell says so, and this is forgotten: see FileEditedInPlace.
     ///
     private GDS? flattenedFrom = null;
+
+    ///<summary>The file this view had drawn and was told has changed in place, until it is built again - see FileEditedInPlace.</summary>
+    private GDS? editedInPlace = null;
+
+    ///
+    ///**The file changed in place**, by something other than this view: the assistant, or the MCP server. The next draw
+    ///builds its scene again rather than drawing the one from before the change.
+    ///
+    ///**The same file, so not a new arrival**: the camera stays where somebody put it, and the shell is not told a scene
+    ///is ready - nothing was waiting on one. See takeNewFile.
+    ///
+    public void FileEditedInPlace()
+    {
+        if (flattenedFrom is null)
+            return;
+
+        editedInPlace = flattenedFrom;
+        flattenedFrom = null;
+    }
 
     ///<summary>
     ///Each layer's geometry merged into as few outlines as cover the same ground.
     ///
     ///**Because two slabs at the same height fight over which is in front.** A layer's shapes are allowed
-    ///to overlap - 171 of the 897 bundled files have a layer that does - and extruded separately their top
+    ///to overlap - 171 of the 897 bundled cells have a layer that does - and extruded separately their top
     ///faces land on exactly the same plane, which is the one thing a depth buffer cannot decide. The
     ///result flickers between the two as the camera moves. Merged, there is one face.
     ///
@@ -124,7 +390,7 @@
     ///value is applied to a file, which is what <see cref="Render"/> does below, so it has to be the same
     ///default the library stacks with rather than a number that only looked right while nothing read it.
     ///
-    ///That number is nought now, and the slider's minimum is nought with it: the spacing is the spread
+    ///That number is zero now, and the slider's minimum is zero with it: the spacing is the spread
     ///added to the process stack rather than a distance measured from the even stack's rung height, so a
     ///file opens at the heights its layermap gives it. See DefaultLayerSpread.
     ///
@@ -132,7 +398,25 @@
 
     ///<summary>The scene backdrop, kept so it can be written into a session and put back.</summary>
     private string background = "none";
+
+    ///
+    ///The backdrop a game is played against: Neon, put up as it starts. The view's settings change it while the game runs,
+    ///as they change the game's draw distance and textures.
+    ///
+    private const string GameBackdrop = "background4.jpg";
+
+    ///
+    ///The view's own backdrop while a game has put its own up in its place, or null while no game has - see ToggleGame.
+    ///
+    ///**It is the one a session keeps**, and the one stopping puts back: the game's is the game's, the way its draw
+    ///distance and textures are - see ChipGame.start in ThreeInterop.js. Kept since 2026-10-14, when games started
+    ///against Neon.
+    ///
+    private string? backdropBeforeGame = null;
     private bool cinematicViewToggle = false;
+
+    ///<summary>Whether the chip game is running. Not saved: a game is something being played, not a setting.</summary>
+    private bool gameRunning = false;
     private bool hidden = true;
     public string ModelDownloadFileType { get; set; } = ".stl";
 
@@ -161,8 +445,8 @@
 
 
     ///
-    ///Raised when something in this view's own toolbar has to be redrawn - the backdrop menu opening or
-    ///closing, and nothing else.
+    ///Raised when what the shell draws of this view has to be drawn again - the settings under its cube opening or
+    ///closing, or a tick in them moving - and nothing else.
     ///
     ///**The bar is rendered by the shell, not by this view.** A RenderFragment handed over is drawn during
     ///*that* component's render, so this one calling StateHasChanged draws the view and leaves the bar
@@ -172,85 +456,171 @@
     [Parameter]
     public EventCallback OnToolChanged { get; set; }
 
-    ///<summary>Names the exported model after the file on screen. All this view needs from the shell.</summary>
+    ///
+    ///Raised once a file's scene has been built, so the shell can take down the note that says it is loading.
+    ///Once per file: a toggled layer or a spacing step builds again without anybody waiting on it.
+    ///
+    [Parameter]
+    public EventCallback OnDrawn { get; set; }
+
+    ///<summary>Whether a file has arrived whose scene the shell has not been told about yet.</summary>
+    private bool announceDrawn = false;
+
+    ///
+    ///The load that file arrived as part of, whose pace its first scene is built at - or null for one that came
+    ///without a load. Kept from the merge rather than read off <see cref="Loading"/> at the draw, which by then can
+    ///be the next load's: the way back from a cancel of this one, which would build this file's scene at its pace.
+    ///
+    private Pacer? scenePace = null;
+
+    ///<summary>Names the exported model after the file on screen.</summary>
     [Parameter]
     public string FileName { get; set; } = "";
+
+    ///<summary>
+    ///The bundled example a link can name, or null when what is open is not one - an upload, or a file the
+    ///page around the app brought. For the QR code, because the address does not follow what is open.
+    ///</summary>
+    [Parameter]
+    public string? LinkFile { get; set; }
+
+    ///<summary>Whether the frame rate is shown in the view's corner. The shell's switch; see frameMeter.js.</summary>
+    [Parameter]
+    public bool DebugInfo { get; set; }
+
+    ///
+    ///Whether the file's cells are down the left of the scene - the shell's Cells switch, the same one the 2D view's tree
+    ///and the text's list answer to. See CellTree3D.
+    ///
+    ///
+    ///The live link's chip, drawn in the canvas's bottom left just above where the pointer is, rather than fixed to the
+    ///window's corner over the side panel (2026-11-03, asked for). Handed in by the Viewer, which owns the link.
+    ///
+    [Parameter]
+    public RenderFragment? Corner { get; set; }
+
+    [Parameter]
+    public bool CellTreeOpen { get; set; }
+
+    ///<summary>The cross on the tree, which is the shell's switch reached from where the tree is.</summary>
+    [Parameter]
+    public EventCallback OnCellTreeClosed { get; set; }
+
+    ///<summary>**Auto-generate preview**, for the tree's picture: the shell's one switch for every preview - see AutoPreviewSwitch.</summary>
+    [Parameter]
+    public bool AutoPreview { get; set; } = true;
+
+    [Parameter]
+    public EventCallback<bool> OnAutoPreviewChanged { get; set; }
+
+    ///
+    ///A placement or a shape pressed in the tree: the camera put on that box of the layout, and a frame flashed round it -
+    ///see frameCameraOnInterOp. Nothing while Admire, a game or a headset has the camera.
+    ///
+    private async Task goTo(Bounds box)
+    {
+        await js.InvokeVoidAsync("frameCameraOnInterOp", box.Left, box.Bottom, box.Right, box.Top);
+    }
+
+    ///
+    ///Asks the shell for its load in hand, or null - what a file's layers are merged at the pace of, so the page
+    ///answers while a big one is merged and Cancel can stop it. See Render and Pacer.
+    ///
+    ///A parameter rather than an argument, for the reason the 2D view's Prepared is one: this view draws itself as
+    ///it mounts, before the shell can hand it anything, and Blazor sets parameters before that. And a question
+    ///rather than a value for the 2D view's reason - see its Loading.
+    ///
+    [Parameter]
+    public Func<Pacer?>? Loading { get; set; }
+
+    ///
+    ///**The view's own settings**, which hang from the cube of the shell's view switch while this view is on: the shell
+    ///draws them under it, asks for them with ShowViewSettings and puts them away with OnViewSettingsDismissed. See the
+    ///switch in Viewer.razor.
+    ///
+    public RenderFragment SettingsMenu => (__builder) =>
+    {
+        @*
+            How far the view draws, and whether the layers show their textures - a grid on the tops, the walls shaded,
+            the metal polished, and a layer's own picture where it has one.
+
+            The game's panel has the same two, and they are these: a game turns the textures on and draws everything as
+            it starts, has them while it runs, and puts them back the way they were when it stops. So the interop keeps
+            them - in this browser, see VIEW_OPTIONS in ThreeInterop.js - and the menu reads them from it as it opens,
+            and moves them there as they change, rather than this view holding a copy the game would not know about.
+
+            **And Admire and the backdrop**, so the view's settings are all in one place - and both are set here and
+            nowhere else since 2026-10-17. Admire had a button in the view's corner, and the backdrop one of its own
+            along the bar, beside one for this menu; the cube took the menu and the menu took the two. Admire is set
+            through cinematicView, so a game stops for it. Unlike a menu that asks one question, this one stays open as a
+            backdrop is chosen: it is one of several things set here, and the next to try is a press away.
+        *@
+        <div id="viewSettingsMenu" class="shapePicker viewSettingsMenu" role="group" aria-label="3D view settings">
+            <label class="viewSetting" for="viewDrawDistance"
+                   title="How far the view reaches past the near side of the layout, as a share of the chip's width. All draws all of it; less fades the far side into the background">
+                <span class="viewSettingName">Draw distance</span>
+                <input id="viewDrawDistance" type="range" min="0.05" max="1" step="0.05"
+                       value="@drawDistance.ToString(CultureInfo.InvariantCulture)" @oninput="drawDistanceMoved" />
+                <output id="viewDrawDistanceSaid" class="viewSettingSaid" for="viewDrawDistance">@drawDistanceSaid()</output>
+            </label>
+
+            <div class="form-check form-switch settingsSwitch"
+                 title="A grid on the layers' tops, their walls shaded and the metal polished - and a layer's own texture, where it has one. Off, the flat colors">
+                <input id="viewTextures" class="form-check-input" type="checkbox" role="switch"
+                       checked="@showTextures" @onchange="texturesToggled" />
+                <label class="form-check-label" for="viewTextures">Show textures</label>
+            </div>
+
+            <div class="form-check form-switch settingsSwitch"
+                 title="Slowly orbit the camera around the layout. A game stops for it">
+                <input id="viewAdmire" class="form-check-input" type="checkbox" role="switch"
+                       checked="@cinematicViewToggle" @onchange="admireToggled" />
+                <label class="form-check-label" for="viewAdmire">Admire</label>
+            </div>
+
+            <div id="viewBackground" class="viewSettingBackdrops"
+                 role="group" aria-labelledby="viewBackgroundName">
+                <span id="viewBackgroundName" class="viewSettingName">Background</span>
+
+                @*
+                    **A picture of each one, because the names were guesses.** "Future Room" and "Neon" are what
+                    somebody called two photographs, and no arrangement of words says what a backdrop looks like -
+                    which is the whole question being asked. The menu shows them.
+
+                    The pictures are 128 pixels wide and a couple of kilobytes each, generated once from the
+                    backdrops and committed beside them. The backdrops themselves run to nine megabytes, so a menu
+                    that showed those would fetch thirteen to open.
+                *@
+                @foreach ((string file, string says) in Backdrops)
+                {
+                    <button class="shapePick backgroundPick @(background == file ? "shapePickOn" : "")"
+                            data-background="@file"
+                            @onclick="() => backdropChosen(file)">
+                        <span class="shapePickMark">@(background == file ? "✓" : "")</span>
+
+                        @*
+                            The plain scene has no photograph, so its swatch is the gray the scene
+                            actually is - which is a truer preview than a crossed-out box.
+                        *@
+                        @if (file == "none")
+                        {
+                            <span class="backgroundSwatch backgroundSwatchPlain"></span>
+                        }
+                        else
+                        {
+                            <img class="backgroundSwatch" src="./resources/Images/Background/preview/@file" alt="" />
+                        }
+
+                        <span class="backgroundName">@says</span>
+                    </button>
+                }
+            </div>
+        </div>
+    };
 
     ///<summary>This view's own toolbar controls. The shell renders them; it does not know what they are.</summary>
     public RenderFragment Toolbar => (__builder) =>
     {
-        @*
-            **A picture of each one, because the names were guesses.** "Future Room" and "Neon" are what
-            somebody called two photographs, and no arrangement of words says what a backdrop looks like -
-            which is the whole question being asked. The menu shows them.
-
-            The pictures are 128 pixels wide and a couple of kilobytes each, generated once from the
-            backdrops and committed beside them. The backdrops themselves run to nine megabytes, so a menu
-            that showed those would fetch thirteen to open.
-
-            An icon on the button rather than the current name, the same way the grid and the pencil work:
-            what is chosen is shown by the tick in the menu, and a name in the bar is a name that has to
-            fit the longest of them.
-
-            No fence after it. It and the download beside it are the whole of what this view puts in the
-            bar, and a group fence inside a group of two reads as three groups where there is one.
-        *@
-        @*And it goes when the pointer leaves the column, the way every other panel in the bar does.*@
-        <div class="col-1 toolbarItem toolbarBackground" style="align-self: end;" @onmouseleave="OnBackgroundMenuDismissed">
-            @*
-                Opened by a press or by the pointer arriving, closed by neither - the same bargain the 2D
-                view's two menus make, and for the same reason: a press that toggled could never open one,
-                since the hover has already done it.
-            *@
-            <button id="backgroundPicker" class="buttonStyle2 toolbarButton buttonIcon fileButton"
-                    @onclick="showBackgroundMenu"
-                    @onmouseenter="showBackgroundMenu"
-                    aria-label="Background" aria-expanded="@(backgroundMenuOpen ? "true" : "false")"
-                    title="A scene to put behind the layout, instead of the plain gray">
-                @*
-                    Hills under a sky with a sun over them, which is the picture every program uses for an
-                    image - and this is a choice of image rather than a choice of color.
-                *@
-                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                    <rect x="1.4" y="2.6" width="13.2" height="10.8" rx="1.4"
-                          fill="none" stroke="currentColor" stroke-width="1.4" />
-                    <circle cx="5.4" cy="6.2" r="1.3" fill="currentColor" />
-                    <path d="M1.9 12.2 6 8.1l2.6 2.6 2.2-2.2 3.3 3.3"
-                          fill="none" stroke="currentColor" stroke-width="1.4"
-                          stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </button>
-
-            @if (backgroundMenuOpen)
-            {
-                <div id="backgroundMenu" class="shapePicker backgroundMenu" role="group" aria-label="Background">
-                    @foreach ((string file, string says) in Backdrops)
-                    {
-                        <button class="shapePick backgroundPick @(background == file ? "shapePickOn" : "")"
-                                data-background="@file"
-                                @onclick="() => chooseBackground(file)">
-                            <span class="shapePickMark">@(background == file ? "✓" : "")</span>
-
-                            @*
-                                The plain scene has no photograph, so its swatch is the gray the scene
-                                actually is - which is a truer preview than a crossed-out box.
-                            *@
-                            @if (file == "none")
-                            {
-                                <span class="backgroundSwatch backgroundSwatchPlain"></span>
-                            }
-                            else
-                            {
-                                <img class="backgroundSwatch" src="./resources/Images/Background/preview/@file" alt="" />
-                            }
-
-                            <span class="backgroundName">@says</span>
-                        </button>
-                    }
-                </div>
-            }
-        </div>
-
         @*
             The model download and the format it writes, as one control - the same pair the shell's own
             download makes with its .gds/.oas picker, and for the same reason: neither half means anything
@@ -283,8 +653,6 @@
                 </select>
             </div>
         </div>
-
-        @*Admire is not here. It is on the canvas, in the corner, with the other two view controls.*@
     };
 
     #endregion ***********************************************
@@ -303,7 +671,9 @@
 
         if (firstRender)
         {
-            await js.InvokeVoidAsync("registerThree");
+            viewerNumber = ++viewersBuilt;
+
+            await js.InvokeVoidAsync("registerThree", viewerNumber);
             await js.InvokeVoidAsync("startRender3DInterOp");
 
             //Applied here rather than only in ApplySettings, because a restored session hands its settings
@@ -314,10 +684,11 @@
                 await js.InvokeVoidAsync("changeBackgroundInterOp", background);
 
             //One listener for the life of the view rather than one per opening, which would have to be
-            //taken away again by every path that closes the menu. The 2D view hangs up its two the same way.
+            //taken away again by every path that closes the menu. The 2D view hangs up its own the same way.
+            //The menu's opener is the shell's cube, which it hangs from - see SettingsOpener.
             menuHandle ??= DotNetObjectReference.Create(this);
 
-            await js.InvokeVoidAsync("registerBarMenu", menuHandle, "backgroundMenu", "backgroundPicker", "OnBackgroundMenuDismissed");
+            await js.InvokeVoidAsync("registerBarMenu", menuHandle, "viewSettingsMenu", SettingsOpener, "OnViewSettingsDismissed");
 
             //The same handle, for where the camera comes to rest. Registered before the draw, so a turn of
             //the wheel during a slow one is still heard.
@@ -358,9 +729,23 @@
         if (qrCodeComponent is null)
             return;
 
-        //The whole address, not just the base: it carries ?view=3d, so scanning this on a headset or phone
-        //opens the 3D view rather than dropping you in the 2D one to navigate again.
-        qrCodeComponent.GenerateQRCode(Navigation.Uri);
+        //
+        //The whole address, not just the base, with the file, this view and the camera written into it:
+        //scanning it on a headset or phone opens this file's 3D view looking where this one is, rather than
+        //dropping you in the 2D one to find it again. Written here because the address follows neither the
+        //file nor the camera - see the shell's takeOutOfAddress. A file no link can reach is taken out rather
+        //than left out, since inside an iframe the address can still name the one the page opened with.
+        //
+        var wanted = new Dictionary<string, object?>
+        {
+            ["file"] = LinkFile,
+            ["view"] = "3d"
+        };
+
+        if (cameraSeen.Length > 0)
+            wanted["camera"] = cameraSeen.Replace(' ', ',');
+
+        qrCodeComponent.GenerateQRCode(Navigation.GetUriWithQueryParameters(wanted));
     }
 
     ///<summary>Coalesces a drag across the spacing slider; see <see cref="Settling"/>.</summary>
@@ -387,7 +772,7 @@
     ///Notes where each layer sits in the order, before anything is described by it.
     ///
     ///Called at the top of a draw rather than only from the slider, because the index goes over *with* each
-    ///shape - built afterwards, every shape would have gone over as layer nought and a restack would have
+    ///shape - built afterwards, every shape would have gone over as layer zero and a restack would have
     ///moved the whole scene to one height.
     ///
     private void takeStackingOrder()
@@ -487,9 +872,70 @@
         await sliderChanged(e);
     }
 
+    ///
+    ///How far the Distance slider reaches, which the box beside it sets.
+    ///
+    ///**One reach does not suit every file.** The slider stopped at 700, which pulls a standard cell well apart
+    ///and does little to a chip a couple of hundred microns across with thirty layers in it, where the stack at
+    ///the slider's end was still a sliver against the width of the layout. Typed rather than worked out from the
+    ///file, since how far apart is far enough depends on what somebody wants to see between.
+    ///
+    ///Saved with the distance, so a file left pulled wide comes back that way.
+    ///
+    private int spacingRange = 700;
+
+    ///<summary>The least the reach can be. The slider's own steps are ones, so a reach of 100 is already fine.</summary>
+    public const int LeastSpacingRange = 100;
+
+    ///
+    ///The most it can be. Each layer is lifted by the distance times its place up the stack, in 32-bit integers,
+    ///so a file would need over twenty thousand places in its stack to run out at this - and a hundred thousand a
+    ///step already stands thirty layers far taller than any bundled design is wide.
+    ///
+    public const int MostSpacingRange = 100000;
+
+    ///<summary>How far the slider reaches, for the box the shell renders beside it.</summary>
+    public int SpacingRange
+    {
+        get { return spacingRange; }
+    }
+
+    ///
+    ///Sets how far the slider reaches, from the box beside it.
+    ///
+    ///**A distance past the new reach comes down to it**, so the slider and the stack go on agreeing: a thumb
+    ///pinned to the end of its track while the stack is drawn wider than that would be the control misreporting
+    ///the picture. Raising the reach moves nothing, since the thumb only gets a longer track to slide along.
+    ///
+    ///**Taken on a change, not on every keystroke**, which is why the box is bound @onchange. Typing 5000 passes
+    ///through 5, 50 and 500 on the way, and each of those would have pulled the distance down with it.
+    ///
+    public async Task AdjustSpacingRange(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int given))
+            return;
+
+        spacingRange = Math.Clamp(given, LeastSpacingRange, MostSpacingRange);
+
+        if (userSetlayerSpacing > spacingRange)
+        {
+            await spreadLayers(spacingRange);
+
+            return;
+        }
+
+        await OnSettingsChanged.InvokeAsync();
+    }
+
     private async Task sliderChanged(ChangeEventArgs e)
     {
-        userSetlayerSpacing = Convert.ToInt32(e.Value, CultureInfo.InvariantCulture);
+        await spreadLayers(Convert.ToInt32(e.Value, CultureInfo.InvariantCulture));
+    }
+
+    ///<summary>Spreads the stack to a distance: the slider's, or a reach brought down under where it was.</summary>
+    private async Task spreadLayers(int spacing)
+    {
+        userSetlayerSpacing = spacing;
 
         //The slider is only reachable with a file on screen, but nothing in the type system says so.
         if (Gds is null)
@@ -522,7 +968,9 @@
     ///The names are somebody's, and are kept: they are what a returning user recognizes. What they are not
     ///is a description, which is why each row shows the thing itself.
     ///
-    private static readonly (string File, string Says)[] Backdrops = new[]
+    ///Public for the share popup, which offers the same five for an embed and should not keep a list of its own.
+    ///
+    public static readonly (string File, string Says)[] Backdrops = new[]
     {
         ("none", "No Background"),
         ("background1.jpg", "White"),
@@ -531,11 +979,19 @@
         ("background4.jpg", "Neon")
     };
 
-    ///<summary>Whether the backdrop menu is showing. Not saved: it is a panel being open.</summary>
-    private bool backgroundMenuOpen = false;
-
     ///<summary>Held so the dismissal listener can call back into this component. Disposed with the view.</summary>
     private DotNetObjectReference<Viewer3D>? menuHandle;
+
+    ///
+    ///Which of the page's 3D viewers this view built, so that its teardown takes down that one and no other.
+    ///
+    ///**Numbered, because the order is not this view's to choose.** The view being left and the one replacing
+    ///it can be a render apart, and by the time the old one's teardown arrives the new one may have built a
+    ///viewer of its own. See unregisterThree in ThreeInterop.js.
+    ///
+    private static int viewersBuilt = 0;
+
+    private int viewerNumber = 0;
 
     ///<summary>Where the camera is, as its position and what it orbits, or empty until it has been moved.</summary>
     private string cameraSeen = "";
@@ -582,42 +1038,20 @@
         await OnSettingsChanged.InvokeAsync();
     }
 
-    private async Task showBackgroundMenu()
+    ///
+    ///A backdrop chosen in the view's settings, which stay open - see the menu. Drawn again for the tick, the menu being
+    ///drawn by the shell; see OnToolChanged.
+    ///
+    private async Task backdropChosen(string file)
     {
-        if (backgroundMenuOpen)
-            return;
-
-        backgroundMenuOpen = true;
+        await putBackdropUp(file);
 
         await OnToolChanged.InvokeAsync();
     }
 
-    ///
-    ///A press somewhere else puts it away, through the listener the 2D view's menus share.
-    ///
-    ///Public and JSInvokable because that listener is in JS: it hears every press in the page and reports
-    ///the ones that landed outside this menu and its button.
-    ///
-    [JSInvokable]
-    public async Task OnBackgroundMenuDismissed()
+    ///<summary>The backdrop `file` up behind the scene, and the session told. Nothing when it is the one up already.</summary>
+    private async Task putBackdropUp(string file)
     {
-        if (!backgroundMenuOpen)
-            return;
-
-        backgroundMenuOpen = false;
-
-        await OnToolChanged.InvokeAsync();
-    }
-
-    ///<summary>Chosen from the menu, which then goes: the question it opened for has been answered.</summary>
-    private async Task chooseBackground(string file)
-    {
-        backgroundMenuOpen = false;
-
-        //The bar is the shell's, so closing the menu is only real once the shell redraws - which is true
-        //whether or not the backdrop itself changed.
-        await OnToolChanged.InvokeAsync();
-
         if (file == background)
             return;
 
@@ -635,6 +1069,124 @@
         await OnSettingsChanged.InvokeAsync();
     }
 
+    ///
+    ///The id of the cube in the shell's view switch, which this view's settings hang from: the opener the listener for a
+    ///press anywhere else leaves alone, pressing it being how the menu is asked for - see registerBarMenu. The shell gives
+    ///the cube this id, so the two cannot name it two ways.
+    ///
+    public const string SettingsOpener = "viewPick3D";
+
+    ///<summary>Whether the view's settings menu is showing. Not saved: it is a panel being open.</summary>
+    private bool viewSettingsOpen = false;
+
+    ///<summary>Whether the shell is to draw the settings under its cube - see SettingsMenu.</summary>
+    public bool ViewSettingsOpen => viewSettingsOpen;
+
+    ///<summary>
+    ///What the menu shows of the view's own settings - the draw distance, a share of the chip's width from a twentieth
+    ///to all of it, and Show textures - as the interop had them when it opened. See ShowViewSettings.
+    ///</summary>
+    private double drawDistance = 1;
+    private bool showTextures = false;
+
+    ///
+    ///Opens the view's settings menu, saying what the settings are on the scene now: a game's, while one runs, since its
+    ///panel sets the same two. Read each time it opens for that reason, rather than kept here.
+    ///
+    ///Public for the shell, whose cube asks for it - pressed, or pointed at, while this view is on.
+    ///
+    public async Task ShowViewSettings()
+    {
+        if (viewSettingsOpen)
+            return;
+
+        try
+        {
+            var options = await js.InvokeAsync<ViewOptions>("viewOptionsInterOp");
+
+            drawDistance = options.DrawDistance;
+            showTextures = options.Textures;
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            //The menu opens with what it last showed rather than not at all, and the console says why that may not
+            //be what the scene has.
+            Console.WriteLine($"The 3D view's settings could not be read off the scene, so the menu shows the last ones it had: {ex.Message}");
+        }
+
+        viewSettingsOpen = true;
+
+        await OnToolChanged.InvokeAsync();
+    }
+
+    ///
+    ///Puts the menu away: a press somewhere other than it or the cube, through the listener the 2D view's menus share,
+    ///and the pointer leaving the two, through the shell. Public and JSInvokable for both.
+    ///
+    [JSInvokable]
+    public async Task OnViewSettingsDismissed()
+    {
+        if (!viewSettingsOpen)
+            return;
+
+        viewSettingsOpen = false;
+
+        await OnToolChanged.InvokeAsync();
+    }
+
+    ///
+    ///The draw distance, onto the scene as the slider moves. **Not drawn again here**: the bar is the shell's, and a
+    ///render of the whole shell for every step of a drag is what a slider must not cost - the interop says the new share
+    ///beside it instead, the way it does when the game's panel moves it. See Viewer3D.showViewMenu in ThreeInterop.js.
+    ///
+    private async Task drawDistanceMoved(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+            return;
+
+        drawDistance = value;
+
+        await js.InvokeVoidAsync("setViewOptionInterOp", "drawDistance", value);
+    }
+
+    ///<summary>Show textures, onto the scene - every layer's, at once.</summary>
+    private async Task texturesToggled(ChangeEventArgs e)
+    {
+        showTextures = e.Value is bool on && on;
+
+        await js.InvokeVoidAsync("setViewOptionInterOp", "textures", showTextures);
+    }
+
+    ///
+    ///Admire from the view's settings, the one place it is set: a game running stops for it - see cinematicView. Drawn
+    ///again after, for the backdrop's tick: a game stopping puts the view's own backdrop back.
+    ///
+    private async Task admireToggled(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool value && value;
+
+        if (on != cinematicViewToggle)
+            await cinematicView();
+
+        await OnToolChanged.InvokeAsync();
+    }
+
+    ///<summary>The draw distance as the menu says it: All at the end that draws everything, a percentage short of it.</summary>
+    private string drawDistanceSaid()
+    {
+        if (drawDistance >= 1)
+            return "All";
+
+        return FormattableString.Invariant($"{Math.Round(drawDistance * 100)}%");
+    }
+
+    ///<summary>The view's own settings as the interop has them - see viewOptionsInterOp in ThreeInterop.js.</summary>
+    private sealed class ViewOptions
+    {
+        public double DrawDistance { get; set; } = 1;
+        public bool Textures { get; set; }
+    }
+
     ///<summary>
     ///The four controls this view owns, the camera among them.
     ///
@@ -646,7 +1198,8 @@
     public void WriteSettings(SavedSession session)
     {
         session.LayerSpacing = userSetlayerSpacing;
-        session.Background = background;
+        session.SpacingRange = spacingRange;
+        session.Background = backdropBeforeGame ?? background;
         session.ModelFileType = ModelDownloadFileType;
         session.View3DCamera = cameraSeen;
     }
@@ -658,7 +1211,17 @@
     public async Task ApplySettings(SavedSession session)
     {
         userSetlayerSpacing = session.LayerSpacing;
-        background = session.Background;
+
+        //Never short of the distance itself, so the thumb has somewhere to stand: a session written by hand can
+        //carry a distance past the reach it names, and lowering the distance to fit would be changing the stack.
+        spacingRange = Math.Clamp(Math.Max(session.SpacingRange, session.LayerSpacing), LeastSpacingRange, MostSpacingRange);
+
+        //While a game runs its backdrop stays up, and the session's is the view's own, for stopping to put back.
+        if (backdropBeforeGame is not null)
+            backdropBeforeGame = session.Background;
+        else
+            background = session.Background;
+
         ModelDownloadFileType = session.ModelFileType;
 
         //Held rather than applied: there is no viewer yet on the path this arrives by. See the end of
@@ -683,6 +1246,15 @@
     public async Task CenterView()
     {
         await js.InvokeVoidAsync("centerCameraInterOp");
+    }
+
+    ///<summary>
+    ///Zooms from the buttons beside Center: the camera toward or away from what it turns around, by the same
+    ///notches as the 2D view. See zoomCameraInterOp, which also reports where the camera stopped.
+    ///</summary>
+    public async Task ZoomBy(int notches)
+    {
+        await js.InvokeVoidAsync("zoomCameraInterOp", notches);
     }
 
     ///<summary>
@@ -718,6 +1290,18 @@
 
     private async Task cinematicView()
     {
+        //
+        //Admire switched on mid-game ends the game, for the reason starting a game turns Admire off: both fly the
+        //camera. Left running, the game kept the camera and Admire said it was on and did nothing until it stopped.
+        //
+        if (!cinematicViewToggle && gameRunning)
+        {
+            gameRunning = false;
+
+            await js.InvokeVoidAsync("stopGameInterOp");
+            await putBackdropBack();
+        }
+
         cinematicViewToggle = !cinematicViewToggle;
 
         await playSound(cinematicViewToggle);
@@ -725,11 +1309,221 @@
         await js.InvokeVoidAsync("cinematicViewInterOp", cinematicViewToggle);
     }
 
+    ///<summary>Whether the chip game is running, for the shell's Settings menu to say Play or Stop.</summary>
+    public bool GameRunning => gameRunning;
+
+    ///
+    ///Starts the chip game, or stops the one that is running. The shell's, from its Settings menu.
+    ///
+    ///**Admire goes off first.** Both fly the camera every frame and only one of them can, and the switch that
+    ///says it is on is this component's to turn off - so it is turned off here rather than overruled quietly in JS.
+    ///
+    ///The game can decline to start, when nothing drawn is left to drive on, and nothing is shown then.
+    ///
+    ///**Against Neon**, which a game starts with and stopping takes down again - see backdropBeforeGame.
+    ///
+    ///**A render of its own**, for the panel of keys: a press in the shell's menu renders the shell, and this
+    ///component is not redrawn by that - see OnToolChanged.
+    ///
+    public async Task ToggleGame()
+    {
+        if (gameRunning)
+        {
+            gameRunning = false;
+
+            await js.InvokeVoidAsync("stopGameInterOp");
+            await putBackdropBack();
+        }
+        else
+        {
+            if (cinematicViewToggle)
+                await cinematicView();
+
+            menuHandle ??= DotNetObjectReference.Create(this);
+
+            gameRunning = await js.InvokeAsync<bool>("startGameInterOp", menuHandle, layerNames());
+
+            if (gameRunning)
+                await putGameBackdropUp();
+        }
+
+        StateHasChanged();
+    }
+
+    ///Neon up behind a game that has just started, with the view's own backdrop kept for when it stops.
+    private async Task putGameBackdropUp()
+    {
+        backdropBeforeGame = background;
+
+        if (background == GameBackdrop)
+            return;
+
+        background = GameBackdrop;
+
+        await js.InvokeVoidAsync("changeBackgroundInterOp", background);
+    }
+
+    ///
+    ///The view's own backdrop back up as a game stops, whatever the view's settings put up while it ran - which was
+    ///the game's. Nothing when no game put one up.
+    ///
+    private async Task putBackdropBack()
+    {
+        if (backdropBeforeGame is null)
+            return;
+
+        string own = backdropBeforeGame;
+
+        backdropBeforeGame = null;
+
+        if (own == background)
+            return;
+
+        background = own;
+
+        await js.InvokeVoidAsync("changeBackgroundInterOp", background);
+    }
+
+    ///
+    ///Each layer's name in stacking order, which is how a slab in the scene knows which layer it is.
+    ///
+    ///Handed over once when the game starts rather than with every shape, which is what keeps the draw's
+    ///marshal the size it was - see packShapes.
+    ///
+    private List<string> layerNames()
+    {
+        var names = new List<string>();
+
+        if (Gds is null)
+            return names;
+
+        foreach (var layer in Gds.AdditionalInformation.OrderedLayers())
+            names.Add(layer.Value.DisplayName);
+
+        return names;
+    }
+
+    ///<summary>The game's panel open again, after its × put it away. The shell's, from its Settings menu.</summary>
+    public async Task ShowGamePanel()
+    {
+        if (!gameRunning)
+            return;
+
+        await js.InvokeVoidAsync("showGamePanelInterOp");
+    }
+
+    ///
+    ///The game stopped by something other than the Settings menu: Escape, a headset, or nothing left to drive on. The
+    ///view's own backdrop goes back up as it does for the menu - see putBackdropBack.
+    ///
+    [JSInvokable]
+    public async Task OnGameEnded()
+    {
+        if (!gameRunning)
+            return;
+
+        gameRunning = false;
+
+        await putBackdropBack();
+
+        StateHasChanged();
+    }
+
     private async Task playSound(bool playSound)
     {
         hidden = !playSound;
 
         StateHasChanged();
+    }
+
+    ///<summary>The merge of a file that has just arrived, while it is under way, and which file - see Render.</summary>
+    private Task? arriving;
+
+    private GDS? arrivingFile;
+
+    ///
+    ///What a file this view has not drawn yet needs before it can be: its layout and each layer merged.
+    ///
+    ///**At the pace of the shell's load, when there is one** - see Loading. The merge is most of what opening a
+    ///chip in this view costs, fourteen seconds of the RGB mixer on the dev server, and at the load's pace the page
+    ///answers meanwhile and Cancel stops it.
+    ///
+    private async Task takeNewFile(GDS file, FlattenedLayout? prepared)
+    {
+        //
+        //**The slider's value, onto the file that has just arrived.**
+        //
+        //Spacing is not an argument to the draw the way the 2D view's opacity is - it is written onto
+        //the Layer objects themselves, by SetStackingOffsets, and a new file brings new ones. Layer
+        //discovery stacks them at the library's default and nothing put the slider's value back, so
+        //opening a second file with the Distance set to 700 drew it at 50 while the control still read
+        //700. Nudging the slider was the only thing that ever applied it, which is what made it look
+        //like the control had stopped working rather than never having been consulted.
+        //
+        //Here rather than at the top of Render because this is the one branch that means "a file
+        //this view has not drawn yet". A layer toggle and a spacing change both come back through there
+        //with the same file, and neither should re-stack anything - a height typed in by hand would be
+        //the thing lost. SetStackingOffsets is absolute, and a layer that carries its own height rests
+        //there, so running it once per file is both enough and safe.
+        //
+        file.AdditionalInformation.SetStackingOffsets(userSetlayerSpacing);
+
+        var pacer = Loading?.Invoke();
+
+        FlattenedLayout flat;
+
+        //Handed over by the shell when it has one; see IRenderable.
+        if (prepared is not null)
+            flat = prepared;
+        else if (pacer is not null)
+            flat = await GdsFlattener.FlattenAsync(file, () => stillWanted(file, pacer));
+        else
+            flat = GdsFlattener.Flatten(file);
+
+        List<Booleans.Outline> outlines;
+
+        if (pacer is not null)
+            outlines = await Booleans.MergeByLayerAsync(flat.Elements, () => stillWanted(file, pacer));
+        else
+            outlines = Booleans.MergeByLayer(flat.Elements);
+
+        //A newer file arrived while this one merged: that one is drawn, and this is not.
+        if (!ReferenceEquals(file, Gds))
+            return;
+
+        layout = flat;
+        merged = outlines;
+        flattenedFrom = file;
+
+        //The file this view already showed, changed in place: the camera and the shell are left as they are.
+        bool sameFile = ReferenceEquals(editedInPlace, file);
+
+        editedInPlace = null;
+
+        if (sameFile)
+            return;
+
+        //And this is the draw that frames it - see frameAfterDrawing.
+        frameAfterDrawing = true;
+
+        //And a scene the shell is waiting on - see OnDrawn - built at the pace of the load it is waiting as part of.
+        announceDrawn = true;
+        scenePace = pacer;
+    }
+
+    ///
+    ///The pause a file's merge waits on: the load's, and given up once the file is not this view's any more.
+    ///
+    ///**A view can be handed a file only to have it replaced while it merges.** The view a tab is left in mounts
+    ///before the tab's file is read, and merges the file still on screen - which the tab's own replaces a few seconds
+    ///later. Merged to the end anyway, that was the old file's whole merge for nothing, beside the new one's.
+    ///
+    private ValueTask stillWanted(GDS file, Pacer pacer)
+    {
+        if (!ReferenceEquals(file, Gds))
+            throw new OperationCanceledException();
+
+        return pacer.Pause();
     }
 
     public async Task Render(GDS? gds, List<CheckboxItem>? showLayers, FlattenedLayout? prepared = null)
@@ -760,37 +1554,73 @@
         //
         if (!ReferenceEquals(Gds, flattenedFrom))
         {
-            //
-            //**The slider's value, onto the file that has just arrived.**
-            //
-            //Spacing is not an argument to the draw the way the 2D view's opacity is - it is written onto
-            //the Layer objects themselves, by SetStackingOffsets, and a new file brings new ones. Layer
-            //discovery stacks them at the library's default and nothing put the slider's value back, so
-            //opening a second file with the Distance set to 700 drew it at 50 while the control still read
-            //700. Nudging the slider was the only thing that ever applied it, which is what made it look
-            //like the control had stopped working rather than never having been consulted.
-            //
-            //Here rather than at the top of the method because this is the one branch that means "a file
-            //this view has not drawn yet". A layer toggle and a spacing change both come back through here
-            //with the same file, and neither should re-stack anything - a height typed in by hand would be
-            //the thing lost. SetStackingOffsets is absolute and skips the layers that carry their own
-            //height, so running it once per file is both enough and safe.
-            //
-            Gds.AdditionalInformation.SetStackingOffsets(userSetlayerSpacing);
+            var file = Gds;
 
-            //Handed over by the shell when it has one; see IRenderable.
-            layout = prepared ?? GdsFlattener.Flatten(Gds);
-            merged = Booleans.MergeByLayer(layout.Elements);
-            flattenedFrom = Gds;
+            //
+            //**One merge of a file, however many draws ask for it, and one draw after it.** The shell draws as it
+            //switches into this view and the view draws as it mounts, and with the merge at the load's pace the
+            //second arrives while the first is still merging - so it waits on that one rather than merging the file
+            //a second time, and leaves the drawing to it too: by the time the merge is done the view has a viewer,
+            //and the first draw finds it. Two draws of the RGB mixer were five seconds of packing and building the
+            //same scene twice. What the second was asked to show - a layer switched off meanwhile - is read when the
+            //first draws, so nothing it asked for is lost.
+            //
+            bool merging = true;
+            Task waiting;
 
-            //And this is the draw that frames it - see frameAfterDrawing.
-            frameAfterDrawing = true;
+            if (arriving is Task already && ReferenceEquals(arrivingFile, file))
+            {
+                merging = false;
+                waiting = already;
+            }
+            else
+            {
+                waiting = takeNewFile(file, prepared);
+                arrivingFile = file;
+                arriving = waiting;
+            }
+
+            try
+            {
+                await waiting;
+            }
+            catch (OperationCanceledException)
+            {
+                //Given up while it merged: nothing of it is drawn, and the shell puts back what was on screen.
+                return;
+            }
+            finally
+            {
+                if (ReferenceEquals(arriving, waiting))
+                {
+                    arriving = null;
+                    arrivingFile = null;
+                }
+            }
+
+            //A newer file arrived while this one merged, and its own draw takes care of it.
+            if (!ReferenceEquals(file, Gds) || !ReferenceEquals(flattenedFrom, file))
+                return;
+
+            //Waited on another draw's merge, which draws it.
+            if (!merging)
+                return;
         }
 
         if (layout is null)
             return;
 
-        List<object> elements = new List<object>();
+        //
+        //**Given up once merged**, where no pause looked: nothing of it is built. The shell is putting back what was
+        //on screen, and a scene of this file would hold that up - and say it was done before the way back was.
+        //
+        if (announceDrawn && scenePace is { Canceled: true })
+        {
+            announceDrawn = false;
+
+            return;
+        }
+
         List<object> labels = new List<object>();
 
         //One set each for the whole pass, rather than searching the list once per element. Shared with the
@@ -798,8 +1628,12 @@
         var visible = CheckboxItem.VisibleLayers(ShowLayers);
         var labeled = CheckboxItem.LabeledLayers(ShowLayers);
 
-        //Before the shapes are described, since each one carries its layer.s place - see takeStackingOrder.
+        //Before the shapes are described, since each layer carries its place - see takeStackingOrder.
         takeStackingOrder();
+
+        //What is drawn, by layer, since a layer is one mesh - see packShapes. In the order the merge gave.
+        var drawn = new List<DrawnLayer>();
+        var drawnAt = new Dictionary<LayerKey, int>();
 
         foreach (var outline in merged)
         {
@@ -823,7 +1657,14 @@
             if (outline.Boundary.Count < 3)
                 continue;
 
-            elements.Add(shapeFor(outline));
+            if (!drawnAt.TryGetValue(outline.Layer.Key, out int at))
+            {
+                at = drawn.Count;
+                drawnAt[outline.Layer.Key] = at;
+                drawn.Add(new DrawnLayer(outline.Layer, new List<Booleans.Outline>()));
+            }
+
+            drawn[at].Outlines.Add(outline);
         }
 
         //Labels come off the layout rather than the merge: a TEXT element is an anchor and a string, and
@@ -842,7 +1683,29 @@
                 labels.Add(labelFor(element));
         }
 
-        await js.InvokeVoidAsync("drawInterOp", new { elements = elements, labels = labels });
+        //The pictures the layers name, before the scene that puts them on - see sendTextures.
+        await sendTextures(drawn);
+
+        var (layers, points) = packShapes(drawn);
+
+        //Which viewer it went into, or none - see the announcement below.
+        int drewInto;
+
+        var scene = new { layers = layers, points = points, labels = labels };
+
+        //
+        //**A file's first scene at the pace of its load**, when one is under way: the build is JavaScript, and
+        //paced there the page answers while a chip's scene is made - and a cancel stops it, which it hears through
+        //the load's token. Every other draw - a layer switched off, the stack spread - is the plain one.
+        //
+        if (announceDrawn && scenePace is Pacer pacer)
+        {
+            using var givenUp = pacer.Token.Register(() => _ = js.InvokeVoidAsync("cancelDrawInterOp"));
+
+            drewInto = await js.InvokeAsync<int>("drawPacedInterOp", scene);
+        }
+        else
+            drewInto = await js.InvokeAsync<int>("drawInterOp", scene);
 
         //
         //**The layout framed, rather than hoped to be where the camera happens to point.**
@@ -869,37 +1732,199 @@
             if (cameraToRestore.Length == 0)
                 await js.InvokeVoidAsync("centerCameraInterOp");
         }
+
+        //
+        //**And the shell told, once, that the scene is built**, which takes down the note saying it is loading.
+        //Only once this view has registered a viewer: a draw asked for before then - the shell's own, on the way
+        //into this view - lands on no viewer and builds nothing, and the view's first render draws again.
+        //
+        //**Asked of the draw itself, because the number alone raced it.** The shell's draw and this view's first
+        //render run interleaved, and the number is taken at the top of that render, before its viewer is built -
+        //so the shell's draw could land on nothing and still find it set. The loading note came down a draw
+        //early, which nobody could see; Play game from another view starts the chip game here, and found no
+        //scene to drive on. See playGame in Viewer.razor.
+        //
+        if (announceDrawn && viewerNumber > 0 && drewInto == viewerNumber)
+        {
+            announceDrawn = false;
+
+            await OnDrawn.InvokeAsync();
+        }
     }
 
+    ///<summary>One layer's merged outlines, which the scene builds into one mesh.</summary>
+    private sealed record DrawnLayer(Layer Layer, List<Booleans.Outline> Outlines);
+
     ///<summary>
-    ///One merged shape, as the scene needs it.
+    ///What is drawn, as the scene takes it: an entry per layer, and every corner of every outline in one
+    ///block of bytes.
     ///
-    ///**The holes go over as holes.** A three.js Shape takes them directly, which is what its triangulator
-    ///wants - the alternative is the keyhole a GDSII file has to use, a channel whose two edges lie on top
-    ///of each other, and that is the case an ear-clipper is worst at. Fifty-five of them come out of
-    ///merging the bundled corpus, so this is not a hypothetical.
+    ///**A layer is one mesh.** It was a mesh per merged outline, each with a material of its own, which put
+    ///117,688 of them into the scene for the RGB mixer and a draw call for each into every frame. The scene
+    ///builds a layer's outlines into one geometry now, so a frame costs a draw call per layer.
     ///
-    ///The layer goes over as the three things drawing it needs rather than as the whole object, which
-    ///carried a name, a key and two flags across the interop on every redraw for nothing.
+    ///**Bytes rather than objects, because the objects were most of the wait.** Each outline went over as an
+    ///object holding a list of point objects, and for the RGB mixer that came to 27.5 million characters of
+    ///JSON: about two seconds to write and hand over, and 1.2 more for the page to parse, before the first
+    ///slab was built. The same corners as 32-bit integers are about 6 MB, which the page reads where they
+    ///lie - a byte array crosses the interop as bytes rather than as text.
+    ///
+    ///**The holes go over as holes.** A triangulator takes an outline and its holes directly - the
+    ///alternative is the keyhole a GDSII file has to use, a channel whose two edges lie on top of each
+    ///other, and that is the case an ear-clipper is worst at. Fifty-five of them came out of merging the
+    ///bundled cells, so this is not a hypothetical.
+    ///
+    ///Each outline is its corner count, its hole count and its corners, x then y; then each hole the same
+    ///way, its count and its corners. A hole of fewer than three corners encloses nothing and is left out.
+    ///The block is in the machine's own byte order, which is little-endian in WebAssembly and in every
+    ///browser that reads it.
+    ///
+    ///A layer goes over as what drawing it needs rather than as the whole object, which would carry a key and
+    ///two flags across the interop on every redraw for nothing: its color, height and thickness, its name and
+    ///role - which say whether it is metal, and so how its surface looks - how many outlines it has, and where
+    ///they start and end in the block, in 32-bit words.
     ///</summary>
-    private object shapeFor(Booleans.Outline outline)
+    private (List<object> Layers, byte[] Points) packShapes(List<DrawnLayer> drawn)
     {
-        return new
+        int words = 0;
+
+        foreach (var layer in drawn)
         {
-            points = outline.Boundary,
-            holes = outline.Holes,
-            layer = new
+            foreach (var outline in layer.Outlines)
             {
-                color = outline.Layer.Color,
-                offset = outline.Layer.Offset,
-                depth = outline.Layer.Depth,
+                words += 2 + (outline.Boundary.Count * 2);
+
+                foreach (var hole in outline.Holes)
+                {
+                    if (hole.Count >= 3)
+                        words += 1 + (hole.Count * 2);
+                }
+            }
+        }
+
+        var points = new byte[words * sizeof(int)];
+        var written = MemoryMarshal.Cast<byte, int>(points.AsSpan());
+        int next = 0;
+
+        var layers = new List<object>();
+
+        foreach (var layer in drawn)
+        {
+            int start = next;
+
+            foreach (var outline in layer.Outlines)
+            {
+                int holes = 0;
+
+                foreach (var hole in outline.Holes)
+                {
+                    if (hole.Count >= 3)
+                        holes++;
+                }
+
+                written[next++] = outline.Boundary.Count;
+                written[next++] = holes;
+
+                next = writeCorners(written, next, outline.Boundary);
+
+                foreach (var hole in outline.Holes)
+                {
+                    if (hole.Count < 3)
+                        continue;
+
+                    written[next++] = hole.Count;
+
+                    next = writeCorners(written, next, hole);
+                }
+            }
+
+            layers.Add(new
+            {
+                color = layer.Layer.Color,
+                offset = layer.Layer.Offset,
+                depth = layer.Layer.Depth,
+
+                //What it is called and what it is for, when a layermap or somebody has said - which is how the view
+                //tells the metal, to give it a metal's finish. See surfaceOf in ThreeInterop.js.
+                name = layer.Layer.Name ?? string.Empty,
+                role = layer.Layer.Role.ToString(),
+
+                //The picture its surface is drawn with, by name - handed over beforehand, see sendTextures - and how big
+                //a repeat of it is, in database units like everything else here.
+                texture = layer.Layer.Texture ?? string.Empty,
+                textureSize = textureSizeOf(layer.Layer),
 
                 //Where this layer sits in the ordered list, so the spacing slider can move what is already
-                //drawn instead of handing the scene over again. One integer, and the only thing on the wire
-                //that is about restacking rather than about drawing - see restackLayers.
-                at = stackedAt(outline.Layer.Key)
+                //drawn instead of handing the scene over again. The only thing on the wire that is about
+                //restacking rather than about drawing - see restackLayers.
+                at = stackedAt(layer.Layer.Key),
+
+                outlines = layer.Outlines.Count,
+                start = start,
+                end = next
+            });
+        }
+
+        return (layers, points);
+    }
+
+    ///
+    ///How big one repeat of a layer's texture is, in database units: what it was given, or a micron in this file's own
+    ///units - see Layer.DefaultTextureMicrons. A micron when the file's UNITS give nothing usable, as the 2D view
+    ///assumes too.
+    ///
+    private double textureSizeOf(Layer layer)
+    {
+        if (layer.TextureSize is int units)
+            return units;
+
+        double micronsPerUnit = Gds?.MicronsPerDatabaseUnit ?? 1;
+
+        return Layer.DefaultTextureMicrons / micronsPerUnit;
+    }
+
+    ///<summary>The pictures already handed to the scene this view drew, by name - see sendTextures.</summary>
+    private readonly HashSet<string> texturesSent = new HashSet<string>(StringComparer.Ordinal);
+
+    ///
+    ///Hands the scene the pictures the layers about to be drawn name, that it does not have yet - out of the browser's
+    ///store, see TextureStore - so the draw that follows can put them on. Once each for the life of this view: the
+    ///layer settings that change one are the 2D view's, and coming back to this view is a new scene.
+    ///
+    ///A name with no picture kept under it is left out, and the layer drawn without one.
+    ///
+    private async Task sendTextures(List<DrawnLayer> drawn)
+    {
+        foreach (var layer in drawn)
+        {
+            if (layer.Layer.Texture is not string name || name.Length == 0 || texturesSent.Contains(name))
+                continue;
+
+            texturesSent.Add(name);
+
+            byte[]? picture = await textures.GetAsync(name);
+
+            if (picture is null)
+                continue;
+
+            try
+            {
+                await js.InvokeVoidAsync("setTextureInterOp", name, picture);
             }
-        };
+            catch { }
+        }
+    }
+
+    ///<summary>A run of corners into the block, x then y. Hands back where the next word goes.</summary>
+    private static int writeCorners(Span<int> written, int next, List<Point> corners)
+    {
+        foreach (var corner in corners)
+        {
+            written[next++] = corner.X;
+            written[next++] = corner.Y;
+        }
+
+        return next;
     }
 
     ///<summary>
@@ -927,14 +1952,29 @@
     }
 
     ///
-    ///Lets go of the handle the backdrop menu's dismissal calls back through.
+    ///Takes the scene down with the view, and lets go of the handle the settings menu's dismissal calls back
+    ///through.
     ///
     ///Unlike the shell's, this view is unmounted every time somebody switches away from it - so a handle
     ///left open here is one per visit, each pinning a component that has otherwise been thrown away.
     ///
-    public void Dispose()
+    ///**And the scene went on drawing after it.** The viewer was only disposed when the 3D view was next
+    ///opened, so going back to 2D left the whole scene being drawn every frame into a canvas no longer in the
+    ///page, with its WebGL context and everything it held on the GPU, until the next visit or a reload. See
+    ///unregisterThree in ThreeInterop.js.
+    ///
+    ///**A teardown that fails is let go.** This runs inside the render that removes the view, and an
+    ///exception out of it is an unhandled one - the error bar, for a scene that is going anyway.
+    ///
+    public async ValueTask DisposeAsync()
     {
         menuHandle?.Dispose();
+
+        try
+        {
+            await js.InvokeVoidAsync("unregisterThree", viewerNumber);
+        }
+        catch { }
     }
 
     #endregion ***********************************************

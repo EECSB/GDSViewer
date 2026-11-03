@@ -13,19 +13,20 @@
                 nothing in a popup whose whole job is to be as big as the view will allow - and every pixel
                 of it came off the code, since what decides the code's size is the height left over.
             *@
-            <div class="row mb-3">
-                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
-                    QR Code
-                </div>
+            <div class="popupHeading">
+                <span class="popupHeadingName">QR Code</span>
 
-                <div class="col d-flex justify-content-end">
-                    <button class="buttonStyle2 closeButton" @onclick="() => { QrCodeSVG = string.Empty; }" title="Close the QR code">&times;</button>
-                </div>
+                <button class="buttonStyle2 closeButton" @onclick="() => { QrCodeSVG = string.Empty; }" title="Close the QR code">&times;</button>
             </div>
 
-            <div class="row mb-3">
+            @*
+                No margin under it: the popup's own padding is the space round the code, the same on all four
+                sides - see GenerateQRCode.
+            *@
+            <div class="row">
                 <div class="d-flex justify-content-center">
-                    <div class="svgContainer">
+                    @*The address the code opens, beside it, so a spec can read what a phone would.*@
+                    <div class="svgContainer" data-link="@QrCodeText">
                         @((MarkupString)QrCodeSVG)
                     </div>
                 </div>
@@ -38,32 +39,53 @@
 @code {
     public string QrCodeSVG { get; set; } = "";
 
+    ///<summary>What the code says - the address a phone opens on scanning it.</summary>
+    public string QrCodeText { get; set; } = "";
+
+    ///
+    ///The code as an SVG whose box is the code: a unit a module, and nothing round it.
+    ///
+    ///**It was 300 units square with each module 300 over the modules across, in whole units** - so a code 53
+    ///modules across was drawn 265 units wide and the last 35 were white, a band down the right and along the
+    ///bottom of the popup that read as the code sitting off center. The popup's padding is the space round it now,
+    ///the same on every side. Each row's run of dark modules is one stretch of a single path.
+    ///
     public void GenerateQRCode(string text)
     {
+        QrCodeText = text;
+
         var qrCode = QrCode.EncodeText(text, QrCode.Ecc.Medium);
 
-        var size = 300;
+        int size = qrCode.Size;
 
-        var sb = new StringBuilder();
+        var runs = new StringBuilder();
 
-        sb.AppendLine($"<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 {size} {size}\" preserveAspectRatio=\"xMidYMid meet\" shape-rendering=\"crispEdges\">");
-        sb.AppendLine("<rect width=\"100%\" height=\"100%\" fill=\"white\"/>");
-
-        var scale = size / qrCode.Size;
-        for (int y = 0; y < qrCode.Size; y++)
+        for (int y = 0; y < size; y++)
         {
-            for (int x = 0; x < qrCode.Size; x++)
+            int x = 0;
+
+            while (x < size)
             {
-                if (qrCode.GetModule(x, y))
+                if (!qrCode.GetModule(x, y))
                 {
-                    sb.AppendLine($"<rect x=\"{x * scale}\" y=\"{y * scale}\" width=\"{scale}\" height=\"{scale}\" fill=\"black\"/>");
+                    x++;
+
+                    continue;
                 }
+
+                int start = x;
+
+                while (x < size && qrCode.GetModule(x, y))
+                    x++;
+
+                runs.Append($"M{start},{y}h{x - start}v1h-{x - start}z");
             }
         }
 
-        sb.AppendLine("</svg>");
-
-        QrCodeSVG = sb.ToString();
+        QrCodeSVG = $@"<svg xmlns=""http://www.w3.org/2000/svg"" version=""1.1"" viewBox=""0 0 {size} {size}"" preserveAspectRatio=""xMidYMid meet"" shape-rendering=""crispEdges"">
+<rect width=""100%"" height=""100%"" fill=""white""/>
+<path d=""{runs}"" fill=""black""/>
+</svg>";
 
         StateHasChanged();
     }

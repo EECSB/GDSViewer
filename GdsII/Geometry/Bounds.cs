@@ -81,6 +81,37 @@ namespace GdsII
             }
         }
 
+        ///
+        ///The same for a list, walked by position.
+        ///
+        ///**Every element's box is this**, worked out once per element of every layout - a quarter of a million
+        ///of them for a real chip, before anything is drawn - and a walk through the enumerable is an interface
+        ///call per corner where a list needs none. On the dev server, where none of it is compiled, that was a
+        ///good part of the seconds an index took to build.
+        ///
+        public static Bounds Of(IReadOnlyList<Element.Point> points)
+        {
+            if (points.Count == 0)
+                return Empty;
+
+            int left = int.MaxValue;
+            int bottom = int.MaxValue;
+            int right = int.MinValue;
+            int top = int.MinValue;
+
+            for (int i = 0; i < points.Count; i++)
+            {
+                var point = points[i];
+
+                left = Math.Min(left, point.X);
+                bottom = Math.Min(bottom, point.Y);
+                right = Math.Max(right, point.X);
+                top = Math.Max(top, point.Y);
+            }
+
+            return new Bounds(left, bottom, right, top);
+        }
+
         ///<summary>The smallest box holding every one of these points, or empty when there are none.</summary>
         public static Bounds Of(IEnumerable<Element.Point> points)
         {

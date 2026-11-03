@@ -1,0 +1,469 @@
+@using GDSViewer.Models
+@inject IJSRuntime js
+
+@*
+    Sharing the viewer: a link to send, or the code that embeds it in a page.
+
+    **One popup, two answers, set up the same way.** Both are an address underneath - a link is one and an
+    embed is an iframe around one - so the choices about what it opens are the same choices, made once, and
+    the tab only decides what comes out at the bottom and which extra choices an embed has. The parameters
+    themselves are the app's own (see Embedding.ReadFrom and the Embedding section of the README); this is a
+    way to set them without reading that table, and ShareLink is what turns the choices into them.
+
+    Over a backdrop that puts it away, like the import question - and Escape does the same.
+*@
+<div id="shareBackdrop" class="importBackdrop" @onclick="close"></div>
+
+<div id="sharePopup" class="popupDiv popupZIndex_0 sharePopup" role="dialog" aria-label="Share" tabindex="-1"
+     @onkeydown="onKey" @ref="popup">
+    <div class="popupHeading">
+        <span class="popupHeadingName">Share</span>
+
+        <button id="closeShare" class="buttonStyle2 closeButton" @onclick="close"
+                aria-label="Close" title="Close">&times;</button>
+    </div>
+
+    <hr class="popupDivider" />
+
+    @*The same pair the side panel switches with, because it is the same kind of choice: one thing or the other.*@
+    <div class="sidebarPanelPick shareChoice" role="tablist" aria-label="What to share">
+        <button id="shareLinkTab" type="button" role="tab" aria-selected="@(embedding ? "false" : "true")"
+                class="sidebarPanelChoice @(embedding ? "" : "sidebarPanelChoiceOn")"
+                @onclick="() => chooseEmbed(false)">Link</button>
+
+        <button id="shareEmbedTab" type="button" role="tab" aria-selected="@(embedding ? "true" : "false")"
+                class="sidebarPanelChoice @(embedding ? "sidebarPanelChoiceOn" : "")"
+                @onclick="() => chooseEmbed(true)">Embed</button>
+    </div>
+
+    <p class="shareLead">@lead()</p>
+
+    @*
+        Each part in a card, as AI settings has them (restyled 2026-11-01, asked for): a title, its rows, and the fields in
+        the look the app's other forms have - see .shareSection.
+    *@
+    <div class="shareSection">
+        <div class="shareSectionTitle">What it opens</div>
+
+        @if (LinkableFile is not null)
+        {
+            <label class="shareRow">
+                <input id="shareFile" type="checkbox" checked="@withFile" @onchange="e => withFile = isOn(e)" />
+                <span>This file, <b>@LinkableFile</b></span>
+            </label>
+
+            @if (FileEdited && withFile)
+            {
+                <div class="shareNote">It opens the example as it ships - the edits you have made stay on this computer.</div>
+            }
+        }
+        else
+        {
+            <div id="shareNoFile" class="shareNote">@UnlinkableReason</div>
+        }
+
+        <div class="shareRow">
+            <span class="shareLabel">View</span>
+
+            <div class="sidebarPanelPick shareViews" role="group" aria-label="View">
+                @foreach (var (slug, says) in Views)
+                {
+                    var choosing = slug;
+
+                    <button type="button" id="shareView@(says)" class="sidebarPanelChoice @(view == slug ? "sidebarPanelChoiceOn" : "")"
+                            aria-pressed="@(view == slug ? "true" : "false")"
+                            @onclick="() => view = choosing">@says</button>
+                }
+            </div>
+        </div>
+
+        @*Offered only where there is a framing to keep: the view has been moved, and it is the view chosen.*@
+        @if (framingFor(view) is not null)
+        {
+            <label class="shareRow">
+                <input id="shareFraming" type="checkbox" checked="@keepFraming" @onchange="e => keepFraming = isOn(e)" />
+                <span>Looking where the view is looking now</span>
+            </label>
+        }
+    </div>
+
+    <div class="shareSection">
+        <div class="shareSectionTitle">How much of the app</div>
+
+        <div class="shareRow">
+            <select id="shareMode" class="aiField shareSelect" value="@modeNow()" @onchange="modeChosen" aria-label="How much of the app">
+                <option value="@AppMode.Edit">The whole app</option>
+                <option value="@AppMode.NoEdit">Everything, but no editing</option>
+                <option value="@AppMode.Viewer">The drawing on its own</option>
+            </select>
+        </div>
+
+        @if (embedding)
+        {
+            <label class="shareRow">
+                <input id="shareBanner" type="checkbox" checked="@banner" @onchange="e => banner = isOn(e)" />
+                <span>The title bar</span>
+            </label>
+
+            @*
+                Every view's: the 2D and 3D views each have a cell tree, and the text view a list of its cells, all opened and
+                shut by the one switch - so a 3D link can shut it too, which it could not until the 2026-10-21 audit.
+            *@
+            <label class="shareRow">
+                <input id="shareTree" type="checkbox" checked="@cellTree" @onchange="e => cellTree = isOn(e)" />
+                <span>The cell tree</span>
+            </label>
+
+            @if (embedMode != AppMode.Viewer)
+            {
+                <label class="shareRow">
+                    <input id="shareLayers" type="checkbox" checked="@layers" @onchange="e => layers = isOn(e)" />
+                    <span>The layer list</span>
+                </label>
+            }
+
+            @if (view == "2d")
+            {
+                <label class="shareRow">
+                    <input id="shareGrid" type="checkbox" checked="@grid" @onchange="e => grid = isOn(e)" />
+                    <span>The grid</span>
+                </label>
+            }
+            else if (view == "3d")
+            {
+                <div class="shareRow">
+                    <span class="shareLabel">Backdrop</span>
+
+                    <select id="shareBackground" class="aiField shareSelect" value="@background" @onchange="e => background = e.Value?.ToString() ?? NoBackdrop">
+                        @foreach (var (file, says) in Viewer3D.Backdrops)
+                        {
+                            <option value="@file">@says</option>
+                        }
+                    </select>
+                </div>
+
+                <label class="shareRow">
+                    <input id="shareXr" type="checkbox" checked="@allowXr" @onchange="e => allowXr = isOn(e)" />
+                    <span>Let it start VR and AR from inside the page</span>
+                </label>
+            }
+
+            <label class="shareRow">
+                <input id="shareFull" type="checkbox" checked="@full" @onchange="e => full = isOn(e)" />
+                <span>The drawing to the edges, without the page's margins</span>
+            </label>
+
+            <div class="shareRow">
+                <span class="shareLabel">Size</span>
+
+                <input id="shareWidth" class="aiField shareSize" type="text" value="@width" @oninput="e => width = e.Value?.ToString() ?? DefaultWidth"
+                       aria-label="Width" title="Pixels, or a percentage of the page" />
+                <span class="shareBy">by</span>
+                <input id="shareHeight" class="aiField shareSize" type="text" value="@height" @oninput="e => height = e.Value?.ToString() ?? DefaultHeight"
+                       aria-label="Height" title="Pixels, or a percentage of the page" />
+            </div>
+        }
+    </div>
+
+    @*
+        What comes out, in a box that can be read and selected as well as copied - a copy that failed, in a
+        page that was not allowed the clipboard, still leaves the text there to take by hand.
+    *@
+    <div class="shareSection shareOut">
+        <textarea id="shareCode" class="shareCode" readonly rows="@rows()" aria-label="@copyWhat()" value="@output()"></textarea>
+
+        <div class="shareActions">
+            <button id="shareCopy" type="button" class="buttonStyle2 smallButton" @onclick="copy">@copyLabel()</button>
+
+            @if (!embedding)
+            {
+                <a id="shareOpen" class="shareOpen" href="@address()" target="_blank" rel="noopener">
+                    Open it in a new tab
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                        <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v3.5a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5h3.5"
+                              fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </a>
+            }
+        </div>
+
+        @if (copyRefused)
+        {
+            <div id="shareCopyRefused" class="shareNote">This page was not allowed the clipboard, so the text is selected instead - Ctrl+C copies it.</div>
+        }
+    </div>
+</div>
+
+@code {
+    ///<summary>The app's own address, what every link is built on. NavigationManager.BaseUri.</summary>
+    [Parameter]
+    public string BaseUri { get; set; } = "";
+
+    ///<summary>The bundled example a link can name, or null when what is open is not one.</summary>
+    [Parameter]
+    public string? LinkableFile { get; set; }
+
+    ///<summary>Why what is open cannot go in a link, said where the file would have been.</summary>
+    [Parameter]
+    public string UnlinkableReason { get; set; } = "";
+
+    ///<summary>Whether the open example has been changed, which a link to it does not carry.</summary>
+    [Parameter]
+    public bool FileEdited { get; set; }
+
+    ///<summary>The view that is open, as 2d, 3d or text, which the link starts on.</summary>
+    [Parameter]
+    public string View { get; set; } = "2d";
+
+    ///<summary>Where the 2D view is looking, as the view reports it, or null when it has not been moved.</summary>
+    [Parameter]
+    public string? Box { get; set; }
+
+    ///<summary>Where the 3D camera is, as the view reports it, or null when it has not been moved.</summary>
+    [Parameter]
+    public string? Camera { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private const string NoBackdrop = "none";
+    private const string DefaultWidth = "100%";
+    private const string DefaultHeight = "600";
+
+    private static readonly (string Slug, string Says)[] Views = new[] { ("2d", "2D"), ("3d", "3D"), ("text", "Text") };
+
+    private bool embedding = false;
+    private bool withFile = true;
+    private string view = "2d";
+    private bool keepFraming = true;
+
+    ///<summary>A link is the whole app unless said otherwise, the way somebody opening the address by hand gets it.</summary>
+    private AppMode linkMode = AppMode.Edit;
+
+    ///
+    ///An embed starts as the drawing on its own, with nothing round it.
+    ///
+    ///Because that is what a page embedding a layout usually wants - its own heading and text around a picture
+    ///of the layout - and it is the arrangement with the most switches to know about, so starting there means
+    ///somebody wanting more turns things on rather than hunting for what to turn off.
+    ///
+    private AppMode embedMode = AppMode.Viewer;
+    private bool banner = false;
+    private bool cellTree = false;
+    private bool layers = true;
+    private bool grid = true;
+    private bool full = false;
+    private string background = NoBackdrop;
+    private bool allowXr = false;
+    private string width = DefaultWidth;
+    private string height = DefaultHeight;
+
+    private bool copied = false;
+    private int copyRun = 0;
+
+    ///<summary>Whether the last copy was refused, in which case the text was selected for copying by hand.</summary>
+    private bool copyRefused = false;
+
+    ///<summary>The popup itself, given the keyboard when it opens.</summary>
+    private ElementReference popup;
+
+    protected override void OnInitialized()
+    {
+        view = View;
+    }
+
+    ///
+    ///The keyboard into the popup as it opens, so Escape reaches it straight away.
+    ///
+    ///It was pressed for from a button in the bar, which keeps the keyboard otherwise - and a key pressed there
+    ///goes to the bar, so Escape would do nothing until somebody had clicked inside the popup first.
+    ///
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await popup.FocusAsync();
+    }
+
+    private void chooseEmbed(bool embed)
+    {
+        embedding = embed;
+        copied = false;
+        copyRefused = false;
+    }
+
+    private static bool isOn(ChangeEventArgs e)
+    {
+        return e.Value is bool on && on;
+    }
+
+    private AppMode modeNow()
+    {
+        if (embedding)
+            return embedMode;
+
+        return linkMode;
+    }
+
+    ///
+    ///A mode chosen, and what goes with it.
+    ///
+    ///The title bar follows the mode in an embed - hidden with the drawing on its own, shown otherwise, which is
+    ///what the app does unasked - and so does the cell tree, since "the drawing on its own" with a tree beside
+    ///it is not that. Either can be changed afterwards; this only sets where they start.
+    ///
+    private void modeChosen(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse(e.Value?.ToString(), out AppMode chosen))
+            return;
+
+        if (!embedding)
+        {
+            linkMode = chosen;
+
+            return;
+        }
+
+        embedMode = chosen;
+        banner = chosen != AppMode.Viewer;
+        cellTree = chosen != AppMode.Viewer;
+    }
+
+    ///<summary>The framing kept for a view, or null when there is none to keep.</summary>
+    private string? framingFor(string slug)
+    {
+        if (slug == "2d")
+            return Box;
+
+        if (slug == "3d")
+            return Camera;
+
+        return null;
+    }
+
+    ///<summary>What the popup is set to, as the options the address is built from.</summary>
+    private ShareOptions options()
+    {
+        var chosen = new ShareOptions { View = view };
+
+        if (withFile && LinkableFile is not null)
+            chosen.File = LinkableFile;
+
+        if (keepFraming)
+        {
+            chosen.Box = Box;
+            chosen.Camera = Camera;
+        }
+
+        if (!embedding)
+        {
+            //A link sets nothing but what it opens and how much of the app comes with it. The title bar is the
+            //mode's own, so nothing is written for it; the drawing on its own also means without the tree.
+            chosen.Mode = linkMode;
+            chosen.Banner = linkMode != AppMode.Viewer;
+            chosen.CellTree = linkMode != AppMode.Viewer;
+
+            return chosen;
+        }
+
+        chosen.Mode = embedMode;
+        chosen.Banner = banner;
+        chosen.CellTree = cellTree;
+        chosen.Layers = layers;
+        chosen.Grid = grid;
+        chosen.Background = background;
+        chosen.Full = full;
+
+        return chosen;
+    }
+
+    private string address()
+    {
+        return ShareLink.Address(BaseUri, options());
+    }
+
+    private string output()
+    {
+        if (!embedding)
+            return address();
+
+        return ShareLink.Iframe(address(), width, height, allowXr && view == "3d");
+    }
+
+    private int rows()
+    {
+        if (embedding)
+            return 5;
+
+        return 3;
+    }
+
+    private string lead()
+    {
+        if (embedding)
+            return "Code to paste into a web page, which shows the viewer inside it, set up the way you choose here.";
+
+        return "A link that opens the viewer the way you set it up here. Send it to anyone - nothing is uploaded, so it carries the settings and not your files.";
+    }
+
+    private string copyWhat()
+    {
+        if (embedding)
+            return "The code to paste into a page";
+
+        return "The link";
+    }
+
+    private string copyLabel()
+    {
+        if (copied)
+            return "Copied";
+
+        if (embedding)
+            return "Copy code";
+
+        return "Copy link";
+    }
+
+    ///
+    ///Onto the clipboard, and says so on the button for a moment.
+    ///
+    ///A count of copies rather than a flag alone, so a second press inside the moment does not have its
+    ///"Copied" taken back by the first one's timer.
+    ///
+    ///**Drawn before the wait, by hand.** Blazor draws a handler's work when it first pauses and when it ends,
+    ///not at every pause in between - so "Copied", set after the copy came back, was only ever drawn at the
+    ///end, after the wait had already put "Copy link" back. Nobody saw it.
+    ///
+    private async Task copy()
+    {
+        copied = await js.InvokeAsync<bool>("copyText", output(), "shareCode");
+        copyRefused = !copied;
+
+        int run = ++copyRun;
+
+        if (!copied)
+            return;
+
+        StateHasChanged();
+
+        await Task.Delay(2000);
+
+        if (run != copyRun)
+            return;
+
+        copied = false;
+
+        StateHasChanged();
+    }
+
+    private async Task onKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            await close();
+    }
+
+    private async Task close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

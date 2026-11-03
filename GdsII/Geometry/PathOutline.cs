@@ -33,7 +33,8 @@ namespace GdsII
             int beginExtension,
             int endExtension)
         {
-            if (width <= 0)
+            //No width is no outline; a negative one is a width, see halfAt.
+            if (width == 0)
                 return new List<Element.Point>(centerline);
 
             var widths = new int[centerline.Count];
@@ -278,15 +279,20 @@ namespace GdsII
             return points;
         }
 
+        ///
+        ///Half of the width at a point, as a size: a negative WIDTH is the format's absolute one - a width the
+        ///parent's magnification does not scale - and it is drawn at its size, as every other reader draws it.
+        ///Taken as zero, a path 200 units wide was drawn as a hairline.
+        ///
         private static double halfAt(IReadOnlyList<int> widths, int at)
         {
             if (widths.Count == 0)
                 return 0;
 
             if (at >= widths.Count)
-                return Math.Max(0, widths[^1]) / 2.0;
+                return Math.Abs((long)widths[^1]) / 2.0;
 
-            return Math.Max(0, widths[at]) / 2.0;
+            return Math.Abs((long)widths[at]) / 2.0;
         }
 
         private static Element.Point round(Vector point)

@@ -10,7 +10,8 @@ namespace GdsII
     ///
     ///What it does not give is an **edge pair**. A real engine answers "these two edges are 130 apart";
     ///this answers "this region is too narrow", which is enough to see and to click on and not enough to
-    ///express a rule qualified by edge direction. Those rules are refused by name rather than approximated -
+    ///express a rule qualified by edge direction. A width or one-layer spacing that names a metric goes to the
+    ///edge engine instead (DrcEdges); anything else of that kind is refused by name rather than approximated -
     ///see <see cref="DrcDeck.Refused"/>.
     ///
     ///**Exactly at the limit passes.** A minimum width of 140 forbids 139 and allows 140, and a checker
@@ -19,6 +20,14 @@ namespace GdsII
     ///**even** limit, a width or gap of exactly one database unit under it is missed. On a layout snapped
     ///to a manufacturing grid - five units on sky130 - no such width can exist, so the gap is unreachable
     ///rather than merely small.
+    ///
+    ///**Each check comes twice: over shapes, and over rings.** The rings are a layer as
+    ///<see cref="DrcLayers.RingsOf"/> keeps one, every hole still a hole, and they are what a run measures -
+    ///a keyholed layer handed back to Clipper is the one input it is pathologically slow on, which
+    ///<see cref="DrcLayers"/> says more about. The shapes are handed over as rings without being merged first
+    ///(<see cref="Booleans.AsRings"/>), so either way a check makes the same calls to Clipper it always made,
+    ///and only what passes between them has its holes kept. A marker is still one keyholed outline, the shape
+    ///that is drawn and written out.
     ///</summary>
     public static class DrcChecks
     {
@@ -70,6 +79,12 @@ namespace GdsII
         //unit of the limit may be recovered and not reported, which is the same one-unit gap the halving
         //already has and is documented on narrowerThan.
         //
+        //**And both offsets are taken in one pass, rounded once**, because one unit only covers one
+        //rounding. Rounded between them, the second offset is taken from edges the first rounding has
+        //turned, and on a short slanted edge that is more than a unit by the time it is seventy out: curves
+        //put on a manufacturing grid came back with slivers two units thick, at one corner in four of the
+        //same shape. See Booleans.Grow(shapes, by, thenBy).
+        //
 
         private static List<List<Element.Point>> none()
         {
@@ -90,21 +105,27 @@ namespace GdsII
         ///</summary>
         public static List<List<Element.Point>> Width(IEnumerable<IReadOnlyList<Element.Point>> shapes, long limit)
         {
+            return Width(Booleans.AsRings(shapes), limit);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> Width(IEnumerable<Booleans.Ring> layer, long limit)
+        {
             int radius = narrowerThan(limit);
 
             if (radius <= 0)
                 return none();
 
-            var merged = Booleans.Merge(shapes);
+            var merged = Booleans.Merge(layer);
 
             //Grown back one unit further than it was shrunk, and clipped to the shape. See the note on rounding
             //above narrowerThan.
             var opened = Booleans.Combine(
-                Booleans.Grow(Booleans.Grow(merged, -radius), radius + 1),
+                Booleans.Grow(merged, -radius, radius + 1),
                 merged,
                 BooleanOperation.And);
 
-            return Booleans.Combine(merged, opened, BooleanOperation.Not);
+            return Booleans.Keyholed(Booleans.Combine(merged, opened, BooleanOperation.Not));
         }
 
         ///<summary>
@@ -120,21 +141,27 @@ namespace GdsII
         ///</summary>
         public static List<List<Element.Point>> Space(IEnumerable<IReadOnlyList<Element.Point>> shapes, long limit)
         {
+            return Space(Booleans.AsRings(shapes), limit);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> Space(IEnumerable<Booleans.Ring> layer, long limit)
+        {
             int radius = narrowerThan(limit);
 
             if (radius <= 0)
                 return none();
 
-            var merged = Booleans.Merge(shapes);
+            var merged = Booleans.Merge(layer);
 
             //Shrunk back one unit further than it was grown, and the shape put back. The mirror of the
             //opening's slack.
             var closed = Booleans.Combine(
-                Booleans.Grow(Booleans.Grow(merged, radius), -(radius + 1)),
+                Booleans.Grow(merged, radius, -(radius + 1)),
                 merged,
                 BooleanOperation.Or);
 
-            return Booleans.Combine(closed, merged, BooleanOperation.Not);
+            return Booleans.Keyholed(Booleans.Combine(closed, merged, BooleanOperation.Not));
         }
 
         ///<summary>
@@ -151,6 +178,12 @@ namespace GdsII
             IEnumerable<IReadOnlyList<Element.Point>> other,
             long limit)
         {
+            return Space(Booleans.AsRings(one), Booleans.AsRings(other), limit);
+        }
+
+        ///<summary>The same over two layers kept as rings.</summary>
+        public static List<List<Element.Point>> Space(IEnumerable<Booleans.Ring> one, IEnumerable<Booleans.Ring> other, long limit)
+        {
             int radius = apartBy(limit);
 
             if (radius <= 0)
@@ -166,7 +199,7 @@ namespace GdsII
 
             var either = Booleans.Combine(first, second, BooleanOperation.Or);
 
-            return Booleans.Combine(reaching, either, BooleanOperation.Not);
+            return Booleans.Keyholed(Booleans.Combine(reaching, either, BooleanOperation.Not));
         }
 
         ///<summary>
@@ -183,7 +216,13 @@ namespace GdsII
         ///</summary>
         public static List<List<Element.Point>> Notch(IEnumerable<IReadOnlyList<Element.Point>> shapes, long limit)
         {
-            var merged = Booleans.Merge(shapes);
+            return Notch(Booleans.AsRings(shapes), limit);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> Notch(IEnumerable<Booleans.Ring> layer, long limit)
+        {
+            var merged = Booleans.Merge(layer);
 
             var gaps = Space(merged, limit);
 
@@ -198,11 +237,11 @@ namespace GdsII
             return notches;
         }
 
-        private static int piecesTouching(List<Element.Point> gap, List<List<Element.Point>> pieces)
+        private static int piecesTouching(List<Element.Point> gap, List<Booleans.Ring> pieces)
         {
             //One unit, the way a traced net decides two shapes abut: coordinates are whole, so anything
             //this close was meant to be touching.
-            var reaching = Booleans.Grow(new[] { gap }, 1);
+            var reaching = Booleans.Grow(Booleans.AsRings(new[] { gap }), 1);
 
             int touching = 0;
 
@@ -234,9 +273,18 @@ namespace GdsII
             IEnumerable<IReadOnlyList<Element.Point>> outer,
             long limit)
         {
+            return Enclosure(Booleans.AsRings(inner), Booleans.AsRings(outer), limit);
+        }
+
+        ///<summary>The same over two layers kept as rings.</summary>
+        public static List<List<Element.Point>> Enclosure(
+            IEnumerable<Booleans.Ring> inner,
+            IEnumerable<Booleans.Ring> outer,
+            long limit)
+        {
             var reach = Booleans.Grow(Booleans.Merge(inner), (int)limit);
 
-            return Booleans.Combine(reach, Booleans.Merge(outer), BooleanOperation.Not);
+            return Booleans.Keyholed(Booleans.Combine(reach, Booleans.Merge(outer), BooleanOperation.Not));
         }
 
         //
@@ -272,9 +320,15 @@ namespace GdsII
         ///</summary>
         public static List<List<Element.Point>> Area(IEnumerable<IReadOnlyList<Element.Point>> shapes, long limit)
         {
+            return Area(Booleans.AsRings(shapes), limit);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> Area(IEnumerable<Booleans.Ring> layer, long limit)
+        {
             var small = new List<List<Element.Point>>();
 
-            foreach (var ring in Booleans.MergeToRings(shapes))
+            foreach (var ring in Booleans.Merge(layer))
             {
                 double area = Measure.AreaOf(ring.Boundary);
 
@@ -297,9 +351,15 @@ namespace GdsII
         ///</summary>
         public static List<List<Element.Point>> HoleArea(IEnumerable<IReadOnlyList<Element.Point>> shapes, long limit)
         {
+            return HoleArea(Booleans.AsRings(shapes), limit);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> HoleArea(IEnumerable<Booleans.Ring> layer, long limit)
+        {
             var small = new List<List<Element.Point>>();
 
-            foreach (var ring in Booleans.MergeToRings(shapes))
+            foreach (var ring in Booleans.Merge(layer))
             {
                 foreach (var hole in ring.Holes)
                 {
@@ -327,15 +387,22 @@ namespace GdsII
             int step,
             long tenths)
         {
-            var merged = Booleans.Merge(shapes);
+            return Density(Booleans.AsRings(shapes), window, step, tenths);
+        }
+
+        ///<summary>The same over a layer kept as rings.</summary>
+        public static List<List<Element.Point>> Density(IEnumerable<Booleans.Ring> layer, int window, int step, long tenths)
+        {
+            var merged = Booleans.Merge(layer);
 
             if (merged.Count == 0 || window <= 0 || step <= 0)
                 return none();
 
             var extent = Bounds.Empty;
 
-            foreach (var shape in merged)
-                extent = extent.Union(Bounds.Of(shape));
+            //A hole lies inside its boundary, so the boundaries alone reach as far as the layer does.
+            foreach (var ring in merged)
+                extent = extent.Union(Bounds.Of(ring.Boundary));
 
             double wanted = tenths / 1000.0;
 
@@ -443,7 +510,19 @@ namespace GdsII
             IEnumerable<IReadOnlyList<Element.Point>> violations,
             IEnumerable<IReadOnlyList<Element.Point>> exempt)
         {
-            return Booleans.Combine(violations, exempt, BooleanOperation.Not);
+            return Outside(violations, Booleans.AsRings(exempt));
+        }
+
+        ///<summary>
+        ///The same with the exempt ground a layer kept as rings.
+        ///
+        ///The violations stay the markers a check handed back, keyholed, since that is what they are by now.
+        ///</summary>
+        public static List<List<Element.Point>> Outside(
+            IEnumerable<IReadOnlyList<Element.Point>> violations,
+            IEnumerable<Booleans.Ring> exempt)
+        {
+            return Booleans.Keyholed(Booleans.Combine(Booleans.AsRings(violations), exempt, BooleanOperation.Not));
         }
 
         #endregion **************************************************************************

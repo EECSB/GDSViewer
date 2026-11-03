@@ -607,17 +607,17 @@ public class DxfTests
     {
         string hatch = Pairs(
             0, "HATCH", 8, "M1",
-            10, 0, 20, 0, 30, 0,           //the elevation point, which is not the boundary
+            10, 0, 20, 0, 30, 0,//the elevation point, which is not the boundary
             2, "SOLID", 70, 1, 71, 0,
             91, 1,
-            92, 3, 72, 0, 73, 1, 93, 4,    //one polyline path, closed, four vertices
+            92, 3, 72, 0, 73, 1, 93, 4,//one polyline path, closed, four vertices
             10, 20, 20, 20,
             10, 30, 20, 20,
             10, 30, 20, 30,
             10, 20, 20, 30,
             97, 0,
             75, 0, 76, 1,
-            98, 1, 10, 25, 20, 25);        //a seed point, which is not the boundary either
+            98, 1, 10, 25, 20, 25);//a seed point, which is not the boundary either
 
         var drawn = DrawnFrom(Drawing(hatch)).Elements.Single();
 
@@ -644,13 +644,13 @@ public class DxfTests
             10, 0, 20, 0,
             2, "SOLID", 70, 1,
             91, 2,
-            92, 3, 72, 0, 73, 1, 93, 4,    //outermost: flags 1|2, a closed polyline
+            92, 3, 72, 0, 73, 1, 93, 4,//outermost: flags 1|2, a closed polyline
             10, 0, 20, 0,
             10, 30, 20, 0,
             10, 30, 20, 30,
             10, 0, 20, 30,
             97, 0,
-            92, 2, 72, 0, 73, 1, 93, 4,    //an island: polyline, and neither external nor outermost
+            92, 2, 72, 0, 73, 1, 93, 4,//an island: polyline, and neither external nor outermost
             10, 10, 20, 10,
             10, 20, 20, 10,
             10, 20, 20, 20,
@@ -1115,6 +1115,63 @@ public class DxfTests
 
         Assert.Equal(0.001, units.Values[0], 12);
         Assert.Equal(1e-9, units.Values[1], 15);
+    }
+
+    #endregion **********************************************************************
+
+    #region What a text says about itself *********************************************
+
+    ///
+    ///Group 72 and 73 say which part of the string sits at its point, and when either is set the point is the second
+    ///alignment point. Read as left and bottom at the first point whatever the file said, a label put to the right of
+    ///a pad sat in the middle of it.
+    ///
+    [Fact]
+    public void A_justified_text_sits_at_its_second_alignment_point_and_keeps_its_justification()
+    {
+        string text = Pairs(0, "TEXT", 8, "M1", 10, 3, 20, 4, 11, 5, 21, 6, 40, 1, 1, "PAD1", 72, 2, 73, 3);
+
+        var label = (GDS.TextModel)Reopened(Drawing(text)).StreamFormat.Structures.Single().Elements.Single().Element;
+        var presentation = TextPresentation.From(label.TextBody.PRESENTATION?.Data);
+
+        Assert.Equal(HorizontalPresentation.Right, presentation.Horizontal);
+        Assert.Equal(VerticalPresentation.Top, presentation.Vertical);
+
+        var drawn = DrawnFrom(Drawing(text)).Elements.Single();
+
+        Assert.Equal(5000, drawn.Points[0].X);
+        Assert.Equal(6000, drawn.Points[0].Y);
+    }
+
+    ///<summary>And one that says nothing is left and bottom at its first point, which is the format's default and was this reader's only reading.</summary>
+    [Fact]
+    public void A_text_that_says_nothing_about_itself_is_left_and_bottom()
+    {
+        var label = (GDS.TextModel)Reopened(Drawing(Pairs(0, "TEXT", 8, "M1", 10, 3, 20, 4, 40, 1, 1, "PAD1"))).StreamFormat.Structures.Single().Elements.Single().Element;
+        var presentation = TextPresentation.From(label.TextBody.PRESENTATION?.Data);
+
+        Assert.Equal(HorizontalPresentation.Left, presentation.Horizontal);
+        Assert.Equal(VerticalPresentation.Bottom, presentation.Vertical);
+    }
+
+    #endregion **********************************************************************
+
+
+
+    #region What is not a number ******************************************************
+
+    ///
+    ///A value that is not a number is a file that is wrong, and is said rather than read as zero: a drawing whose
+    ///decimals were commas opened with every shape collapsed onto the origin, and nothing said so.
+    ///
+    [Fact]
+    public void A_value_that_is_not_a_number_is_refused_with_the_value()
+    {
+        string bad = Pairs(0, "LWPOLYLINE", 8, "M1", 90, 2, 70, 0, 10, "1,5", 20, 0, 10, 2, 20, 0);
+
+        var problem = Assert.Throws<InvalidDataException>(() => DxfReader.Read(Drawing(bad)));
+
+        Assert.Contains("\"1,5\" is not a number", problem.Message);
     }
 
     #endregion **********************************************************************

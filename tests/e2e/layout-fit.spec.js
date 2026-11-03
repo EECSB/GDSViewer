@@ -125,8 +125,14 @@ test('full screen gives the view the page margins, and gives them back', async (
     await gotoExample(page, MOSFET, '2d');
     await expect(page.locator('#gdsSVG')).toBeVisible();
 
-    const before = await page.locator('#gdsSVG').boundingBox();
+    //Full screen is where the app starts, since 2026-11-03 - so the margins are what the button puts back.
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
+
+    const full = await page.locator('#gdsSVG').boundingBox();
     const bar = await page.locator('.top-row').boundingBox();
+
+    //And no scrollbar bought with the extra room.
+    expect(await pageScrolls(page)).toBe(false);
 
     await page.locator('#fullScreen').click();
 
@@ -134,22 +140,19 @@ test('full screen gives the view the page margins, and gives them back', async (
     await expect.poll(async () => {
         const now = await page.locator('#gdsSVG').boundingBox();
 
-        return now.height > before.height && now.width > before.width;
+        return now.height < full.height && now.width < full.width;
     }).toBe(true);
 
     //The bar it is named for keeping, unmoved.
     await expect(page.locator('.top-row')).toBeVisible();
     expect(await page.locator('.top-row').boundingBox()).toEqual(bar);
 
-    //And no scrollbar bought with the extra room.
-    expect(await pageScrolls(page)).toBe(false);
-
     await page.locator('#fullScreen').click();
 
     await expect.poll(async () => {
         const now = await page.locator('#gdsSVG').boundingBox();
 
-        return now.height === before.height && now.width === before.width;
+        return now.height === full.height && now.width === full.width;
     }).toBe(true);
 });
 
@@ -166,7 +169,8 @@ test('full screen reaches the sides of the window', async ({ page }) => {
     await gotoExample(page, MOSFET, '2d');
     await expect(page.locator('#gdsSVG')).toBeVisible();
 
-    await page.locator('#fullScreen').click();
+    //Where the app starts.
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
 
     //The view's left edge at the window's, and the sidebar's right edge at the window's. Two pixels of
     //slack for the view's own border, which is drawn inside it.
@@ -183,7 +187,8 @@ test('full screen reaches the sides of the window', async ({ page }) => {
 });
 
 ///
-///The button sits on the bar's line, at the far end of it, inset by what the first control is inset by.
+///Full screen sits on the bar's line, near the far end of it, and the bar's last control - the settings gear,
+///after it - is inset by what the first control is inset by.
 ///
 ///It was in the corner - top-aligned and with its gutter taken off - on the reading that a button about the
 ///window belongs where nothing else is. That held while the bar was a mix of heights and stopped holding
@@ -193,7 +198,7 @@ test('full screen reaches the sides of the window', async ({ page }) => {
 ///A wide window on purpose. The bar wraps when it runs out of room, and every statement here is about a
 ///bar that is one row - which is the state e2e/app-launch.spec.js pins across the widths that matter.
 ///
-test('the full-screen button ends the bar the way the first control starts it', async ({ page }) => {
+test('the end of the bar ends it the way the first control starts it', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 800 });
 
     await gotoExample(page, MOSFET, '2d');
@@ -204,25 +209,30 @@ test('the full-screen button ends the bar the way the first control starts it', 
 
         const button = document.querySelector('#fullScreen').getBoundingClientRect();
 
+        //The gear ends the bar, with full screen in the pair ahead of it; Share starts the column they are in.
+        const last = document.querySelector('#settingsMenu').getBoundingClientRect();
+        const start = document.querySelector('#shareButton').getBoundingClientRect();
+
         //**Whichever control the bar starts with**, rather than the one it happened to start with when this
         //was written. New was added ahead of Open, and naming Open here made the assertion measure the air
         //before it *plus a whole button* - a failure about a bar that had not moved.
         const first = document.querySelector('#newLayout').getBoundingClientRect();
 
         return {
-            bottoms: [Math.round(button.bottom), Math.round(first.bottom)],
-            ends: [Math.round(first.left - bar.left), Math.round(bar.right - button.right)],
+            bottoms: [Math.round(button.bottom), Math.round(last.bottom), Math.round(first.bottom)],
+            ends: [Math.round(first.left - bar.left), Math.round(bar.right - last.right)],
 
-            //Still at the far end: every other column ends before it starts. Its own column is left out -
-            //that one is 10px wider than the button, since the gutter it keeps is inside it.
+            //Still at the far end: every other column ends before its column starts. Its own column is left
+            //out - that one is 10px wider than the buttons, since the gutter it keeps is inside it.
             last: [...document.querySelector('.viewToolbar').children]
                 .filter(node => !node.classList.contains('toolbarEnd'))
-                .every(node => node.getBoundingClientRect().right <= button.left)
+                .every(node => node.getBoundingClientRect().right <= start.left)
         };
     });
 
     //On the line the rest of the bar sits on.
-    expect(placed.bottoms[0]).toBe(placed.bottoms[1]);
+    expect(placed.bottoms[0]).toBe(placed.bottoms[2]);
+    expect(placed.bottoms[1]).toBe(placed.bottoms[2]);
 
     //Inset from its end by what the first control is inset from the other.
     expect(placed.ends[0]).toBe(placed.ends[1]);
@@ -247,7 +257,8 @@ test('full screen brings no scrollbar, in either direction', async ({ page }) =>
     await gotoExample(page, 'sky130_fd_sc_hd__a21bo_2', '2d');
     await expect(page.locator('#gdsSVG')).toBeVisible();
 
-    await page.locator('#fullScreen').click();
+    //Where the app starts.
+    await expect(page.locator('.viewerPageFull')).toHaveCount(1);
 
     await expect.poll(async () => pageOverflow(page)).toEqual({ across: 0, down: 0 });
 

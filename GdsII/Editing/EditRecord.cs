@@ -107,4 +107,15 @@ namespace GdsII
 
         public List<EditRecord> Undone { get; set; } = new List<EditRecord>();
     }
+
+    ///<summary>
+    ///One step of a journal: an edit, and whether it was taken or taken back. See <see cref="EditHistory.Journal"/>.
+    ///</summary>
+    public sealed class SavedStep
+    {
+        ///<summary>Taken back: an undo. Everything else - a do or a redo - takes the edit.</summary>
+        public bool Undone { get; set; }
+
+        public EditRecord Edit { get; set; } = new EditRecord();
+    }
 }

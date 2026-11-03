@@ -6,13 +6,15 @@ namespace GDSViewer.Tests;
 ///<summary>
 ///Writing OASIS.
 ///
-///**The corpus is not enough here, and that is worth knowing.** Of the 897 bundled files, exactly one has
-///a placement in it, none has an array, none has a box or a node, and none has more than a single cell.
-///Run against that alone a writer could get every placement record wrong and still pass 897 times - so the
+///**The corpus is not enough here, and that is worth knowing.** Of the 897 bundled cell files, exactly one
+///has a placement in it, none has an array, none has a box or a node, and none has more than a single cell.
+///Run against those alone a writer could get every placement record wrong and still pass 897 times - so the
 ///hierarchy, the arrays, the four right angles, the mirror, the magnification and the four kinds of path
-///end are exercised by a library built here that has one of each.
+///end are exercised by a library built here that has one of each. The bundled designs place cells by the
+///thousand and carry five arrays, so the corpus trip reaches those now too - but no box, node or explicit
+///path end, which is why the library stays.
 ///
-///The corpus still runs, and is still worth running: it is 897 real layouts' worth of coordinates,
+///The corpus still runs, and is still worth running: it is 1,220 real layouts' worth of coordinates,
 ///point counts and layer numbers, which is the part no hand-written fixture covers.
 ///
 ///**And KLayout reads what comes out.** A file this project writes and this project reads only proves the
@@ -733,7 +735,7 @@ public class OasisWriterTests
     ///
     ///**This is the assertion the rest of the suite cannot make.** GdsTestData.Geometry compares corners as
     ///a sorted, de-duplicated set - so a point list that writes one step too many, which makes the reader
-    ///append a corner duplicating the first, comes back looking identical to 897 corpus files and to every
+    ///append a corner duplicating the first, comes back looking identical to 1,220 corpus files and to every
     ///round trip here. The count is exactly the thing kinds 0 and 1 are easy to get wrong: a closed ring
     ///writes N-2 steps and lets the reader work the last corner out.
     ///
@@ -836,8 +838,8 @@ public class OasisWriterTests
     ///nothing else.
     ///
     ///It needs its own test because nothing else can fail on it. Writing the name every time is *correct*,
-    ///just longer, so every round trip passes and KLayout is happy; and the corpus, which is where a size
-    ///regression would otherwise show, has seven placements in one file out of 897.
+    ///just longer, so every round trip passes and KLayout is happy; and the cells, which are where a size
+    ///regression would otherwise show, have seven placements in one file out of 897.
     ///
     [Fact]
     public void A_placement_leaves_out_the_cell_the_last_one_named()
@@ -933,7 +935,7 @@ public class OasisWriterTests
     }
 
     ///
-    ///Three cells whose layers differ, which is the shape the 897 bundled files cannot make.
+    ///Three cells whose layers differ, which is the shape the 897 bundled cell files cannot make.
     ///
     ///**Every one of them holds exactly one cell.** So the corpus - the thing that catches nearly
     ///everything else about this writer - is blind to the whole question of what carries from the last
@@ -1029,7 +1031,9 @@ public class OasisWriterTests
     ///being lost. Measured at 1,191,819 bytes against the 9,632,982 of GDSII they came from - which is
     ///under the 1,206,187 KLayout writes the same corpus in.
     ///
-    ///The file count is asserted too, since a total is only a measurement if it is over what you think.
+    ///The file count is asserted too, since a total is only a measurement if it is over what you think. It is
+    ///the cells' folder alone: the bundled designs came later, and taking them in would move every number
+    ///here without the writer having changed.
     ///
     [Fact]
     public void The_corpus_is_no_larger_than_it_was_measured_at()
@@ -1038,7 +1042,7 @@ public class OasisWriterTests
         long asOasis = 0;
         int files = 0;
 
-        foreach (string path in GdsTestData.AllSampleFiles())
+        foreach (string path in GdsTestData.CellSampleFiles())
         {
             byte[] bytes = File.ReadAllBytes(path);
 
@@ -1061,7 +1065,7 @@ public class OasisWriterTests
     ///<summary>
     ///Every bundled file, written out and read back.
     ///
-    ///897 layouts' worth of coordinates, point counts and layer numbers - the part no hand-written fixture
+    ///1,220 layouts' worth of coordinates, point counts and layer numbers - the part no hand-written fixture
     ///covers. What it does *not* cover is in the class summary, and is why the fixture above exists.
     ///</summary>
     [Fact]
@@ -1140,7 +1144,7 @@ public class OasisWriterTests
     ///<summary>
     ///And a real layout, not only the fixture: the corpus is where the awkward coordinates are.
     ///
-    ///One file rather than 897, because each one is a KLayout launch - the corpus round trip above is what
+    ///One file rather than 1,220, because each one is a KLayout launch - the corpus round trip above is what
     ///covers the rest, and it has our own reader on the other end.
     ///</summary>
     [Fact]
@@ -1157,4 +1161,38 @@ public class OasisWriterTests
     }
 
     #endregion ***********************************************************************
+
+    #region The START record and the cells ********************************************
+
+    ///
+    ///The unit goes out as the whole number it is - 1000, a real of type 0 - where the quotient of two inexact doubles
+    ///went out as a type-7 real of 999.9999999999999, and a reader on the other side got a database unit of
+    ///1.0000000000000002e-3.
+    ///
+    [Fact]
+    public void The_unit_is_written_as_a_whole_number()
+    {
+        byte[] bytes = OasisWriter.Write(new GDS(GdsTestData.ReadSample(GdsTestData.MosfetSample)));
+
+        //After the magic, START, and the version "1.0": the real's type, then the integer 1000 in seven-bit bytes.
+        Assert.Equal(new byte[] { 0, 0xE8, 0x07 }, bytes[18..21]);
+    }
+
+    ///
+    ///KLayout reads a three-cell library this writes without a word about modal variables. Every second cell drew the
+    ///warning until 2026-11-03 - "Modal variable accessed before being defined" - since the writer left out what the
+    ///cell before had said, and a reader forgets it at every CELL. See OasisModalTests for the reading side.
+    ///
+    [Fact]
+    [Trait("Needs", "KLayout")]
+    public void Klayout_reads_every_cell_without_a_modal_variable_warning()
+    {
+        Assert.True(OasisTestData.Available, "KLayout is needed as the second reader here.");
+
+        string said = OasisTestData.KLayoutSaysReading(OasisWriter.Write(OasisBuilder.ThreeCellLibrary()), "threecells");
+
+        Assert.DoesNotContain("Modal variable", said);
+    }
+
+    #endregion **********************************************************************
 }

@@ -69,7 +69,7 @@ public class MeasureTests
     ///puts a unit out of place depending on which side of it the box sits.
     ///</summary>
     [Fact]
-    public void A_centre_rounds_the_same_way_on_both_sides_of_the_origin()
+    public void A_center_rounds_the_same_way_on_both_sides_of_the_origin()
     {
         Assert.Equal(At(2, 0), new Bounds(0, 0, 5, 0).Center);
         Assert.Equal(At(-3, 0), new Bounds(-5, 0, 0, 0).Center);

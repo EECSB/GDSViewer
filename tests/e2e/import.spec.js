@@ -64,8 +64,8 @@ test.describe('a file opened while one is already open', () => {
         await expect.poll(async () => openFile(page), { timeout: 30000 }).toContain('Mosfet');
     });
 
-    ///Cancelling is the third answer, and the one that has to leave no trace at all.
-    test('cancelling keeps the open file and forgets the new one', async ({ page }) => {
+    ///Canceling is the third answer, and the one that has to leave no trace at all.
+    test('canceling keeps the open file and forgets the new one', async ({ page }) => {
         await gotoExample(page, MOSFET, 'View2DSvg', true);
 
         const before = await shapeCount(page);
@@ -116,7 +116,8 @@ test.describe('a file opened while one is already open', () => {
         //Carried: the ghost exists and is drawn, before anything has been put down.
         await expect(page.locator('#carriedCell')).toHaveCount(1, { timeout: 60000 });
 
-        await expect.poll(async () => page.locator('#carriedCell path, #carriedCell polygon').count(),
+        await expect.poll(
+            async () => page.locator('#carriedCell path, #carriedCell polygon').count(),
             { timeout: 30000 }).toBeGreaterThan(0);
 
         //And the library holds what came in, under the open file's own name still.
@@ -153,7 +154,8 @@ test.describe('a file opened while one is already open', () => {
 
         await page.mouse.move(canvas.x + canvas.width * 0.7, canvas.y + canvas.height * 0.6);
 
-        await expect.poll(async () => page.locator('#carriedCell').getAttribute('transform'),
+        await expect.poll(
+            async () => page.locator('#carriedCell').getAttribute('transform'),
             { timeout: 15000 }).not.toBe(first);
     });
 
@@ -176,6 +178,30 @@ test.describe('a file opened while one is already open', () => {
         await page.mouse.up();
 
         //More on screen than there was, because the placed cell draws its own shapes into the layout.
+        await expect.poll(async () => shapeCount(page), { timeout: 60000 }).toBeGreaterThan(before);
+    });
+
+    ///
+    ///The cells are in the library the moment they are added, and drawn: the file's top cell is a top cell of this
+    ///library now, placed or not. Until 2026-11-03 the 2D view kept the layout it had, and the new cells were drawn
+    ///only after the view was switched away and back.
+    ///
+    test('what is added is drawn at once, placed or not', async ({ page }) => {
+        await gotoExample(page, MOSFET, 'View2DSvg', true);
+
+        const before = await shapeCount(page);
+
+        await upload(page);
+
+        await page.locator('#importAsCell').click();
+
+        await expect(page.locator('#carriedCell')).toHaveCount(1, { timeout: 60000 });
+
+        //Not placed: Escape puts the carried cell down nowhere.
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('#carriedCell')).toHaveCount(0);
+
         await expect.poll(async () => shapeCount(page), { timeout: 60000 }).toBeGreaterThan(before);
     });
 

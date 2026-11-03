@@ -92,6 +92,48 @@ public class NewLibraryTests
         Assert.Throws<ArgumentOutOfRangeException>(() => GDS.NewLibrary("LIB", "TOP", meters));
     }
 
+    ///<summary>And so is one that is no size at all: an infinity or a NaN would write a UNITS no reader can use.</summary>
+    [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    public void A_database_unit_that_is_not_a_number_is_refused(double meters)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => GDS.NewLibrary("LIB", "TOP", meters));
+    }
+
+    ///<summary>The size reads back as microns, which is what every ruler, writer and tool asks for.</summary>
+    [Theory]
+    [InlineData(1e-9, 0.001)]
+    [InlineData(1e-6, 1)]
+    [InlineData(2.5e-10, 0.00025)]
+    public void The_size_of_a_database_unit_reads_back_in_microns(double meters, double microns)
+    {
+        Assert.Equal(microns, GDS.NewLibrary("LIB", "TOP", meters).MicronsPerDatabaseUnit!.Value, 12);
+    }
+
+    ///
+    ///A file whose UNITS does not say a size - a zero, a negative, an infinity, a NaN, or too few values to hold one -
+    ///reads as nothing rather than as a guess, and each caller falls back to its own default from there: the DXF
+    ///writer and the DRC report to a nanometer, the views and the assistant to a micron. Put in behind the
+    ///encoder's back, because <see cref="GDS.NewLibrary"/> refuses every one of these, the encoder refuses the
+    ///infinity and the NaN, and no file can carry the last three - so this is the one way such a value arrives.
+    ///
+    [Theory]
+    [InlineData(new double[] { 0.001, 0 })]
+    [InlineData(new double[] { 0.001, -1e-9 })]
+    [InlineData(new double[] { 0.001, double.PositiveInfinity })]
+    [InlineData(new double[] { 0.001, double.NaN })]
+    [InlineData(new double[] { 0.001 })]
+    public void A_unit_that_is_not_a_size_reads_as_nothing(double[] units)
+    {
+        var gds = GDS.NewLibrary();
+
+        gds.StreamFormat.UNITS.Data = new Real8Data(units);
+
+        Assert.Null(gds.MicronsPerDatabaseUnit);
+    }
+
     ///<summary>A name left blank falls back, rather than writing a LIBNAME no reader is happy with.</summary>
     [Theory]
     [InlineData("")]
@@ -161,5 +203,44 @@ public class NewLibraryTests
 
         //And it survives being written out, which a shape added to a library with no UNITS would not.
         Assert.Single(GdsFlattener.Flatten(new GDS(gds.Serialize())).Elements);
+    }
+
+    ///
+    ///**A new library can start from a set of layers**, as the app's Set PDK does - and each comes
+    ///in a color of its own, where one added alone comes in gray. Twenty rows of one gray would be a list nobody could
+    ///tell apart, so the palette is divided again over the table.
+    ///
+    [Fact]
+    public void Layers_added_as_a_set_each_take_a_color_of_their_own()
+    {
+        var table = GDS.NewLibrary().AdditionalInformation;
+        var pairs = new[] { new LayerKey(68, 20), new LayerKey(66, 20), new LayerKey(67, 20) };
+
+        Assert.Equal(3, table.AddLayers(pairs));
+
+        var colors = pairs.Select(pair => table.Layers[pair].Color).ToList();
+
+        Assert.Equal(3, colors.Distinct().Count());
+        Assert.DoesNotContain(AdditionalGDSInformation.NewLayerColor, colors);
+
+        //And a pair already listed is not added twice, or counted.
+        Assert.Equal(1, table.AddLayers(new[] { new LayerKey(68, 20), new LayerKey(69, 20) }));
+        Assert.Equal(4, table.Layers.Count);
+    }
+
+    ///<summary>A color somebody chose stays when a set arrives - a new layer is no reason to take one back.</summary>
+    [Fact]
+    public void A_chosen_color_is_kept_when_a_set_of_layers_arrives()
+    {
+        var table = GDS.NewLibrary().AdditionalInformation;
+
+        table.AddLayer(new LayerKey(1, 0));
+        table.Layers[new LayerKey(1, 0)].Color = "#123456";
+        table.Layers[new LayerKey(1, 0)].ColorIsCustom = true;
+
+        table.AddLayers(new[] { new LayerKey(2, 0), new LayerKey(3, 0) });
+
+        Assert.Equal("#123456", table.Layers[new LayerKey(1, 0)].Color);
+        Assert.NotEqual(AdditionalGDSInformation.NewLayerColor, table.Layers[new LayerKey(2, 0)].Color);
     }
 }

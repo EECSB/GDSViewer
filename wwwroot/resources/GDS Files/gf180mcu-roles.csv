@@ -1,0 +1,194 @@
+#A layermap for GlobalFoundries' GF180MCU open PDK, as GDS Viewer's built-in gf180mcu carries it - the
+#counterpart of sky130-roles.csv, in the same columns and for the same reasons: a name for each layer, a height
+#for the 3D view, and a role for Trace net.
+#
+#**Every pair and every name is the foundry's own**, from the drawn-layer table of the GF180MCU design manual -
+#docs/physical_verification/design_manual/tables_clear/06_Drawn_layer10.csv in github.com/google/gf180mcu-pdk,
+#vendored at OtherResources/GF180 so that Gf180LayermapTests can hold this file to it. The names are written as
+#the manual writes them - COMP and Metal1, not comp and met1 - with its footnote numbers taken off. Its purposes
+#are written the way this app writes a purpose: Metal1_Label as Metal1.label, Metal1_Dummy as Metal1.dummy,
+#Metal1_Slot as Metal1.slot and Metal1_BLK as Metal1.blockage, so a label is where the app looks for one.
+#
+#**This is the gf180mcuD stack**: five metals, the fifth the top metal at 11K Angstrom, with the MIM capacitor
+#between Metal4 and Metal5 - the variant open_pdks says every open shuttle after the first would use (its NOTES,
+#2023-02-14). In a five-metal stack the top metal is drawn on Metal5, 81/0, and follows the MetalTop rules
+#(design manual 2.8, the table for design activities). MetalTop itself, 53/0, and Via5, 82/0, belong to the
+#six-metal stack. They are named here with their roles, but given no height, since this stack has no place for
+#them.
+#
+#The columns are layer,datatype,name,color,height,thickness,role,fill, as in sky130-roles.csv, and the colors
+#are left to the palette for the reason that file gives.
+#
+#**The heights and thicknesses are the foundry's, in nanometers**, which is the database unit GF180 layouts are
+#written in. They are read off the cross-section the PDK publishes for exactly this stack - "1P5M (TM 11KA with
+#MIM Option B) Structure", docs/analog/layout/inter_specs/images/2_cross_section_43.png, shown in the README -
+#measured up from the silicon surface, the top of the trench isolation:
+#
+#  a 50 nm nitride over everything and 860 of ILD put Metal1 at 910, and poly, 200 thick, sits on the surface;
+#  each metal is 550 thick, and each IMD 1150, which counts the metal it covers, so the vias are 600 tall;
+#  IMD4 is 1450, since the MIM sits in it, so Via4 is 900 and Metal5 starts at 5810;
+#  and the top metal is 1.1925 um thick, 1193 to the nearest nanometer.
+#
+#The same document's conductor and dielectric tables, 3_General_conductor.csv and 4_General_Dielectric.csv beside
+#the table above, give the same metals and IMDs, and Magic's tech file in open_pdks builds the same stack from the
+#bottom of the trench - Metal1 at 1.23, which is the trench's 0.32 plus 0.91.
+#
+#Two kinds of row are a judgment rather than a measurement.
+#
+#**A label or a dummy fill takes the height of the layer it is on.** A label sits on its metal rather than a step
+#off it, and dummy fill is metal like any other, poured on the same level to even the density out. A slot is a
+#hole in its metal and a blockage is an instruction to a router, so neither has a height.
+#
+#**And the wells and implants, which no public GF180 document gives a depth for.** COMP takes the depth of the
+#trench that bounds it, 320, which the cross-section does give, and the implants into it take the same. The wells
+#are put deeper, and the deep n-well deeper again - 1500 and 2500 - which says what order they are in and nothing
+#more.
+#
+#The markers - RES_MK, CAP_MK, the LVS marks, the border - are named so the layer panel reads as a process, and given
+#no height. None of them is on a wafer, so the 3D view leaves them out.
+#
+#**But not PR_bndry, the place-and-route boundary, though the manual puts it on 0/0 and every GF180 cell draws one.**
+#Layer 0 is where tool after tool puts whatever has no layer of its own - a DXF drawing's first layer among them - and
+#a file counts as drawn in a PDK when half its layers are the PDK's (LayerNames.Fits). Naming 0/0 here made a two-layer
+#DXF drawing GF180's, and its own layer names gave way to PR_bndry. A GF180 cell is GF180's by its other layers, and
+#shows its boundary as 0/0.
+#layer,datatype,name,color,height,thickness,role,fill
+#
+#The wells and implants, with no role: none of them carries a signal.
+21,0,Nwell,,-1500,1500,,
+204,0,LVPWELL,,-1500,1500,,
+12,0,DNWELL,,-2500,2500,,
+32,0,Nplus,,-320,320,,
+31,0,Pplus,,-320,320,,
+24,0,ESD,,-320,320,,
+5,0,NAT,,-320,320,,
+210,0,MVSD,,-320,320,,
+11,39,MVPSD,,-320,320,,
+#
+#Masks that change what is grown rather than adding a film: Dualgate, where the gate oxide is grown thick for the
+#5 V and 6 V devices, and SAB, which keeps the salicide off. No height for either.
+55,0,Dualgate,,,,,
+49,0,SAB,,,,,
+#
+#**COMP is given no role, though a source and a drain are both net nodes** - for the reason sky130-roles.csv gives
+#for diff. A transistor's COMP is one shape with the gate across it, so a conductor here would join source to
+#drain through the channel, and a trace would walk through every transistor to the supplies. A trace stops at the
+#contacts down to COMP instead.
+22,0,COMP,,-320,320,,
+30,0,Poly2,,0,200,conductor,
+62,0,Resistor,,0,200,,
+227,0,FHRES,,0,200,,
+#
+#The contact from COMP and Poly2 up to Metal1, and the metal stack, each level joined to the next by its own via.
+33,0,Contact,,0,910,via,
+34,0,Metal1,,910,550,conductor,
+35,0,Via1,,1460,600,via,
+36,0,Metal2,,2060,550,conductor,
+38,0,Via2,,2610,600,via,
+42,0,Metal3,,3210,550,conductor,
+40,0,Via3,,3760,600,via,
+46,0,Metal4,,4360,550,conductor,
+41,0,Via4,,4910,900,via,
+81,0,Metal5,,5810,1193,conductor,
+82,0,Via5,,,,via,
+53,0,MetalTop,,,,conductor,
+#
+#The MIM capacitor's top plate and the opening over a pad, with **no role** - for the reason sky130-roles.csv gives
+#for capm and pad. FuseTop is the top plate, 295 thick, on the capacitor's nitride over Metal4 - 42 nm in the
+#cross-section, which gives that film for a 1.5 fF/um2 capacitor; the PDK models 1, 1.5 and 2. A Via4 landing on
+#the plate also overlaps the Metal4 under it, and a via joins everything it overlaps, so a conductor here would
+#short the two plates in every trace. Pad is a hole in the passivation over Metal5.
+75,0,FuseTop,,4952,295,,
+37,0,Pad,,5810,1193,,
+#
+#The labels, each at the height of the layer it names. No role, as in sky130-roles.csv: the name of a traced net
+#is read from whatever text lands on it, whatever that layer is said to be.
+22,10,COMP.label,,-320,320,,
+30,10,Poly2.label,,0,200,,
+34,10,Metal1.label,,910,550,,
+36,10,Metal2.label,,2060,550,,
+42,10,Metal3.label,,3210,550,,
+46,10,Metal4.label,,4360,550,,
+81,10,Metal5.label,,5810,1193,,
+#
+#**Four pairs the manual does not list, from Magic's tech file in open_pdks** (gf180mcu/magic/gf180mcu.tech), which
+#writes them and which the bundled layouts carry: the wells' labels, NWELLTXT on 21/10 and PWELLTXT on 204/10, at the
+#heights of their wells; SUBCUT on 23/5, which marks an isolated patch of substrate; and VTEXT on 63/63, text that
+#Magic reads in and then ignores. The last two are markers, named and nothing else.
+21,10,Nwell.label,,-1500,1500,,
+204,10,LVPWELL.label,,-1500,1500,,
+23,5,SUBCUT,,,,,
+63,63,VTEXT,,,,,
+#
+#Dummy fill, at the height of its layer and with no role: floating metal, poly and COMP poured in to even the
+#density out, joined to nothing.
+22,4,COMP.dummy,,-320,320,,
+30,4,Poly2.dummy,,0,200,,
+34,4,Metal1.dummy,,910,550,,
+36,4,Metal2.dummy,,2060,550,,
+42,4,Metal3.dummy,,3210,550,,
+46,4,Metal4.dummy,,4360,550,,
+81,4,Metal5.dummy,,5810,1193,,
+#
+#Slots cut in wide metal, and the routers' blockages: named, with no height.
+34,3,Metal1.slot,,,,,
+36,3,Metal2.slot,,,,,
+42,3,Metal3.slot,,,,,
+46,3,Metal4.slot,,,,,
+81,3,Metal5.slot,,,,,
+34,5,Metal1.blockage,,,,,
+36,5,Metal2.blockage,,,,,
+42,5,Metal3.blockage,,,,,
+46,5,Metal4.blockage,,,,,
+81,5,Metal5.blockage,,,,,
+#
+#The rest of the manual's drawn layers, for options a layout seldom uses: fuses, bumping, Schottky and Zener diodes.
+96,1,FuseWindow_D,,,,,
+220,0,POLYFUSE,,,,,
+183,0,UBMPPeri,,,,,
+184,0,UBMPArray,,,,,
+185,0,UBMEPlate,,,,,
+241,0,Schottky_diode,,,,,
+178,0,ZENER,,,,,
+#
+#The marking layers - for DRC, for LVS and for the router - none of them on a wafer.
+63,0,Border,,,,,
+110,5,RES_MK,,,,,
+124,5,OPC_drc,,,,,
+111,5,NDMY,,,,,
+152,5,PMNDMY,,,,,
+112,1,V5_XTOR,,,,,
+117,5,CAP_MK,,,,,
+117,10,MIM_L_MK,,,,,
+166,5,MOS_CAP_MK,,,,,
+151,5,IND_MK,,,,,
+115,5,DIODE_MK,,,,,
+127,5,DRC_BJT,,,,,
+118,5,LVS_BJT,,,,,
+137,5,Latchup_MK,,,,,
+167,5,GUARD_RING_MK,,,,,
+173,5,OTP_MK,,,,,
+122,5,MTPMARK,,,,,
+88,17,NEO_EE_MK,,,,,
+108,5,SramCore,,,,,
+100,5,LVS_RF,,,,,
+100,7,LVS_Drain,,,,,
+100,8,LVS_Source,,,,,
+123,5,HVPOLYRS,,,,,
+119,5,LVS_IO,,,,,
+13,17,PROBE_MK,,,,,
+24,5,ESD_MK,,,,,
+153,51,WELL_DIODE_MK,,,,,
+226,0,LDMOS_XTOR,,,,,
+125,5,PLFUSE,,,,,
+80,5,EFUSE_MK,,,,,
+11,17,MCELL_FEOL_MK,,,,,
+86,17,YMTP_MK,,,,,
+128,17,DEV_WF_MK,,,,,
+116,5,MDIODE,,,,,
+110,11,Metal1_Res,,,,,
+110,12,Metal2_Res,,,,,
+110,13,Metal3_Res,,,,,
+110,14,Metal4_Res,,,,,
+110,15,Metal5_Res,,,,,
+110,16,Metal6_Res,,,,,

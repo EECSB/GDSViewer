@@ -1,6 +1,7 @@
 # GdsII
 
-Read, write, validate and convert **GDSII**, **OASIS** and **DXF** layout files from .NET. No dependencies.
+Read, write, validate and convert **GDSII**, **OASIS** and **DXF** layout files from .NET, and read **SVG**
+drawings into them. No dependencies.
 
 ```csharp
 using GdsII;
@@ -19,8 +20,8 @@ File.WriteAllBytes("cell.oas", OasisWriter.Write(gds));
 - **Three formats, all directions.** GDSII, OASIS (SEMI P39) and DXF read and written. Which one a file is
   comes off its first bytes rather than its extension, so a renamed file still opens. Converting keeps the
   hierarchy: cells stay cells and placements stay placements.
-- **Byte-exact round trip.** A file read and written back out is the same bytes, pinned against 897 real
-  sky130 layouts in the test suite.
+- **Byte-exact round trip.** A file read and written back out is the same bytes, pinned against 1,220 real
+  sky130, GF180 and IHP SG13G2 layouts in the test suite.
 - **Full record coverage**, including the rare Calma extensions — `SOFTFENCE`, `HARDWIRE`, `PATHPORT`,
   `CONTACT` and the rest — that most readers skip.
 - **Hierarchy resolved on request.** `GdsFlattener` places every `SREF` and `AREF` with its reflection,
@@ -30,15 +31,36 @@ File.WriteAllBytes("cell.oas", OasisWriter.Write(gds));
 - **Shapes, curves and routes.** Rectangles, circles, ellipses and regular polygons; Bézier curves; and a
   path builder that goes straight, bends by a radius and follows a curve, cut into elements at the vertex
   limit. A layout format has no curves, so the side count is an argument rather than a guess.
+- **SVG drawings in.** A drawing from Inkscape or Illustrator becomes a library: a fill or a stroke is the
+  area it paints, layers come from the drawing's own layers or its colors, and curves are flattened to
+  within a database unit.
 - **Boolean operations and sizing** over layout geometry — AND, OR, NOT, XOR and offset, via a vendored
-  Clipper2.
+  Clipper2 — and corners cut or rounded, each held to half of the edges beside it.
+- **Marks from numbers.** Die frames, alignment crosses and windows, verniers, test structures, ring
+  resonators, gratings, serpentines and chambers, centered on the origin and made at any size.
+- **Two layouts compared**, layer by layer, by what each draws rather than by its records: merged first, so
+  the same area cut differently is no difference, and kept apart by which file has it.
 - **Design rule checking** against a deck you supply - a small text file of width, spacing, enclosure,
   area, density and off-grid rules. `DrcDeck.Parse` reads it, `Drc.Check` runs it, and a rule this build
   cannot measure is refused by name rather than skipped, so a clean report is either complete or says so.
+  What it finds goes out as KLayout's `.lyrdb` with `DrcReport.Write`, and `DrcReport.Read` brings one back -
+  KLayout's own DRC run, say - placed on the layout the way KLayout's marker browser places it.
 - **Renders to SVG**, and dumps every record as text that reads back into an identical file — which is
   what makes an editor possible on top of it.
+- **And to PNG**, for a picture that is only looked at: `PngWriter` draws what `SvgWriter` writes - each layer's fill
+  or pattern, the outline, the opacity, in the same order - as pixels, a few hundred kilobytes where a chip's markup
+  is megabytes. `Preview.Picture` frames a whole layout for a thumbnail. Each shape adds the share of a pixel it
+  covers, so a block of cells smaller than a pixel apiece is the tone it is in the SVG rather than gaps.
+- **Masks as bitmaps** — one black and white PNG a layer, at a stated pixel size, for a mask writer that
+  takes pictures rather than polygons.
 - **Streaming.** `GDS.FromStream` and `FromStreamAsync` read straight off a handle rather than holding the
   whole file as an array first.
+- **Long walks that can stop.** Reading, flattening, indexing, writing SVG or PNG and merging layers each have an
+  async twin - `GDS.FromBytesAsync`, `GdsFlattener.FlattenAsync` (a whole library, or one cell by name),
+  `FlattenedLayout.IndexAsync`, `SvgWriter.BuildAsync`, `PngWriter.BuildAsync` and `Preview.PictureAsync`,
+  `Booleans.MergeByLayerAsync` - that awaits a pause you pass every so many steps, so a host on a single thread, a
+  browser say, keeps answering through a real chip and can throw from the pause to give the work up. The same
+  steps as the plain call, so the same answers.
 
 Nothing in here touches a renderer, a UI framework or a browser. It is the format and nothing else.
 
@@ -68,6 +90,9 @@ var poly = layout.Elements.Where(e => e.Layer.Key.Equals(new LayerKey(66, 20))).
 var diff = layout.Elements.Where(e => e.Layer.Key.Equals(new LayerKey(65, 20))).Select(e => e.Points).ToList();
 
 var gate = Booleans.Combine(poly, diff, BooleanOperation.And);
+
+//And what changed between two versions: the area one draws that the other does not.
+var comparison = Compare.Layouts(layout, GdsFlattener.Flatten(GDS.FromStream(File.OpenRead("before.gds"))));
 ```
 
 ## Creating a layout
@@ -112,6 +137,22 @@ File.WriteAllBytes("authored.gds", gds.Serialize());
 `RelayerElement`, `RetextElement`, `RenameStructure` and `RemoveStructure` change what is already there,
 `AddElement.CopyOf` duplicates it, and `CompoundEdit` makes several into one undo step. Each one can
 `Describe()` itself into a record you can store and `LayoutEdit.Rebuild` against the file reopened.
+
+An `EditHistory` keeps the undo and redo stacks - and, once `Written()` says the file has just been saved
+whole, a `Journal` of every step since, an undo included, each written down as it was taken. Saving those
+instead of the file is a few numbers an edit; `EditHistory.Replay` takes them again on the saved bytes.
+
+`Flattening.Edits` takes placements apart: what each one draws is written into the cell that holds it, a
+placement inside turned, mirrored and magnified with it, a path's width grown by its magnification, and an
+array as every place it has. `Hierarchy.Through` is the step underneath - any element's records put through a
+transform, its own orientation composed with it - and is what turning a placement where it sits uses too.
+
+```csharp
+//LEAF's instance above, taken apart: its path written into TOP, turned the way the instance turned it.
+var leaf = top.Elements.First(element => Hierarchy.PlacedBy(element) == "LEAF");
+
+new CompoundEdit("Flatten", Flattening.Edits(gds, top, new[] { leaf })!).Apply();
+```
 
 ## Shapes, curves and routes
 
@@ -215,9 +256,39 @@ what makes a new library somewhere you can start, since GDSII records a layer on
 gds.AdditionalInformation.AddLayer(new LayerKey(66, 44));   //false if the pair is already there
 ```
 
+## Tools for an AI assistant
+
+A model that edits a layout should call typed tools rather than write GDSII records. `AgentTools` is
+thirty-one of them - drawing, putting down `Marks`'s structures whole, editing, reading and checking rules - over the edits above, each with a JSON
+schema in the shape every provider's tool calling takes:
+
+```csharp
+var session = new AgentSession(gds, new EditHistory());
+
+//What the model is shown: a name, a description and an input schema per tool.
+foreach (var tool in AgentTools.All)
+    Console.WriteLine($"{tool.Name}: {tool.InputSchema().ToJsonString()}");
+
+//What it sends back, run. Sizes are microns; layers go by name or by numbers.
+var result = AgentTools.Call(session, "draw_rectangle", """{"layer": "68/20", "from": [0, 0], "to": [2, 0.5]}""");
+
+Console.WriteLine(result.Text);   //Drew a 2 by 0.5 µm rectangle on 68/20 in TOP, from (0, 0) to (2, 0.5): #1.
+```
+
+Each call is one step on the history, shapes are named by numbers that last the session, and anything wrong -
+a layer that is not there, a polygon that crosses itself - comes back as `IsError` with the reason and the
+layout untouched. `AgentTools.Conventions` is the paragraph for the system prompt. With a rule deck on the
+session, every change is followed by a check of the rules around it, and the answer says what it broke - and
+when the deck sets a manufacturing grid, the corners a tool works out (curves, bends, lettering, booleans and
+grows) are put on it. `DrcDeck.GridFor(layer)` says which grid a layer is drawn on, `Grid.Snap` puts an outline's
+corners on it, `Grid.SnapAll` does it to what a boolean or a grow made - leaving out pieces narrower than a step,
+and saying where one would fold - and `Grid.Crossing` says whether an outline crosses itself. `Grid.PathOutlineOff`
+says when a path that slants, bends or ends round is off it, and gives the outline to draw instead.
+
 ## Command-line tool
 
-The same library behind a command: `dotnet tool install -g GdsII.Cli`, then `gds`.
+The same library behind a command: `dotnet tool install -g GdsII.Cli`, then `gds`. `gds mcp` serves the tools
+above to Claude Desktop, Claude Code or any other MCP client, over a folder of layouts.
 
 ## More
 

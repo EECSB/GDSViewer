@@ -545,45 +545,47 @@ public class DrcEdgeTests
     }
 
     ///<summary>
-    ///Where the two still do **not** agree, pinned so it is a known limit rather than a surprise.
+    ///And at limits far past the shape, where the two used to part, they agree as well.
     ///
-    ///**This engine still reports more pairs than KLayout once the limit is large next to the shape**,
-    ///though far fewer than it did. Measured on the bundled transistor's poly:
+    ///**This engine reported more pairs than KLayout once the limit was large next to the shape**, and this
+    ///test pinned that as a known limit. Measured on the bundled transistor's poly:
     ///
     ///<code>
-    ///limit       200   300   500   2000
-    ///KLayout       1     2     6      7
-    ///at first      1     3     9     12
-    ///+ occlusion   1     3     8     10
-    ///+ dedup       1     2     7      9
+    ///limit              200   300   500   2000
+    ///KLayout              1     2     6      7
+    ///at first             1     3     9     12
+    ///+ occlusion          1     3     8     10
+    ///+ dedup              1     2     7      9
+    ///+ angles             1     2     5      6
+    ///+ the line walked    1     2     6      7
     ///</code>
     ///
-    ///Two causes were found and fixed. Occlusion - a pair whose ground between it is not what the check is
-    ///about. And duplication: two edges meet at every corner and both face whatever is across from it, so a
-    ///nearest approach landing on a corner was reported twice.
+    ///Occlusion is a pair whose ground between it is not what the check is about, and duplication a nearest
+    ///approach landing on a corner reported once from each edge meeting there.
     ///
-    ///**What is left is not a measurement difference but a counting one, and it was read off both engines'
-    ///output rather than guessed.** At a limit of 500 KLayout reports the base's bottom edge against one
-    ///span covering a step and the stripe edge above it; this reports it against each of those edges
-    ///separately. Same ground, same distances, coalesced there and not here. Closing it means merging pairs
-    ///that continue each other along a boundary, which is a change to the shape of the answer.
-    ///
-    ///It does not touch the projection metric, which agrees exactly, and it does not touch a limit anywhere
-    ///near a real one: a rule saying poly must be 2 microns wide on a transistor 1.5 microns across is not
-    ///a rule.
+    ///**What was left was read as a counting difference, and it was not one.** Every pair this reported that
+    ///KLayout does not was two edges at right angles - the base's bottom against the stripe's side, the base's
+    ///left against its own top beyond the stripe, the base's right against the stripe's top - which KLayout's
+    ///angle limit excludes whether the two meet or not, and this engine excluded only where they met. Held to
+    ///it everywhere (2026-11-02, for IHP's SG13G2, where stairs of 5 nm steps are made of nothing else), the
+    ///count fell one under KLayout's, and that one was a pair the corner-to-corner pairs had been standing in
+    ///for: the base's left against the stripe's right, 400 apart along the base's top, which the single point
+    ///the ground between was tested at had always left out. Walking the line it was measured along brought it
+    ///back.
     ///</summary>
     [Fact]
     [Trait("Needs", "KLayout")]
-    public void The_known_divergence_at_an_absurd_limit()
+    public void The_count_matches_klayout_at_an_absurd_limit()
     {
         Assert.True(OasisTestData.Available, "KLayout is needed as the second engine here.");
 
-        int mine = DrcEdges.Width(ShapesOn(Mosfet(), new LayerKey(66, 20)), 2000, DrcMetric.Euclidean).Count;
-        int theirs = OasisTestData.RuleViolations(MosfetPath, 66, 20, "width", 2000, "Euclidian");
+        foreach (int limit in new[] { 500, 2000 })
+        {
+            int mine = DrcEdges.Width(ShapesOn(Mosfet(), new LayerKey(66, 20)), limit, DrcMetric.Euclidean).Count;
+            int theirs = OasisTestData.RuleViolations(MosfetPath, 66, 20, "width", limit, "Euclidian");
 
-        //Both find the layer too narrow; this one counts more pairs on the way.
-        Assert.True(theirs > 0 && mine > 0, "neither engine found anything, so this pins nothing");
-        Assert.True(mine > theirs, $"this engine reported {mine} against KLayout's {theirs}, so the known over-report has changed");
+            Assert.Equal(theirs, mine);
+        }
     }
 
     #endregion **************************************************************************

@@ -1,6 +1,8 @@
-//The address describes what is on screen: ?view= and ?file= open the app where a link was taken from,
-//and choosing either through the UI writes it back. This is the layer that makes a link shareable, so
-//it is worth asserting both directions rather than only that the parameters are read.
+//The address is a way in: ?view= and ?file= open the app where a link was taken from. Only ?view= is
+//written back, when a view is chosen. ?file= leaves the address once its file is open and nothing writes it
+//in again, so a reload brings back the session - the file as it was left - rather than a fresh copy of it.
+//Share is what makes a link to the file now, and the 3D view's QR code. Both directions are asserted, since
+//a parameter that is read correctly can still be written back where it should not be.
 const { test, expect } = require('@playwright/test');
 const {
     gotoApp,
@@ -10,27 +12,32 @@ const {
     selectView,
     selectExample,
     svgCounts,
+    hideLayer,
+    layerCheckbox,
     MOSFET,
+    MOSFET_POLYGONS,
     SKY130_CELL
 } = require('./helpers');
 
+///What the address says about a parameter, or null when it says nothing.
+function named(page, parameter) {
+    return new URL(page.url()).searchParams.get(parameter);
+}
+
 ///
-///A bare address opens the bundled example, and then says so.
+///A bare address opens the bundled example, and stays bare.
 ///
-///?view= is still not written in - a bare link already lands in the 2D view, so there is nothing to
-///record. ?file= is, because something was chosen: the address describes what is on screen, and arriving
-///bare now ends in the same state as arriving on ?file=Mosfet.
+///Neither parameter is written in. A bare link already lands in the 2D view, so there is no view to record,
+///and the address does not name the open file at all - a reload goes to the session, which knows it.
 ///
-test('a bare address opens the bundled example and names it', async ({ page }) => {
+test('a bare address opens the bundled example and does not name it', async ({ page }) => {
     await gotoApp(page);
 
     await expect(page.locator('#gdsSVG')).toBeVisible();
     await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
 
-    const query = new URL(page.url()).searchParams;
-
-    expect(query.get('file')).toBe(MOSFET);
-    expect(query.get('view')).toBeNull();
+    expect(named(page, 'file')).toBeNull();
+    expect(named(page, 'view')).toBeNull();
 });
 
 test('?view= opens that view', async ({ page }) => {
@@ -87,6 +94,44 @@ test('?file= opens that example, and ?view= alongside it is honored too', async 
     await expect(page.getByRole('link', { name: /PDK Docs/ })).toBeVisible();
 });
 
+///
+///**And then ?file= leaves the address**, once its file is open. The view stays: an address without one
+///would put the 3D view back to 2D on the next navigation.
+///
+test('?file= leaves the address once its file is open, and ?view= stays', async ({ page }) => {
+    await gotoExample(page, SKY130_CELL, '3d');
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${SKY130_CELL}.gds`);
+    await expect.poll(() => named(page, 'file'), { timeout: 20000 }).toBeNull();
+
+    expect(named(page, 'view')).toBe('3d');
+    await expect(page.locator('#container canvas')).toBeVisible();
+});
+
+///
+///**Which is what makes a reload come back to the file as it was left.** With ?file= still there, a reload
+///was a link followed again: the file opened fresh and the session was not asked, so a layer hidden since
+///was showing again.
+///
+test('a reload after following a link brings back the session, not a fresh copy of the file', async ({ page }) => {
+    await gotoExample(page, MOSFET);
+
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+    await expect.poll(() => named(page, 'file'), { timeout: 20000 }).toBeNull();
+
+    await hideLayer(page);
+
+    const afterHiding = (await svgCounts(page)).polygons;
+
+    expect(afterHiding).toBeLessThan(MOSFET_POLYGONS);
+
+    await page.reload();
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
+    await expect.poll(async () => (await svgCounts(page)).polygons, { timeout: 30000 }).toBe(afterHiding);
+    await expect(layerCheckbox(page)).toHaveClass(/layerEyeOff/);
+});
+
 test('a ?file= that names nothing is reported and leaves the app usable', async ({ page }) => {
     const messages = [];
     page.on('dialog', dialog => { messages.push(dialog.message()); dialog.dismiss(); });
@@ -98,27 +143,73 @@ test('a ?file= that names nothing is reported and leaves the app usable', async 
     await expect.poll(() => messages.join(' ')).toContain('no bundled example');
     await expect.poll(() => messages.join(' ')).toContain('sky130_');
 
+    //And it stays in the address, so it can be put right where it was typed.
+    expect(named(page, 'file')).toBe('nand2_1');
+
     //Still usable afterwards: choosing a real file works. Polled, because the draw follows the load rather
     //than coming with it - reading once races whatever the open path happens to do first.
     await selectExample(page, `${MOSFET}.gds`);
     await expect.poll(async () => (await svgCounts(page)).polygons).toBeGreaterThan(0);
+
+    //Until something else is open, when a reload has to come back to that rather than to the broken link.
+    await expect.poll(() => named(page, 'file'), { timeout: 20000 }).toBeNull();
 });
 
-test('choosing a view writes it into the address', async ({ page }) => {
+test('choosing a view writes it into the address, and nothing about the file', async ({ page }) => {
     await gotoExample(page, MOSFET);
 
     await selectView(page, 'View3D');
 
-    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('3d');
-    //And the file it was already showing is still named there.
-    expect(new URL(page.url()).searchParams.get('file')).toBe(MOSFET);
+    await expect.poll(() => named(page, 'view')).toBe('3d');
+
+    //A link opened it, and that link's file= left once it was open.
+    expect(named(page, 'file')).toBeNull();
 });
 
-test('choosing an example writes it into the address without disturbing the view', async ({ page }) => {
+test('choosing an example leaves the address alone, the view included', async ({ page }) => {
     await gotoApp(page, '?view=3d');
 
-    await selectExample(page, `${MOSFET}.gds`);
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
 
-    await expect.poll(() => new URL(page.url()).searchParams.get('file')).toBe(MOSFET);
-    expect(new URL(page.url()).searchParams.get('view')).toBe('3d');
+    await selectExample(page, `${SKY130_CELL}.gds`);
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${SKY130_CELL}.gds`);
+
+    expect(named(page, 'file')).toBeNull();
+    expect(named(page, 'view')).toBe('3d');
+});
+
+///
+///**Inside somebody else's page the address is theirs**, and is left exactly as they wrote it.
+///
+///The browser can bring a frame back at the address it has now rather than the one the page wrote - going
+///Back to the page does - and every viewer on a page shares one session. A frame that had lost its file=
+///would open whichever file was saved last, so two embeds of two files would come back as the same one.
+///
+test('inside an iframe, the address is left as the page around it wrote it', async ({ page, baseURL }) => {
+    const embedded = `${baseURL}/?file=${MOSFET}&view=2d&tree=false&box=500,600,4000,4000`;
+
+    //A page on the app's own origin, the way an embedder's page is on theirs: written here rather than served.
+    await page.route(`${baseURL}/embedding-page.html`, route => route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><iframe src="${embedded.replaceAll('&', '&amp;')}" width="1200" height="800"></iframe>`
+    }));
+
+    await page.goto('/embedding-page.html');
+
+    const frame = page.frameLocator('iframe');
+
+    await expect.poll(async () => frame.locator('#mainAppContainer').getAttribute('data-file'), { timeout: 60000 })
+        .toBe(`${MOSFET}.gds`);
+
+    //The point at which the address would have been tidied, were it the app's: the link's framing has landed.
+    await expect.poll(async () => {
+        const box = await frame.locator('#gdsSVG').getAttribute('viewBox');
+
+        return (box ?? '').trim().split(/\s+/).map(Number);
+    }, { timeout: 20000 }).toEqual([500, 600, 4000, 4000]);
+
+    await page.waitForTimeout(1000);
+
+    expect(page.mainFrame().childFrames()[0].url()).toBe(embedded);
 });

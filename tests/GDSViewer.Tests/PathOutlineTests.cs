@@ -122,7 +122,7 @@ public class PathOutlineTests
     }
 
     ///<summary>
-    ///A path that nearly doubles back would mitre to an arbitrarily long spike, so past the limit the
+    ///A path that nearly doubles back would miter to an arbitrarily long spike, so past the limit the
     ///corner is cut off square instead. The give-away is the outline staying near the path.
     ///</summary>
     [Fact]
@@ -327,7 +327,7 @@ public class PathOutlineTests
     #region The bundled corpus *********************************************************
 
     ///<summary>
-    ///898 paths across 387 of the sample files, every one of them PATHTYPE 0. Each must now enclose real
+    ///1,615 paths across the sample files - 898 of them in the cells, every one PATHTYPE 0. Each must now enclose real
     ///area - that is the whole point of the change - and stay a sane size relative to its centerline.
     ///</summary>
     [Fact]
@@ -387,4 +387,22 @@ public class PathOutlineTests
     }
 
     #endregion ************************************************************************
+
+    #region Width *********************************************************************
+
+    ///
+    ///A negative WIDTH is the format's absolute one - a width the parent's magnification does not scale - and it is a
+    ///width: taken as zero, a path 200 units wide drew as a hairline, with an extent of no height at all.
+    ///
+    [Fact]
+    public void A_negative_width_is_drawn_at_its_size()
+    {
+        var absolute = Outline(Line(0, 0, 1000, 0), -200);
+        var plain = Outline(Line(0, 0, 1000, 0), 200);
+
+        Assert.Equal(plain, absolute);
+        Assert.Equal(200 * 1000, Math.Abs(SignedArea(absolute)));
+    }
+
+    #endregion *************************************************************************
 }

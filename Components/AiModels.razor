@@ -1,0 +1,493 @@
+@using GDSViewer.Ai
+@using GdsII
+@implements IDisposable
+@inject IAiService ai
+
+@*
+    The saved AI models: a picker, and the form that adds and edits them.
+
+    **One list, kept here and picked from in the chat.** The settings window shows all of it; the chat's model menu
+    reads the same list (2026-11-01; a picker-only copy of this component until then), since a chat is for talking to a
+    model rather than for keeping the list of them. Both go through the IAiService, so a model added here is offered
+    there at once - and a service whose models are a host app's to give (ModelsEditable false) gets the picker alone.
+
+    Ported from GraphDBViewer's LlmConnectionPicker, rule for rule: the form always shows the model picked, a server
+    of one's own needs an address before it is sent anything, and a key saved for an https address is held back from
+    an http one until it is typed again (SavedSecretRule).
+*@
+<div class="aiModelRow">
+    <select id="aiModelPicker" class="aiField aiPicker" value="@selectedKey" @onchange="selectionChanged"
+            aria-label="AI model"
+            title="Which saved model answers. Models are added and changed under Settings, AI settings">
+        @if (connections.Count == 0)
+        {
+            <option value="">No models yet - add one</option>
+        }
+
+        @foreach (var (name, connection) in connections)
+        {
+            <option value="@name">@name (@providerName(connection.ProviderType))</option>
+        }
+    </select>
+
+    @*Squares, as the PDK manager's are (2026-11-01, asked for - they were words).*@
+    @if (ai.ModelsEditable)
+    {
+        <button id="aiModelAdd" class="buttonStyle2 smallButton actionIcon" @onclick="startAdd" aria-label="Add a model" title="Add a model">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 2.6v10.8M2.6 8h10.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+        </button>
+        <button id="aiModelDelete" class="buttonStyle2 smallButton actionIcon selectionDelete" @onclick="deleteAsync"
+                disabled="@(selected() is null)" aria-label="Delete the model picked" title="Delete the model picked">
+            <svg viewBox="0 0 16 16" aria-hidden="true">@((MarkupString)SvgWriter.IconFor(SvgWriter.ShapeIcon.Delete))</svg>
+        </button>
+    }
+
+    @*
+        What the models are for, behind an (i) at the end of the row (2026-11-01, asked for) - it was a paragraph over the
+        picker. Hovered, or reached with Tab, its words show under it; nothing to press. A service whose models are a
+        host app's to give says whose they are - see IAiService.
+    *@
+    <span class="aiInfoAnchor">
+        <button id="aiModelsInfo" type="button" class="aiInfoButton" aria-label="About the models" aria-describedby="aiModelsInfoPop">
+            <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.4" />
+                <path d="M8 7.2v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
+            </svg>
+        </button>
+        <span id="aiModelsInfoPop" class="aiInfoPop" role="tooltip">@infoSaid()</span>
+    </span>
+</div>
+
+@if (ai.ModelsEditable && showForm)
+{
+    <div class="aiModelForm">
+        <label class="aiFormRow">
+            <span class="aiFormLabel">Name</span>
+            <input id="aiModelName" class="aiField" placeholder="e.g. Claude" @bind="formName" />
+        </label>
+
+        <div class="aiFormRow">
+            <span class="aiFormLabel">Provider</span>
+
+            @*The same pair the side panel switches with, because it is the same kind of choice: one of a few.*@
+            <div class="sidebarPanelPick" role="group" aria-label="Provider">
+                @foreach (var (type, says) in Providers)
+                {
+                    var choosing = type;
+
+                    <button id="aiProvider@(type)" type="button" class="sidebarPanelChoice @(form.ProviderType == type ? "sidebarPanelChoiceOn" : "")"
+                            aria-pressed="@(form.ProviderType == type ? "true" : "false")"
+                            @onclick="() => chooseProvider(choosing)">@says</button>
+                }
+            </div>
+        </div>
+
+        <div class="aiFormNote">@providerNote()</div>
+
+        @if (form.ProviderType != LlmConnection.Anthropic)
+        {
+            <label class="aiFormRow">
+                <span class="aiFormLabel">Address</span>
+                <input id="aiModelBaseUrl" class="aiField" placeholder="@baseUrlPlaceholder()" @bind="form.BaseUrl" @bind:after="keepTheSavedKeyToItsTransport" />
+            </label>
+        }
+
+        @*
+            Read as it is typed rather than when the box is left: the price note under the rates says what is known of the
+            model typed, and written on leaving the box it appeared under a press on Save - moving Save from under the
+            pointer between the press and the release, so the press did nothing.
+        *@
+        <label class="aiFormRow">
+            <span class="aiFormLabel">Model</span>
+            <input id="aiModelId" class="aiField" placeholder="@modelPlaceholder()" @bind="form.Model" @bind:event="oninput" />
+        </label>
+
+        <label class="aiFormRow">
+            <span class="aiFormLabel">API key</span>
+            <input id="aiModelKey" class="aiField" type="password" autocomplete="off" @bind="form.ApiKey" />
+        </label>
+
+        @*Only Anthropic sends a cap - the OpenAI-compatible adapter leaves it to the server, so the box would do nothing there.*@
+        @if (form.ProviderType == LlmConnection.Anthropic)
+        {
+            <label class="aiFormRow" title="The longest an answer may be. A ceiling, not an allowance: what is billed is what the model writes, so raise it if an answer stops mid-sentence">
+                <span class="aiFormLabel">Max tokens</span>
+                <input id="aiModelMaxTokens" class="aiField aiNumber" type="number" min="1" @bind="form.MaxTokens" />
+            </label>
+        }
+
+        @*
+            The model's own rates, in US dollars a million tokens - what the chat prices each answer and its estimate at
+            (asked for 2026-10-29). Blank takes the published rate, shown in the box when there is one; a model with
+            neither shows its tokens and no cost.
+        *@
+        <div class="aiFormRow" title="What a million tokens cost on this model, in US dollars: read, read back from the provider's cache, and written. Blank uses the published rate where there is one">
+            <span class="aiFormLabel">
+                Price
+                <span class="aiPriceUnit" title="US dollars per million tokens">$ / M tokens</span>
+            </span>
+
+            <div class="aiPriceFields">
+                <label class="aiPriceField">
+                    in
+                    <input id="aiPriceInput" class="aiField aiPriceNumber" type="number" min="0" step="any" placeholder="@pricePlaceholder(0)" @bind="form.InputPrice" />
+                </label>
+
+                <label class="aiPriceField">
+                    cached
+                    <input id="aiPriceCached" class="aiField aiPriceNumber" type="number" min="0" step="any" placeholder="@pricePlaceholder(1)" @bind="form.CachedPrice" />
+                </label>
+
+                <label class="aiPriceField">
+                    out
+                    <input id="aiPriceOutput" class="aiField aiPriceNumber" type="number" min="0" step="any" placeholder="@pricePlaceholder(2)" @bind="form.OutputPrice" />
+                </label>
+
+            </div>
+        </div>
+
+        <div id="aiPriceNote" class="aiFormNote">@priceNote()</div>
+
+        @if (savedKey.Says(form.ApiKey))
+        {
+            <div id="aiKeyHeldBack" class="aiFormWarning">
+                The key saved with this model was given for an encrypted address, so it is not sent or saved for this one,
+                which is not. Type it again to use it here, or give the address https and it comes back.
+            </div>
+        }
+
+        @if (formError.Length > 0)
+        {
+            <div id="aiModelError" class="aiFormError">@formError</div>
+        }
+
+        @*A tick and a turn back at the form's end (2026-11-01, asked for - they were Save and Cancel in words).*@
+        <div class="aiFormButtons">
+            <button id="aiModelCancel" class="buttonStyle2 smallButton actionIcon aiQuiet" @onclick="cancelForm"
+                    aria-label="Cancel" title="Cancel: put back what is saved">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M3 6.5h7a3.5 3.5 0 0 1 0 7H6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    <path d="M5.6 3.6L2.8 6.5l2.8 2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+            <button id="aiModelSave" class="buttonStyle2 smallButton actionIcon" @onclick="saveAsync"
+                    aria-label="@saveLabel()" title="@saveLabel()">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M3 8.4l3.2 3.2L13 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private string infoSaid()
+    {
+        if (ai.ModelsEditable)
+            return "Add a model to turn the assistant on: Anthropic, OpenAI, Gemini, or your own OpenAI-compatible server, with your own key.";
+
+        return "The models the assistant can use, given by the app GDS Viewer is part of.";
+    }
+
+    ///<summary>Raised whenever the model picked changes: on load, on a pick, a save and a delete. Null when there are none.</summary>
+    [Parameter]
+    public EventCallback<LlmConnection?> SelectedChanged { get; set; }
+
+    private static readonly (string Type, string Says)[] Providers =
+    {
+        (LlmConnection.Anthropic, "Anthropic"),
+        (LlmConnection.OpenAI, "OpenAI"),
+        (LlmConnection.Gemini, "Gemini"),
+        (LlmConnection.Custom, "Other")
+    };
+
+    private Dictionary<string, LlmConnection> connections = new Dictionary<string, LlmConnection>();
+    private string selectedKey = "";
+
+    private bool showForm;
+    private bool isEditing;
+    private string formName = "";
+    private string? originalName;
+    private LlmConnection form = new LlmConnection();
+    private string formError = "";
+
+    ///<summary>The key the model in the form was saved with, held back while the form's address is not encrypted.</summary>
+    private readonly SavedSecretRule savedKey = new SavedSecretRule();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ai.ModelsChanged += modelsChanged;
+
+        connections = await ai.LoadModelsAsync();
+        selectedKey = connections.Keys.FirstOrDefault() ?? "";
+
+        showSelected();
+
+        await SelectedChanged.InvokeAsync(selected());
+    }
+
+    public void Dispose()
+    {
+        ai.ModelsChanged -= modelsChanged;
+    }
+
+    private LlmConnection? selected()
+    {
+        if (selectedKey.Length > 0 && connections.TryGetValue(selectedKey, out var connection))
+            return connection;
+
+        return null;
+    }
+
+    ///
+    ///Another picker saved. Read the list again and keep what was picked if it is still there - the one that saved
+    ///has already moved its own pick, and moving it a second time would undo that.
+    ///
+    private async Task modelsChanged()
+    {
+        connections = await ai.LoadModelsAsync();
+
+        if (!connections.ContainsKey(selectedKey))
+            selectedKey = connections.Keys.FirstOrDefault() ?? "";
+
+        //Not while somebody is typing into the form: a save in another window is no reason to throw that away.
+        if (!showForm)
+            showSelected();
+
+        await SelectedChanged.InvokeAsync(selected());
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task selectionChanged(ChangeEventArgs e)
+    {
+        selectedKey = e.Value?.ToString() ?? "";
+
+        //The form shows whatever is picked, so picking another model is what an Edit button would have been.
+        showSelected();
+
+        await SelectedChanged.InvokeAsync(selected());
+    }
+
+    ///<summary>The model picked, in the form - or no form, when nothing is picked.</summary>
+    private void showSelected()
+    {
+        if (selected() is not LlmConnection chosen)
+        {
+            showForm = false;
+
+            return;
+        }
+
+        isEditing = true;
+        form = new LlmConnection(chosen);
+        savedKey.Remember(chosen.ApiKey, LlmConnection.Encrypts(chosen));
+        formName = chosen.Name;
+        originalName = chosen.Name;
+        formError = "";
+        showForm = true;
+    }
+
+    private void startAdd()
+    {
+        isEditing = false;
+        form = new LlmConnection();
+        savedKey.Remember(null, false);
+        formName = "";
+        originalName = null;
+        formError = "";
+        showForm = true;
+    }
+
+    private void keepTheSavedKeyToItsTransport()
+    {
+        form.ApiKey = savedKey.Keep(form.ApiKey, LlmConnection.Encrypts(form));
+    }
+
+    ///<summary>Another provider is another address, and may be one without TLS.</summary>
+    private void chooseProvider(string type)
+    {
+        form.ProviderType = type;
+
+        keepTheSavedKeyToItsTransport();
+    }
+
+    private async Task saveAsync()
+    {
+        string name = formName.Trim();
+
+        if (name.Length == 0)
+        {
+            formError = "Give the model a name.";
+
+            return;
+        }
+
+        if ((!isEditing || name != originalName) && connections.ContainsKey(name))
+        {
+            formError = "A model with that name already exists.";
+
+            return;
+        }
+
+        //A server of one's own has no address but this one, and is sent nothing without it (OpenAiProvider.NoAddress).
+        if (form.ProviderType == LlmConnection.Custom && string.IsNullOrWhiteSpace(form.BaseUrl))
+        {
+            formError = "A server of your own needs its address.";
+
+            return;
+        }
+
+        if (form.ProviderType != LlmConnection.Anthropic && string.IsNullOrWhiteSpace(form.Model))
+        {
+            formError = "Give the model's id, which the provider lists.";
+
+            return;
+        }
+
+        if (form.InputPrice < 0 || form.CachedPrice < 0 || form.OutputPrice < 0)
+        {
+            formError = "A price is a number of dollars, zero or more.";
+
+            return;
+        }
+
+        //The last word before it is saved, for an address changed some other way than its own field.
+        keepTheSavedKeyToItsTransport();
+
+        if (form.ProviderType != LlmConnection.Custom && string.IsNullOrWhiteSpace(form.ApiKey))
+        {
+            formError = $"{providerName(form.ProviderType)} needs an API key.";
+
+            return;
+        }
+
+        if (isEditing && originalName is not null && name != originalName)
+            connections.Remove(originalName);
+
+        form.Name = name;
+        form.ApiKey = form.ApiKey?.Trim();
+        connections[name] = form;
+        selectedKey = name;
+        formError = "";
+
+        await ai.SaveModelsAsync(connections);
+
+        showSelected();
+
+        await SelectedChanged.InvokeAsync(selected());
+    }
+
+    ///<summary>The form always shows the model picked, so this puts back what is saved and drops the edits on screen.</summary>
+    private void cancelForm()
+    {
+        formError = "";
+
+        showSelected();
+    }
+
+    private async Task deleteAsync()
+    {
+        if (selected() is null)
+            return;
+
+        connections.Remove(selectedKey);
+        selectedKey = connections.Keys.FirstOrDefault() ?? "";
+
+        showSelected();
+
+        await ai.SaveModelsAsync(connections);
+        await SelectedChanged.InvokeAsync(selected());
+    }
+
+    private string saveLabel()
+    {
+        if (isEditing)
+            return "Save the model";
+
+        return "Add the model";
+    }
+
+    private static string providerName(string type)
+    {
+        if (type == LlmConnection.Custom)
+            return "Other";
+
+        return type;
+    }
+
+    private string providerNote()
+    {
+        if (form.ProviderType == LlmConnection.Anthropic)
+            return "Claude. A key comes from console.anthropic.com.";
+
+        if (form.ProviderType == LlmConnection.OpenAI)
+            return "A key comes from platform.openai.com.";
+
+        if (form.ProviderType == LlmConnection.Gemini)
+            return "A key comes from aistudio.google.com, which has a free tier.";
+
+        return "Any OpenAI-compatible server - Ollama, LM Studio, vLLM - that allows requests from this page (CORS).";
+    }
+
+    private string baseUrlPlaceholder()
+    {
+        if (form.ProviderType == LlmConnection.Gemini)
+            return OpenAiProvider.GeminiBaseUrl + " (default)";
+
+        if (form.ProviderType == LlmConnection.Custom)
+            return "http://localhost:11434/v1";
+
+        return OpenAiProvider.DefaultBaseUrl + " (default)";
+    }
+
+    ///<summary>The published rate a blank price box stands for - input, cached or output - or nothing where none is known.</summary>
+    private string pricePlaceholder(int which)
+    {
+        if (AiPricing.Published(AiPricing.ModelOf(form), form.ProviderType, DateTime.UtcNow) is not LlmPrice published)
+            return "";
+
+        decimal rate = published.Output;
+
+        if (which == 0)
+            rate = published.Input;
+        else if (which == 1)
+            rate = published.Cached;
+
+        return rate.ToString("0.00##", CultureInfo.InvariantCulture);
+    }
+
+    ///<summary>Under the prices: where a blank box's rate comes from, or that there is none.</summary>
+    private string priceNote()
+    {
+        string model = AiPricing.ModelOf(form);
+
+        if (model.Length == 0)
+            return "";
+
+        if (AiPricing.Published(model, form.ProviderType, DateTime.UtcNow) is not null)
+            return $"Grayed: {model}'s published rates, read {AiPricing.ReadOn}. Leave a box blank to use them.";
+
+        return $"No published rate is known here for {model}. Without one the chat shows the tokens an answer took, and no cost.";
+    }
+
+    ///
+    ///What the model field suggests. Anthropic's is the model a blank field runs, read from the provider so the two
+    ///cannot drift; the others are required, and theirs is only an example of what to type.
+    ///
+    private string modelPlaceholder()
+    {
+        if (form.ProviderType == LlmConnection.Anthropic)
+            return AnthropicProvider.DefaultModel + " (default)";
+
+        if (form.ProviderType == LlmConnection.OpenAI)
+            return "e.g. " + OpenAiProvider.OpenAiExample;
+
+        if (form.ProviderType == LlmConnection.Gemini)
+            return "e.g. " + OpenAiProvider.GeminiExample;
+
+        return "the model's name on that server";
+    }
+}

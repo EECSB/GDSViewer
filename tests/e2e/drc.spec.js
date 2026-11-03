@@ -2,7 +2,9 @@
 //
 //Driven through the real file picker rather than by calling the engine, because the engine is already
 //covered by DrcDeckTests, DrcLayerTests, DrcCheckTests and DrcRunTests. What needs a browser is the upload,
-//the panel, the markers landing in the SVG as real elements, and clicking a rule to frame the view.
+//the panel, the markers landing in the SVG as real elements, and clicking a rule to frame the view. The
+//picker is the PDK manager's rules Import since 2026-10-19, when the rules panel's own Import, Export, Clear
+//and Example went there: a deck goes into the PDK in use, which checks the file drawn in it.
 //
 //**The markers being elements at all is the thing worth a browser.** They are appended to the markup the
 //view builds rather than put on the DOM by JavaScript, and the first version of this passed a literal
@@ -10,7 +12,7 @@
 //every C# test still passed through happily because the markup it produced was perfectly correct. Nothing
 //but a real page can tell markup that is right from markup that arrived.
 const { test, expect } = require('@playwright/test');
-const { gotoExample, selectExample, shapeCount, shapeBox, chooseShape, CLEAR_OF_PANEL, MOSFET, SKY130_CELL } = require('./helpers');
+const { gotoExample, selectExample, shapeCount, shapeBox, chooseShape, storedSession, downloadBytes, importRules, bareNumbers, CLEAR_OF_PANEL, MOSFET, SKY130_CELL } = require('./helpers');
 
 ///A deck naming one layer Mosfet.gds uses, with a width nothing could satisfy - so it always finds a fault.
 const FINDS_SOMETHING = [
@@ -36,11 +38,12 @@ const CANNOT_MEASURE = [
 async function openRules(page) {
     await page.locator('#sidebarPanelRules').click();
 
-    await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
+    await expect(page.locator('.rulesList')).toBeVisible();
 }
 
 ///
-///Picks a deck file through the real input, and waits for *that* deck to be the one showing.
+///Picks a deck file through the real input - the PDK manager's, into the PDK in use, sky130 on Mosfet - and waits
+///for *that* deck to be the one showing.
 ///
 ///**Waiting for the Check button was waiting for something already true.** A sky130 example arrives with a
 ///bundled deck of thirty rules, so `#drcRun` is visible before the upload even starts - measured:
@@ -55,15 +58,11 @@ async function openRules(page) {
 ///
 ///Counting the deck's own `rule` lines rather than asserting "not thirty", so it says what it means and
 ///holds for a deck of any size. A refused rule renders as a `.rulesRow` too, which is what `CANNOT_MEASURE`
-///needs. And the rows only render when the handler completes - which is after the `saveSession` it
-///awaits - so this covers the persistence and not merely the parse.
+///needs. And the rows only render once the PDK has been kept and laid over the file again, so this covers
+///the persistence and not merely the parse.
 ///
 async function loadDeck(page, contents, name = 'probe.drc') {
-    await page.locator('#drcDeckImport').setInputFiles({
-        name,
-        mimeType: 'text/plain',
-        buffer: Buffer.from(contents, 'utf8')
-    });
+    await importRules(page, contents, name);
 
     const rules = contents.split('\n').filter(line => line.trim().startsWith('rule ')).length;
 
@@ -85,35 +84,6 @@ async function runDeck(page) {
 ///is mounted, so a single read races it.
 async function markerCount(page) {
     return page.evaluate(() => document.querySelectorAll('#gdsSVG .drcMarker, #gdsSVG .drcMarkerPoint').length);
-}
-
-///
-///Drops whatever deck is loaded, which a bundled example now arrives with.
-///
-///Most of these start from an empty panel, and since the deck comes automatically that is a Clear away
-///rather than the state a file opens in.
-///
-async function clearDeck(page) {
-    await page.locator('#drcClear').click();
-
-    await expect(page.locator('#drcRun')).toHaveCount(0);
-}
-
-///
-///Loads the bundled deck through the Example offer.
-///
-///The button lives inside a popup the wrapper opens on hover, so it has to be hovered rather than clicked
-///straight away - `hover()` drives the real CSS :hover, which is what the popup is built on.
-///
-async function loadBundledDeck(page) {
-    await page.locator('#drcExampleOffer').hover();
-
-    //The popup waits a third of a second before opening, so a pointer passing over cannot trip it.
-    await expect(page.locator('#drcBundled')).toBeVisible();
-
-    await page.locator('#drcBundled').click();
-
-    await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
 }
 
 test.describe('the rules panel', () => {
@@ -181,49 +151,50 @@ test.describe('the rules panel', () => {
     ///
     ///Every file this app ships is a sky130 cell and the deck for them ships beside the layermap that is
     ///already applied the same way - so opening one and finding the panel empty sent somebody to fetch a
-    ///file the app was already holding. The empty state is what a Clear leaves behind, and this checks
-    ///both halves of that.
+    ///file the app was already holding. It is the real deck rather than an empty one: the whole file, rules
+    ///and all.
     ///
     test('a bundled example opens with its rules already loaded', async ({ page }) => {
         await openRules(page);
 
         await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
         await expect(page.locator('.rulesRow')).not.toHaveCount(0);
+        await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all \d\d rule/);
 
-        //Nothing to offer while it is loaded.
-        await expect(page.locator('#drcExampleOffer')).toHaveCount(0);
-
-        await clearDeck(page);
-
-        //And with it gone, Import and the Example offer are what is left.
-        await expect(page.locator('label[for="drcDeckImport"]')).toBeVisible();
-        await expect(page.locator('#drcExampleOffer')).toBeVisible();
-        await expect(page.locator('#drcRun')).toHaveCount(0);
+        //The PDK's own, so nothing says otherwise.
+        await expect(page.locator('#rulesNotPdk')).toHaveCount(0);
     });
 
     ///
-    ///A Clear speaks for the file it was made on, and stops there.
+    ///**A file the PDK in use does not check says so, and where rules come from** - the PDK manager over the panel,
+    ///since the panel's own Import and Example went there (2026-10-19). It said to import a deck, or take one.
     ///
-    ///It has to outlast a reload, or the panel would fill straight back up and Clear would read as a button
-    ///that does nothing. But it was outlasting everything: one Clear while looking round the examples, and
-    ///every example opened afterwards arrived with an empty panel - for a PDK this app ships the deck for
-    ///and knows the file belongs to. Nothing on screen explained it, and the way back was behind a hover.
-    ///
-    ///Through the picker rather than the address, because the picker is where it was reported from.
-    ///
-    test('clearing the deck does not follow you to the next example', async ({ page }) => {
+    test('a file the PDK in use does not check says why the panel is empty', async ({ page }) => {
+        await bareNumbers(page);
         await openRules(page);
-        await clearDeck(page);
 
-        await expect(page.locator('#drcExampleOffer')).toBeVisible();
+        await expect(page.locator('#drcRun')).toHaveCount(0);
+        await expect(page.locator('#rulesNone')).toHaveText('No rules here: this file is not drawn in New PDK, the PDK in use. Choose or make another in the PDK manager above.');
+    });
+
+    ///
+    ///A run's markers are about the file it ran on, so opening another takes them off - and the line counting
+    ///them goes with them.
+    ///
+    ///They stayed. An edit dropped the result, and so did a new deck, but nothing did when the file itself
+    ///changed - so the next file opened under the last one's markers and its count of faults.
+    ///
+    test('opening a different file takes the last run off', async ({ page }) => {
+        await openRules(page);
+        await loadDeck(page, FINDS_SOMETHING);
+        await runDeck(page);
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
 
         await selectExample(page, `${SKY130_CELL}.gds`);
 
-        await openRules(page);
-
-        //A different sky130 cell, so the deck for it applies again.
-        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
-        await expect(page.locator('.rulesRow')).not.toHaveCount(0);
+        await expect.poll(() => markerCount(page), { timeout: 30000 }).toBe(0);
+        await expect(page.locator('#drcNotice')).toHaveCount(0);
     });
 
     test('a deck arrives, is listed rule by rule, and offers to be run', async ({ page }) => {
@@ -238,9 +209,9 @@ test.describe('the rules panel', () => {
     ///
     ///A deck outlives a reload, the way a layermap does.
     ///
-    ///Both are PDK data a GDSII file cannot carry and both arrive from a file the user picks, which is the
-    ///argument for the two controls sitting in the same place - so a reload that remembered one and forgot
-    ///the other sent somebody back to the file picker for no reason they could see.
+    ///Both are PDK data a GDSII file cannot carry, and both are kept with the PDK they went into - so a reload
+    ///that remembered one and forgot the other would send somebody back to the file picker for no reason they
+    ///could see.
     ///
     test('a deck outlives a reload', async ({ page }) => {
         await openRules(page);
@@ -282,25 +253,6 @@ test.describe('the rules panel', () => {
     });
 
     ///
-    ///The starter deck ships beside the examples and is one press away.
-    ///
-    ///**Because the examples it is written for are one press away.** A deck kept only in the repository is
-    ///one you have to go and find, and somebody looking at a bundled sky130 cell in a browser has no
-    ///repository in front of them.
-    ///
-    test('the deck that ships with the examples can be picked', async ({ page }) => {
-        await openRules(page);
-        await clearDeck(page);
-
-        await expect(page.locator('#drcExampleOffer')).toBeVisible();
-
-        await loadBundledDeck(page);
-
-        //It is the real deck rather than an empty one - the whole file, rules and all.
-        await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all \d\d rule/);
-    });
-
-    ///
     ///And running it over the bundled transistor finds nothing, which is the first thing anybody will do.
     ///
     ///Worth a test of its own rather than trusting the parse: a starter deck whose own demonstration
@@ -318,14 +270,6 @@ test.describe('the rules panel', () => {
         await expect(page.locator('#drcNotice')).toContainText('no violations');
         await expect(page.locator('#drcNotice')).toHaveClass(/drawHintClear/);
         await expect.poll(() => markerCount(page)).toBe(0);
-    });
-
-    ///Once it is the deck in hand there is nothing left to pick, so the offer stands aside.
-    test('the bundled control goes once its deck is the one loaded', async ({ page }) => {
-        await openRules(page);
-
-        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
-        await expect(page.locator('#drcExampleOffer')).toHaveCount(0);
     });
 
     test('a clean run says so rather than leaving the view silent', async ({ page }) => {
@@ -357,6 +301,45 @@ test.describe('the rules panel', () => {
         await loadDeck(page, CANNOT_MEASURE);
 
         await expect(page.locator('.rulesRowRefused')).toContainText('poly.4');
+    });
+
+    ///
+    ///**The deck that fails on purpose says it is not the PDK's**, where the panel's row was, and goes back to the PDK's
+    ///rules from there - for every file after it, and through a reload, a deck the PDK did not put there stays until
+    ///it is. Clear did that until 2026-10-19, in the row that went to the PDK manager.
+    ///
+    test('the deck that fails on purpose says it is not the PDK\'s, and gives the PDK\'s rules back', async ({ page }) => {
+        await openRules(page);
+
+        await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all 30 rule/, { timeout: 60000 });
+
+        //From the PDK manager's help on rules, which puts the manager away with the deck loaded.
+        await page.locator('#sidebarPdkManager').click();
+        await page.locator('#pdkRulesTab').click();
+        await page.locator('#pdkHelp').click();
+        await page.locator('#loadStrictDeck').click();
+
+        await expect(page.locator('#pdkManagerWindow')).toBeHidden();
+        await expect(page.locator('#rulesNotPdk')).toContainText('not sky130\'s rules');
+
+        await runDeck(page);
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+
+        //Still there after a reload, which keeps a deck loaded by hand.
+        await page.reload();
+        await openRules(page);
+
+        await expect(page.locator('#rulesNotPdk')).toBeVisible({ timeout: 60000 });
+
+        await page.locator('#rulesBackToPdk').click();
+
+        await expect(page.locator('#rulesNotPdk')).toHaveCount(0);
+        await expect(page.locator('#drcRun')).toHaveAttribute('title', /against all 30 rule/);
+
+        await runDeck(page);
+
+        await expect(page.locator('#drcNotice')).toContainText('no violations');
     });
 });
 
@@ -495,7 +478,7 @@ test.describe('checking as the layout changes', () => {
     ///
     ///The shell drops its flattened layout when the library is changed in place, and the check read that
     ///null as "nothing to check" and returned. So **from the first edit onward DRC Check did nothing** -
-    ///no marks, no message, and a deck listed above saying the rules were loaded. It took "check on edit"
+    ///no marks, no message, and a deck listed above saying the rules were loaded. It took "check on every edit"
     ///with it, since that runs through the same method. It works a layout out now rather than returning.
     ///
     test('the button still checks after an edit', async ({ page }) => {
@@ -618,7 +601,7 @@ test.describe('the markers', () => {
     ///
     ///The drawing hints above it come and go with the tool in hand; this one is about a run that has
     ///finished, so nothing else takes it off the drawing it is sitting over. Closing it leaves the marks
-    ///and the flagged rule exactly where they were - Clear in the panel is what takes those off.
+    ///and the flagged rule exactly where they were - an edit, another file or another deck is what takes those off.
     ///
     test('the message closes without taking the markers with it', async ({ page }) => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
@@ -630,24 +613,123 @@ test.describe('the markers', () => {
         await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
         await expect(page.locator('.rulesRowBroken')).toHaveCount(1);
     });
+});
 
-    ///
-    ///Clearing drops the deck as well as the marks, the way Clear does one panel over.
-    ///
-    ///The two Clears sit in the same place in the same row, so they mean the same thing: the layer one
-    ///drops an imported layermap rather than merely what it is drawing, and this drops an imported deck.
-    ///It used to keep the deck, which made one a reset and the other a tidy-up.
-    ///
-    test('clearing drops the deck along with the marks', async ({ page }) => {
-        await page.locator('#drcClear').click();
+///
+///A rule switched off, with the eye a layer row carries, does not run.
+///
+///Two rules, one that finds something and one that finds nothing, so what goes when one is switched off can be
+///told from what a run would have found anyway. Switching one with a result on screen runs the check again: a
+///rule switched back on has nothing to show until it has been measured.
+///
+test.describe('switching rules off', () => {
+    const TWO_RULES = [
+        'layer poly 66/20',
+        'rule poly.1a width poly 100000 "Absurd poly width"',
+        'rule poly.1b width poly 100 "Poly width"'
+    ].join('\n');
 
+    ///The row of the rule with that id.
+    function ruleRow(page, id) {
+        return page.locator('.rulesRow').filter({ has: page.locator('.rulesId', { hasText: id }) }).first();
+    }
+
+    test.beforeEach(async ({ page }) => {
+        await gotoExample(page, MOSFET, 'View2DSvg');
+        await openRules(page);
+        await loadDeck(page, TWO_RULES);
+        await runDeck(page);
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+    });
+
+    test('a rule switched off is left out of the check, and back on is in it again', async ({ page }) => {
+        const eye = ruleRow(page, 'poly.1a').locator('.rulesEyeButton');
+
+        await eye.click();
+
+        await expect(eye).toHaveAttribute('aria-pressed', 'false');
+        await expect(ruleRow(page, 'poly.1a')).toHaveClass(/rulesRowOff/);
         await expect.poll(() => markerCount(page)).toBe(0);
-        await expect(page.locator('#drcNotice')).toHaveCount(0);
+        await expect(page.locator('.rulesRowBroken')).toHaveCount(0);
+        await expect(page.locator('#drcNotice')).toContainText('1 switched off');
 
-        //No deck, so nothing to run and the empty state is back with its offer.
-        await expect(page.locator('#drcRun')).toHaveCount(0);
+        await eye.click();
+
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+        await expect(page.locator('.rulesRowBroken')).toHaveCount(1);
+    });
+
+    ///
+    ///The header's eye does every rule at once - all off while none is, all on while any is - and a run with
+    ///every rule off says it checked nothing, in the attention color rather than the green of a clean layout.
+    ///
+    test('the header switches every rule, and a run of none says nothing was checked', async ({ page }) => {
+        const all = page.locator('#allRulesOn');
+
+        await all.click();
+
+        await expect(all).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.locator('.rulesRowOff')).toHaveCount(2);
+        await expect.poll(() => markerCount(page)).toBe(0);
+        await expect(page.locator('#drcNotice')).toContainText('nothing checked');
+        await expect(page.locator('#drcNotice')).not.toHaveClass(/drawHintClear/);
+
+        //One switched back on by hand is a mixed column, and the header's press then switches them all on.
+        await ruleRow(page, 'poly.1b').locator('.rulesEyeButton').click();
+        await expect(all).toHaveAttribute('aria-pressed', 'mixed');
+
+        await all.click();
+
+        await expect(page.locator('.rulesRowOff')).toHaveCount(0);
+        await expect.poll(() => markerCount(page)).toBeGreaterThan(0);
+    });
+
+    ///Asked first, and only the rules go: the deck stays loaded, with somewhere to add the next one.
+    test('the header removes every rule, after asking', async ({ page }) => {
+        page.once('dialog', dialog => dialog.dismiss());
+        await page.locator('#removeAllRules').click();
+
+        await expect(page.locator('.rulesRow')).toHaveCount(2);
+
+        page.once('dialog', dialog => dialog.accept());
+        await page.locator('#removeAllRules').click();
+
         await expect(page.locator('.rulesRow')).toHaveCount(0);
-        await expect(page.locator('#drcExampleOffer')).toBeVisible();
+        await expect(page.locator('#drcRun')).toBeVisible();
+        await expect(page.locator('#addRule')).toBeVisible();
+    });
+
+    test('a rule switched off stays off across a reload', async ({ page }) => {
+        await ruleRow(page, 'poly.1a').locator('.rulesEyeButton').click();
+        await expect(ruleRow(page, 'poly.1a')).toHaveClass(/rulesRowOff/);
+
+        await page.reload();
+        await openRules(page);
+
+        await expect(ruleRow(page, 'poly.1a')).toHaveClass(/rulesRowOff/, { timeout: 60000 });
+        await expect(ruleRow(page, 'poly.1b')).not.toHaveClass(/rulesRowOff/);
+    });
+
+    ///
+    ///The header's eye and × stand over the columns of them, which stand flush right on every row - they had
+    ///auto margins of their own, so the gear sat a different distance from the × on every row.
+    ///
+    test('the header lines up over the rows, and the rows over each other', async ({ page }) => {
+        const lefts = await page.evaluate(() => {
+            const x = element => Math.round(element.getBoundingClientRect().left);
+            const rows = [...document.querySelectorAll('.rulesRow')];
+
+            return {
+                eyes: [...new Set(rows.map(row => x(row.querySelector('.rulesEyeButton'))))],
+                removes: [...new Set(rows.map(row => x(row.querySelector('.rulesRemove'))))],
+                headerEye: x(document.querySelector('#allRulesOn')),
+                headerRemove: x(document.querySelector('#removeAllRules'))
+            };
+        });
+
+        expect(lefts.eyes).toEqual([lefts.headerEye]);
+        expect(lefts.removes).toEqual([lefts.headerRemove]);
     });
 });
 
@@ -750,5 +832,137 @@ test.describe('a rule\'s settings', () => {
 
         await expect(page.locator('.ruleSettingsPopup')).toHaveCount(0);
         await expect(page.locator('.rulesLimit')).toHaveText('100');
+    });
+});
+
+///
+///A fault can be waived - looked at and let stand - from the line a rule's row steps it into.
+///
+///Three li1 faults on the transistor under a width nothing meets, so one can be waived with two left standing.
+///What takes a browser: the row walking the view through the faults, the marker going gray, the notice leaving
+///it out of the count, the session keeping it across a reload, and the report the panel hands over.
+///
+test.describe('waivers', () => {
+    const THREE_FAULTS = [
+        'layer li1 67/20',
+        'rule li1.1 width li1 100000 "Absurd li1 width"'
+    ].join('\n');
+
+    ///Which fault the marker picked out as the one stepped to is, by its place in the run - or null for none.
+    async function currentMarker(page) {
+        return page.evaluate(() => document.querySelector('#gdsSVG .drcMarkerCurrent')?.getAttribute('data-violation') ?? null);
+    }
+
+    async function waivedMarkers(page) {
+        return page.evaluate(() => document.querySelectorAll('#gdsSVG .drcMarkerWaived').length);
+    }
+
+    ///Steps into the rule's first fault and waives it, and waits for the button to say it can be taken back.
+    async function waiveTheFirst(page) {
+        await page.locator('.rulesRowBroken').first().click();
+        await page.locator('#drcWaive').click();
+
+        await expect(page.locator('#drcWaive')).toHaveText('Unwaive');
+    }
+
+    test.beforeEach(async ({ page }) => {
+        await gotoExample(page, MOSFET, 'View2DSvg');
+        await openRules(page);
+        await loadDeck(page, THREE_FAULTS);
+        await runDeck(page);
+
+        await expect.poll(() => markerCount(page)).toBe(3);
+    });
+
+    ///A press on the row goes to its first fault and the next press to the next, and the line under the list says which.
+    test('a rule row steps through its faults', async ({ page }) => {
+        const row = page.locator('.rulesRowBroken').first();
+
+        await row.click();
+
+        await expect(page.locator('#drcCurrent')).toContainText('li1.1 1 of 3');
+        await expect(row.locator('.rulesCount')).toHaveText('1/3');
+        await expect.poll(() => currentMarker(page)).toBe('0');
+
+        await row.click();
+
+        await expect(page.locator('#drcCurrent')).toContainText('li1.1 2 of 3');
+        await expect.poll(() => currentMarker(page)).toBe('1');
+    });
+
+    ///Still drawn - it was found - in the waived gray, and out of the count the notice gives.
+    test('a waived fault is drawn gray and left out of the count', async ({ page }) => {
+        await waiveTheFirst(page);
+
+        await expect(page.locator('#drcCurrent')).toContainText('waived');
+        await expect(page.locator('#drcNotice')).toContainText('2 violations');
+        await expect(page.locator('#drcNotice')).toContainText('1 waived');
+
+        await expect.poll(() => waivedMarkers(page)).toBe(1);
+        await expect.poll(() => markerCount(page)).toBe(3);
+
+        const stroke = await page.evaluate(() => getComputedStyle(document.querySelector('#gdsSVG .drcMarkerWaived')).stroke);
+
+        expect(stroke).toBe('rgb(154, 160, 166)');
+    });
+
+    ///
+    ///Kept by what the fault is, so a run again finds it waived - after a reload too, where the result itself is
+    ///not brought back but the waiver is - and Unwaive counts it again.
+    ///
+    test('a waiver outlives a reload and a run again, and Unwaive takes it back', async ({ page }) => {
+        await waiveTheFirst(page);
+
+        //Saved before the reload, or the reload can beat the save - see loadDeck.
+        await expect.poll(() => storedSession(page), { timeout: 60000 }).toContain('"wv":["li1.1@');
+
+        await page.reload();
+
+        await openRules(page);
+        await expect(page.locator('#drcRun')).toBeVisible({ timeout: 60000 });
+        await runDeck(page);
+
+        await expect(page.locator('#drcNotice')).toContainText('2 violations');
+        await expect(page.locator('#drcNotice')).toContainText('1 waived');
+
+        //The first fault is the waived one, so its button offers to take the waiver back.
+        await page.locator('.rulesRowBroken').first().click();
+        await expect(page.locator('#drcWaive')).toHaveText('Unwaive');
+
+        await page.locator('#drcWaive').click();
+
+        await expect(page.locator('#drcWaive')).toHaveText('Waive');
+        await expect(page.locator('#drcNotice')).toContainText('3 violations');
+        await expect(page.locator('#drcNotice')).not.toContainText('waived');
+        await expect.poll(() => waivedMarkers(page)).toBe(0);
+    });
+
+    ///A waiver is about a fault in this layout, so a different file opened leaves it behind - in the stored session too.
+    test('a different file opened leaves the waiver behind', async ({ page }) => {
+        await waiveTheFirst(page);
+
+        await expect.poll(() => storedSession(page), { timeout: 60000 }).toContain('"wv":["li1.1@');
+
+        await selectExample(page, `${SKY130_CELL}.gds`);
+
+        await expect.poll(() => storedSession(page), { timeout: 60000 }).toContain(SKY130_CELL);
+        expect(await storedSession(page)).not.toContain('li1.1@');
+    });
+
+    ///The report the panel hands over carries the waiver as KLayout's own tag, on the one fault waived.
+    test('the report carries the waiver as KLayout tags it', async ({ page }) => {
+        await waiveTheFirst(page);
+
+        const started = page.waitForEvent('download');
+
+        await page.locator('#drcReport').click();
+
+        const download = await started;
+        const text = (await downloadBytes(download)).toString('utf8');
+
+        expect(download.suggestedFilename()).toMatch(/\.lyrdb$/);
+        expect(text.split('<tags>waived</tags>').length - 1).toBe(1);
+        expect(text).toContain('<name>waived</name>');
+        expect(text.split('<item>').length - 1).toBe(3);
     });
 });

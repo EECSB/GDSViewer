@@ -1,0 +1,160 @@
+@*
+    A small picture on a tour card, for the few stops where showing says it quicker than the words: the three views
+    side by side, a rectangle drawn by a drag, a layer's eye hiding it, a sentence to the AI turning into a square,
+    and the places two files differ.
+
+    **Only where it earns its room** (2026-11-03, asked for, "if it makes sense"): the other cards are about a button
+    whose part shows through the shade already, and a picture there would only repeat it.
+
+    Drawn here rather than as image files so they follow the theme and stay crisp at any zoom. The moving ones loop
+    by CSS - see .tourPicture in app.css - and hold still on their last frame when the system asks for less motion.
+    The layer colors are fixed ones, a met1 blue, a poly red and a diffusion green, so they read on both themes.
+*@
+
+<div class="tourPicture tourPicture-@Name" aria-hidden="true">
+    @if (Name == "views")
+    {
+        <svg viewBox="0 0 300 104">
+            @*2D: the layers flat, one over the other.*@
+            <rect class="tourPanel" x="4" y="4" width="92" height="78" rx="4" />
+            <rect class="tourDiff" x="18" y="34" width="62" height="24" />
+            <rect class="tourPoly" x="42" y="16" width="12" height="58" />
+            <rect class="tourMet1" x="24" y="48" width="48" height="16" />
+            <text class="tourLabel" x="50" y="98">2D</text>
+
+            @*3D: the same three, each a slab at its own height.*@
+            <rect class="tourPanel" x="104" y="4" width="92" height="78" rx="4" />
+            <polygon class="tourDiff" points="116,68 166,68 184,56 134,56" />
+            <polygon class="tourPoly" points="130,52 146,52 164,40 148,40" />
+            <polygon class="tourMet1" points="120,36 166,36 182,24 136,24" />
+            <path class="tourRise" d="M116 68v-4M166 68v-4M184 56v-4M130 52v-4M146 52v-4M164 40v-4M120 36v-4M166 36v-4M182 24v-4" />
+            <text class="tourLabel" x="150" y="98">3D</text>
+
+            @*The records the file is made of.*@
+            <rect class="tourPanel" x="204" y="4" width="92" height="78" rx="4" />
+            <text class="tourCode" x="212" y="22">BOUNDARY</text>
+            <text class="tourCode" x="212" y="35">LAYER 68</text>
+            <text class="tourCode" x="212" y="48">DATATYPE 20</text>
+            <text class="tourCode" x="212" y="61">XY 0 0 2000 0</text>
+            <text class="tourCode" x="212" y="74">ENDEL</text>
+            <text class="tourLabel" x="250" y="98">Records</text>
+        </svg>
+    }
+    else if (Name == "draw")
+    {
+        <svg viewBox="0 0 300 104">
+            <rect class="tourPanel" x="4" y="4" width="292" height="96" rx="4" />
+            <path class="tourGrid" d="M44 4v96M84 4v96M124 4v96M164 4v96M204 4v96M244 4v96M4 28h292M4 52h292M4 76h292" />
+
+            @*D for Draw, pressed first.*@
+            <g class="tourDrawKey">
+                <rect class="tourKey" x="14" y="12" width="20" height="20" rx="3" />
+                <rect class="tourKeyLit" x="14" y="12" width="20" height="20" rx="3" />
+                <text class="tourKeyText" x="24" y="26">D</text>
+            </g>
+
+            @*The rectangle, from where the drag started to where the pointer is.*@
+            <rect class="tourMet1 tourDrawRect" x="84" y="28" width="120" height="48" vector-effect="non-scaling-stroke" />
+
+            <g transform="translate(84 28)">
+                <g class="tourDrawPointer">
+                    <path class="tourPointer" d="M0 0v15l4-4 3 7 3-1.4-3-6.6h5.6z" />
+                </g>
+            </g>
+        </svg>
+    }
+    else if (Name == "layers")
+    {
+        <svg viewBox="0 0 300 104">
+            <rect class="tourPanel" x="4" y="4" width="120" height="96" rx="4" />
+
+            @*Three rows of the list, and the middle one's eye closes and opens again.*@
+            <g transform="translate(14 14)">
+                <path class="tourEye" d="M1 8c3-5 11-5 14 0-3 5-11 5-14 0z" />
+                <circle class="tourEyeDot" cx="8" cy="8" r="2" />
+                <rect class="tourMet1" x="24" y="3" width="10" height="10" />
+                <text class="tourRow" x="42" y="12">met1</text>
+            </g>
+
+            <g transform="translate(14 44)">
+                <g class="tourEyeOpen">
+                    <path class="tourEye" d="M1 8c3-5 11-5 14 0-3 5-11 5-14 0z" />
+                    <circle class="tourEyeDot" cx="8" cy="8" r="2" />
+                </g>
+                <g class="tourEyeShut">
+                    <path class="tourEye" d="M1 8c3-5 11-5 14 0-3 5-11 5-14 0z" />
+                    <path class="tourEye" d="M2 14 14 2" />
+                </g>
+                <rect class="tourPoly" x="24" y="3" width="10" height="10" />
+                <text class="tourRow tourHiddenRow" x="42" y="12">poly</text>
+            </g>
+
+            <g transform="translate(14 74)">
+                <path class="tourEye" d="M1 8c3-5 11-5 14 0-3 5-11 5-14 0z" />
+                <circle class="tourEyeDot" cx="8" cy="8" r="2" />
+                <rect class="tourDiff" x="24" y="3" width="10" height="10" />
+                <text class="tourRow" x="42" y="12">diff</text>
+            </g>
+
+            @*The drawing the list is about.*@
+            <rect class="tourPanel" x="132" y="4" width="164" height="96" rx="4" />
+            <rect class="tourDiff" x="156" y="38" width="116" height="30" />
+            <rect class="tourPoly tourHiddenShape" x="202" y="16" width="20" height="74" />
+            <rect class="tourMet1" x="166" y="56" width="96" height="20" />
+        </svg>
+    }
+    else if (Name == "ai")
+    {
+        <svg viewBox="0 0 300 104">
+            <defs>
+                <clipPath id="tourTyped">
+                    <rect class="tourTypedSoFar" x="118" y="10" width="172" height="30" />
+                </clipPath>
+            </defs>
+
+            @*What was asked, typed a letter at a time.*@
+            <rect class="tourBubble" x="110" y="10" width="184" height="28" rx="12" />
+            <text class="tourAsked" x="120" y="28" clip-path="url(#tourTyped)">a 2 µm met1 square at the origin</text>
+
+            @*And what the assistant drew: the square, on the origin.*@
+            <rect class="tourPanel" x="4" y="10" width="98" height="90" rx="4" />
+            <path class="tourAxis" d="M14 78h80M30 92V18" />
+            <text class="tourTick" x="26" y="88">0</text>
+            <rect class="tourMet1 tourAiSquare" x="30" y="42" width="36" height="36" vector-effect="non-scaling-stroke" />
+
+            <g class="tourAiDone">
+                <rect class="tourReply" x="110" y="52" width="150" height="26" rx="12" />
+                <text class="tourReplied" x="120" y="69">Drew #1 on met1, no faults</text>
+            </g>
+        </svg>
+    }
+    else if (Name == "compare")
+    {
+        <svg viewBox="0 0 300 104">
+            <rect class="tourPanel" x="4" y="4" width="200" height="96" rx="4" />
+
+            @*Where one draws and the other does not, both ways round.*@
+            <path class="tourDiffers" d="M40 16h100v14H70v42H40z" />
+            <path class="tourDiffers" d="M140 30h40v58H70V72h70z" />
+
+            <rect class="tourThis" x="40" y="16" width="100" height="56" />
+            <rect class="tourOther" x="70" y="30" width="110" height="58" />
+
+            @*The marker, stepping from one difference to the next.*@
+            <circle class="tourMarker" cx="55" cy="44" r="11" />
+
+            <rect class="tourThis" x="214" y="20" width="14" height="10" />
+            <text class="tourRow" x="234" y="29">this file</text>
+            <rect class="tourOther" x="214" y="46" width="14" height="10" />
+            <text class="tourRow" x="234" y="55">the other</text>
+            <rect class="tourDiffers" x="214" y="72" width="14" height="10" />
+            <text class="tourRow" x="234" y="81">differs</text>
+        </svg>
+    }
+</div>
+
+@code {
+    ///<summary>Which picture: views, draw, layers, ai or compare.</summary>
+    [Parameter]
+    public string Name { get; set; } = "";
+}

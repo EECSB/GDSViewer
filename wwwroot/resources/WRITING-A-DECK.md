@@ -8,16 +8,16 @@ you write, from the same PDK documentation a human reads.
 
 This page is the whole format, and it is written to be **handed to an AI along with your PDK's rule
 document**. Copy everything between the two markers below into a chat, attach or paste your PDK's design
-rule manual and its layer table, and ask for a deck. Then load the result with **Import** in the Rules
-panel, or run it from the command line:
+rule manual and its layer table, and ask for a deck. Then import the result into a PDK in the app's **PDK
+manager** - pick the PDK's Rules in its tree and press **Import** - or run it from the command line:
 
 ```bash
 gds drc cell.gds --deck mypdk.drc
 ```
 
 A worked example ships with the app: [`sky130A.drc`](GDS%20Files/sky130A.drc), 30
-rules over 21 layers. Load it from the Rules panel with **Load sky130A example** and read it beside this
-page.
+rules over 21 layers. It is the built-in sky130 PDK's rules: open the PDK manager and pick sky130's Rules, which
+show as a table or as their text, to read beside this page.
 
 > **What a clean report means.** This is not a signoff tool and a clean run here is not a tapeout. It
 > catches the obvious — a wire too thin, two shapes too close — against the rules you gave it. Any rule
@@ -34,7 +34,9 @@ it cannot read is reported as a problem rather than guessed at.
 
 ### The file
 
-Line-based. `#` starts a comment. Blank lines are ignored. Three kinds of statement:
+Line-based. A line that starts with `#` is a comment. A `#` later in a line does not start one — outside the
+quoted description it is read as part of the statement, and the line is reported as a problem. Blank lines are
+ignored. Three kinds of statement:
 
 ```
 layer  <name> <number>/<datatype>
@@ -87,8 +89,12 @@ Optional words after the value, before the description:
 | `except <layer>` | Drop violations that fall inside that layer. Use for rules a PDK exempts inside a marker |
 | `parallel` or `projection` | Measure only between edges that face each other. This is what makes a "parallel edges only" rule expressible |
 | `euclidean` | True straight-line distance |
-| `square` | The default. Distance measured as a square, which is what sizing gives |
+| `square` | Distance measured as a square, which is what sizing gives |
 | `window <n>` `step <n>` | Required by `density`, meaningless elsewhere |
+
+The metric words — `parallel`, `projection`, `euclidean` and `square` — apply only to `width` and one-layer
+`space`; on any other check the rule is refused. A rule naming none is measured by sizing, in the square metric.
+Naming `square` measures the same metric on the edge engine, which reports edge pairs.
 
 ### Worked example
 
@@ -138,12 +144,12 @@ and the user cannot check your work against a document they asked you to read fo
 
 ## How the app takes a deck
 
-Four ways in, all reading the same format:
+Three ways in, all reading the same format, and where the app shows what came in:
 
 | Where | How |
 |---|---|
-| **The app**, Rules panel | **Import** opens a file picker. Any extension, any text encoding the browser reads as UTF-8, up to 4 MB |
-| **The app**, Rules panel | **Load sky130A example** fetches the bundled deck. Only offered while no deck is loaded |
+| **The app**, PDK manager | with a PDK's Rules picked in its tree, **Import** opens a file picker and puts the deck in that PDK, in place of its rules. Any extension, any text encoding the browser reads as UTF-8, up to 4 MB. The rules' **Text** view takes one pasted, and with the PDK itself picked a whole PDK comes in as a zip with its deck — and its README, which `WRITING-A-LAYERMAP.md` says what to put in |
+| **The app**, Rules panel | shows the rules of the PDK in use, for a file drawn in it - sky130's to begin with |
 | **The command line** | `gds drc cell.gds --deck mypdk.drc` |
 | **The library** | `DrcDeck.Parse(text)`, then `Drc.Check(deck, layout)` |
 
@@ -168,21 +174,23 @@ this from the command line:
 1 problem(s) reading the deck:
   Line 2 starts with "this", where a deck line is layer, derive or rule.
 
+0 violation(s) from 0 rule(s), of 3 that the deck holds.
+
 This layout has NOT been fully checked. Nothing here says it is clean.
 ```
 
-**What persists and what does not.** The deck survives a reload — it is kept in the session the way a
-layermap is, so a refresh does not send you back to the file picker. The *result* does not: a run belongs
+**What persists and what does not.** The deck survives a reload — it is kept with the PDK it went into, the
+way a layermap is, so a refresh does not send you back to the file picker. The *result* does not: a run belongs
 to the layout it ran against, and the file can be edited between visits, so restored markers would point
-at where a fault used to be. **Export** writes back the text that came in rather than the parse printed
-out, so your comments, blank lines and refused rules all survive the round trip.
+at where a fault used to be. The PDK's **Export** writes back the text that came in rather than the parse
+printed out, so your comments, blank lines and refused rules all survive the round trip.
 
 ## Checking what came back
 
 Load it and run it. Two things to look at first:
 
-- **Does it report anything on a cell you know is good?** The bundled examples are signed-off sky130
-  standard cells; a deck that flags them is over-broad, not vigilant.
+- **Does it report anything on a cell you know is good?** The bundled standard cells are signed-off sky130
+  layout; a deck that flags them is over-broad, not vigilant.
 - **Does it say anything was refused?** The panel and the CLI both list rules that could not be measured.
   A count of faults is only an answer when every rule actually ran.
 

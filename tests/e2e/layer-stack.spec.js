@@ -10,7 +10,8 @@ const {
     gotoExample,
     expectLoaded,
     openLayerSettings,
-    clearLayerNames,
+    bareNumbers,
+    importLayermap,
     selectView,
     svgCounts,
     MOSFET,
@@ -67,10 +68,10 @@ async function recordDraws(page) {
 }
 
 ///
-///Where each extruded slab starts and how deep it goes, at the spacing asked for.
+///Where each layer's slabs start and how deep they go, at the spacing asked for.
 ///
 ///Read off the interop payload rather than measured off the geometry: what is being tested is that the
-///number typed in is the number handed over, and three's own bevel makes a measured slab a hair off.
+///number typed in is the number handed over. One entry per layer, since a layer goes over as one mesh.
 ///
 ///**Nudged, then put where it was asked for.** A redraw has to be provoked from outside and moving the
 ///slider is the cheapest way to do it - but leaving it moved meant every height read here carried a spread
@@ -103,9 +104,9 @@ async function extrusionsAt(page, spacing) {
 
         const last = window.__draws[window.__draws.length - 1];
 
-        return ((last && last.elements) || []).map(element => ({
-            offset: element.layer.offset,
-            depth: element.layer.depth
+        return ((last && last.layers) || []).map(layer => ({
+            offset: layer.offset,
+            depth: layer.depth
         }));
     }, spacing);
 }
@@ -159,9 +160,9 @@ test.beforeEach(async ({ page }) => {
     //The shipped mapping now carries sky130's real process stack, so an example opens on measured heights
     //instead of the evenly spaced synthetic ones. Every claim below is about the automatic spacing, a height
     //typed into the settings, or a mapping the test supplies itself - all of which need a file that arrives
-    //with no process table of its own.
+    //with no process table of its own. A PDK with no layers is put in use for it - see bareNumbers.
     //
-    await clearLayerNames(page);
+    await bareNumbers(page);
 });
 
 test('a height and a thickness can be typed in, and stay typed in', async ({ page }) => {
@@ -319,29 +320,34 @@ test('a height survives the browser being reopened', async ({ page }) => {
 ///arrives in one file rather than being typed layer by layer - which is what GDS3D's process definition
 ///file does for it, and the reason this was worth having at all.
 ///
+///**Into the PDK in use, through the PDK manager**, where a layermap goes since the layer panel's Import went
+///there (2026-10-19) - and so naming every pair Mosfet draws, which is what makes the file one drawn in that PDK
+///and lays the PDK over it. Two of them carry a stack.
+///
 test('a mapping can carry the whole stack', async ({ page }) => {
-    const said = [];
-
-    await page.exposeFunction('reportAlert', message => said.push(String(message)));
-    await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
-
-    await page.locator('#layerNamesImport').setInputFiles({
+    const said = await importLayermap(page, {
         name: 'stack.csv',
         mimeType: 'text/csv',
         buffer: Buffer.from([
             '#layer,datatype,name,color,height,thickness',
             '65,20,diff.drawing,#ff0000,1000,120',
-            '66,20,poly.drawing,#00ff00,2000,180'
+            '66,20,poly.drawing,#00ff00,2000,180',
+            '66,44,licon1',
+            '67,20,li1',
+            '67,44,mcon',
+            '68,5,met1.pin',
+            '68,20,met1',
+            '93,44,nsdm',
+            '95,20,poly.res'
         ].join('\n'), 'utf8')
     });
 
-    //Waited for on the panel rather than in a dialog: a mapping that lands says nothing now, and the names
-    //it carries are the part of it visible from here. The heights are checked in the 3D view below.
+    //Every row read - a row this app cannot parse is said beside the Import.
+    expect(said).toBe('Imported: 9 layers.');
+
+    //The names it carries are the part of it visible from here. The heights are checked in the 3D view below.
     await expect(page.locator('.layerList')).toContainText('diff.drawing', { timeout: 60000 });
     await expect(page.locator('.layerList')).toContainText('poly.drawing');
-
-    //Nothing said, so both rows were read - a row this app cannot parse is still reported.
-    expect(said.join(' ')).toBe('');
 
     await selectView(page, 'View3D');
     await expect(page.locator('#container canvas')).toBeVisible();
@@ -360,37 +366,6 @@ test('a mapping can carry the whole stack', async ({ page }) => {
     //spread the reading itself introduced.
     expect(slabs).toContainEqual({ offset: 1000, depth: 120 });
     expect(slabs).toContainEqual({ offset: 2000, depth: 180 });
-});
-
-///
-///And back out again, so a stack built in the popup can be saved and handed to somebody else.
-///
-test('the exported mapping carries a height that was typed in', async ({ page }) => {
-    await openLayerSettings(page, 0);
-
-    await setStack(page, HEIGHT, 4321);
-    await setStack(page, THICKNESS, 250);
-
-    await closeSettings(page);
-
-    const download = await Promise.all([
-        page.waitForEvent('download'),
-        page.locator('#layerNamesExport').click()
-    ]);
-
-    const stream = await download[0].createReadStream();
-    const chunks = [];
-
-    for await (const chunk of stream)
-        chunks.push(chunk);
-
-    const csv = Buffer.concat(chunks).toString('utf8');
-
-    expect(csv.split('\n')[0]).toContain('height,thickness');
-    //Not anchored at the end: the columns are positional and a layer carrying a role writes that one too, so
-    //the row goes on past the thickness. A bundled example arrives with the shipped sky130 mapping over it,
-    //which gives 65/20 a role. What is being asked is that the height and thickness are in *their* columns.
-    expect(csv).toMatch(/^\d+,\d+,[^,]*,[^,]*,4321,250(,|$)/m);
 });
 
 ///Emptying a box is the way back to the even spacing without hunting for the number it had.

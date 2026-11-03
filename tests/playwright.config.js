@@ -6,6 +6,12 @@
 //the specs keep pointing at the port they expect however the profiles are changed.
 const { defineConfig, devices } = require('@playwright/test');
 
+//Twelve here, four on CI - the reasoning is with the setting below.
+let workers = 12;
+
+if (process.env.CI)
+    workers = 4;
+
 module.exports = defineConfig({
     testDir: './e2e',
     timeout: 90000,
@@ -40,12 +46,12 @@ module.exports = defineConfig({
     //Re-measure after changing the machine, and take two full runs before believing a number: time a
     //subset at a few settings, run the whole suite at the winner twice, and check nothing came back flaky.
     //
-    //**What this no longer buys much of is wall clock on the whole suite.** 792 of the 801 specs finish in
-    //5.7 minutes; the whole suite takes about eight. The difference is the nine specs in
-    //large-layout.spec.js, one of which is a single four-and-a-half-minute test that no number of workers
-    //can divide.
+    //**What this no longer buys much of is wall clock on the whole suite.** At 801 specs, 792 of them finished
+    //in 5.7 minutes and the whole suite took about eight; the difference was large-layout.spec.js (nine specs
+    //then, six now), which had a single four-and-a-half-minute test that no number of workers could divide.
+    //At 1,164 specs, on 2026-10-14, it was still about eight minutes; it is 1,274 now.
     //
-    workers: process.env.CI ? 4 : 12,
+    workers: workers,
 
     //One retry, so a spec that fails for a reason nothing here controls is retried rather than believed
     //immediately. A spec that fails twice has something to say.
@@ -54,13 +60,27 @@ module.exports = defineConfig({
     reporter: [['list']],
     use: {
         baseURL: 'http://localhost:5105',
-        viewport: { width: 1400, height: 900 },
         trace: 'on-first-retry'
     },
     projects: [
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] }
+
+            //
+            //**1280 by 720, said here after the device, because that is the size the suite has always run at.**
+            //
+            //This file used to ask for 1400 by 900 in the `use` above, and never got it. A project's `use` is
+            //laid over the top-level one, and `devices['Desktop Chrome']` carries a 1280 by 720 viewport of its
+            //own - so the device's size won before any spec ran, and every spec here was written and checked at
+            //1280 by 720. It came out when the 3D view's headset row was laid out by how wide the view is,
+            //which is 747 at this size - see three-controls.spec.js.
+            //
+            //So the size is the one the specs were proven at, stated after the device so that a change of
+            //device can never move it silently again. Moving to the size this file used to name would be new
+            //ground under every spec rather than a correction. A spec that needs another size sets its own,
+            //with `test.use({ viewport })` or `page.setViewportSize`, and that wins over this.
+            //
+            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } }
         }
     ],
     webServer: {

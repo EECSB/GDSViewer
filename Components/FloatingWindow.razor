@@ -1,0 +1,126 @@
+@inject IJSRuntime js
+
+@*
+    The shell the AI windows sit in - the MCP server is a card in AI settings - and the PDK manager: a window rather than a popup. It does
+    not dim the page or hold the pointer, and it is dragged by its header and sized from its corner - so the layout can
+    be worked on, and watched changing, with the assistant still open beside it.
+
+    **Opened in the middle, every time** (2026-10-21, asked for): across the browser window, and down the room under
+    the toolbar - see Below, and center in floatingWindow.js. The AI windows opened at its right edge and then where
+    they were left, which off full screen was to one side of the app.
+
+    **Hidden rather than taken away**, which is the whole reason a conversation outlives closing its window: what is
+    inside keeps its state because it is never unmounted.
+
+    Ported from GraphDBViewer's FloatingDialog, which is the same window over the same chat, in this app's own
+    classes - see .aiWindow in app.css, and floatingWindow.js for the dragging.
+*@
+<div id="@Id" class="aiWindow @(Visible ? "" : "aiWindowHidden")" @ref="panel" style="width: @Width; height: @Height;"
+     role="dialog" aria-label="@Title" aria-hidden="@(Visible ? "false" : "true")">
+    <div class="aiWindowHead" @ref="handle">
+        <span class="aiWindowTitle">
+            @if (TitleIcon is not null)
+            {
+                <span class="aiWindowTitleIcon" aria-hidden="true">@TitleIcon</span>
+            }
+
+            @Title
+        </span>
+
+        @HeaderContent
+
+        <button class="buttonStyle2 closeButton" @onclick="OnClose" aria-label="Close" title="Close">&times;</button>
+    </div>
+
+    <div class="aiWindowBody">
+        @ChildContent
+    </div>
+
+    @*
+        A grip of its own rather than the browser's. The native one is a few faint pixels with a hit area to match,
+        which is neither findable nor easy to hit; this is drawn at a size worth aiming at. An arrow both ways since
+        2026-10-31, and larger, asked for: the one-way arrow read as "this goes out" rather than "drag this".
+    *@
+    <div class="aiWindowGrip" @ref="grip" title="Drag to resize">
+        <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+            <path d="M3.5 3.5l9 9M3.5 8V3.5H8M12.5 8v4.5H8" />
+        </svg>
+    </div>
+</div>
+
+@code {
+    ///<summary>The element's id, for the page and the tests to find this window by.</summary>
+    [Parameter]
+    public string Id { get; set; } = "";
+
+    ///<summary>Whether the window is on screen. False hides it; it is never torn down, so what is in it keeps its state.</summary>
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public string Title { get; set; } = "";
+
+    ///<summary>What a size set with the grip is remembered under, so each reopens at it.</summary>
+    [Parameter]
+    public string StorageKey { get; set; } = "";
+
+    ///<summary>The size it opens at, until it has been resized once.</summary>
+    [Parameter]
+    public string Width { get; set; } = "min(560px, 94vw)";
+
+    [Parameter]
+    public string Height { get; set; } = "min(640px, 86vh)";
+
+    ///
+    ///What the window keeps clear of: the toolbar, so the spark that put it up, and Undo, are never under it. It opens
+    ///in the middle of the room under that - see center in floatingWindow.js - and with nothing named, in the middle of
+    ///the whole browser window: the PDK manager's, which is the thing being worked in while it is up.
+    ///
+    [Parameter]
+    public string Below { get; set; } = ".viewToolbar";
+
+    ///<summary>A small picture before the title - the AI assistant's spark, the one on the button that opens it (2026-10-31, asked for).</summary>
+    [Parameter]
+    public RenderFragment? TitleIcon { get; set; }
+
+    ///<summary>More controls for the title bar, left of the close button.</summary>
+    [Parameter]
+    public RenderFragment? HeaderContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    private ElementReference panel;
+    private ElementReference handle;
+    private ElementReference grip;
+
+    ///
+    ///Whether the window was on screen at the last render, so it is placed when it appears and not on every render
+    ///while it is open. No earlier than that: a hidden element measures nothing, and centering nothing would put the
+    ///window in the corner.
+    ///
+    private bool wasVisible;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Visible == wasVisible)
+            return;
+
+        wasVisible = Visible;
+
+        if (!Visible)
+            return;
+
+        //On each appearance rather than once: it puts the window in the middle of the screen as it is now, and brings
+        //the one just opened to the front.
+        try
+        {
+            await js.InvokeVoidAsync("floatingWindow.attach", panel, handle, grip, StorageKey, Below);
+        }
+        catch { }
+    }
+}

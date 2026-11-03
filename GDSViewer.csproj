@@ -67,6 +67,23 @@
     <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
   </ItemGroup>
 
+  <!--Never published. dev-secrets.json holds a developer's real API keys, for a Development build to add under
+      Settings - see Ai/DevSecrets.cs - and everything else under wwwroot goes to the site. The dev server reads it
+      off the disk, so development is unaffected; a publish leaves it behind. Git-ignored as well, so it is never
+      committed either. DevSecretsTests holds this line in place.-->
+  <ItemGroup>
+    <Content Update="wwwroot\dev-secrets.json" CopyToPublishDirectory="Never" />
+
+    <!--Its template holds no key, but is no part of the app either: a JSON file at the root is content, and was
+        published beside the site.-->
+    <Content Update="dev-secrets.example.json" CopyToPublishDirectory="Never" />
+
+    <!--A developer's own MCP registration for Claude Code - gds mcp over this folder, with absolute paths of this
+        machine in it - which is git-ignored and, like the two above, a JSON file at the root the SDK takes for
+        content. Found evaluating as publishable on 2026-11-03; it would have gone out beside the site.-->
+    <Content Update=".mcp.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
   <ItemGroup>
     <Folder Include="wwwroot\css\fonts\" />
   </ItemGroup>
@@ -79,7 +96,15 @@
       only appears during the build would not be picked up as a static asset until the build after.
       WriteOnlyWhenDifferent leaves the file, and the incremental build, alone when nothing changed.
 
-      Mosfet.gds is excluded because the picker lists it separately, above the sky130 cells.-->
+      Mosfet.gds is excluded because the picker lists it separately, above the sky130 cells.
+
+      GF180's cells and IHP's each get a manifest of their own the same way, gf180-examples.json and
+      ihp-examples.json, since 2026-11-02 - each their own group in the picker, opening under their PDK.
+
+      The designs - whole open-source chips rather than single cells - are not globbed. Each one is somebody
+      else's work with a license and a source, and a glob cannot write a credit, so designs.json,
+      gf180-designs.json and ihp-designs.json beside them are written by hand and a test holds each to its folder,
+      or to the commit it is downloaded from.-->
   <Target Name="GenerateExampleGdsManifest" BeforeTargets="BeforeBuild">
     <ItemGroup>
       <ExampleGdsFile
@@ -94,6 +119,34 @@
     <WriteLinesToFile
       File="wwwroot\resources\GDS Files\examples.json"
       Lines="$(ExampleGdsManifest)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <Gf180ExampleGdsFile Include="wwwroot\resources\GDS Files\GF180 GDS\*.gds" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <Gf180ExampleGdsManifest>[%0A@(Gf180ExampleGdsFile->'  &quot;%(Filename)%(Extension)&quot;', ',%0A')%0A]</Gf180ExampleGdsManifest>
+    </PropertyGroup>
+
+    <WriteLinesToFile
+      File="wwwroot\resources\GDS Files\gf180-examples.json"
+      Lines="$(Gf180ExampleGdsManifest)"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <IhpExampleGdsFile Include="wwwroot\resources\GDS Files\IHP GDS\*.gds" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <IhpExampleGdsManifest>[%0A@(IhpExampleGdsFile->'  &quot;%(Filename)%(Extension)&quot;', ',%0A')%0A]</IhpExampleGdsManifest>
+    </PropertyGroup>
+
+    <WriteLinesToFile
+      File="wwwroot\resources\GDS Files\ihp-examples.json"
+      Lines="$(IhpExampleGdsManifest)"
       Overwrite="true"
       WriteOnlyWhenDifferent="true" />
   </Target>

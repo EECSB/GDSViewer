@@ -461,7 +461,8 @@ public class EditPersistenceTests
 
         restored.Redo();
 
-        Assert.Contains(GdsFlattener.Flatten(reopened).Elements,
+        Assert.Contains(
+            GdsFlattener.Flatten(reopened).Elements,
             element => element.Layer.Key.Equals(new LayerKey(93, 44)));
     }
 

@@ -1,6 +1,7 @@
 # The NuGet packages
 
-Two come out of this repository, both public domain:
+Two come out of this repository, both public domain in their own code and each carrying the licenses of what it
+bundles, which its license expression names:
 
 | Package | What it is | Install |
 |---|---|---|
@@ -14,10 +15,12 @@ about how the two are built and released.
 - [Reading a file](#reading-a-file)
 - [Flattening and geometry](#flattening-and-geometry)
 - [Design rule checking](#design-rule-checking)
+- [Comparing two layouts](#comparing-two-layouts)
 - [Layers, names and the process stack](#layers-names-and-the-process-stack)
 - [Creating](#creating)
 - [Shapes, curves and routes](#shapes-curves-and-routes)
 - [Editing](#editing)
+- [Tools for an AI assistant](#tools-for-an-ai-assistant)
 - [Writing](#writing)
 - [What is deliberately not in it](#what-is-deliberately-not-in-it)
 - [Building and releasing](#building-and-releasing)
@@ -26,7 +29,7 @@ about how the two are built and released.
 
 Everything about the formats lives in `GdsII/`, which the web app references and is one consumer of. It reads
 a file into an object model and writes one back, validates what it holds, converts to and from a text dump,
-resolves the hierarchy into flat geometry, and renders that to SVG.
+resolves the hierarchy into flat geometry, and renders that to SVG or to one bitmap a layer.
 
 **Nothing in it touches a browser, a renderer or a UI framework.** That is the line the split is drawn on, and
 it is what makes the format code usable outside a web page — a console tool, a build step, a test harness.
@@ -50,23 +53,38 @@ foreach (var layer in gds.AdditionalInformation.Layers)
     Console.WriteLine($"{layer.Key}: {layer.Value.DisplayName}");
 ```
 
-Three formats read into the same model, so everything downstream only ever sees one:
+Four formats read into the same model, so everything downstream only ever sees one:
 
 ```csharp
 var gds = GDS.FromStream(File.OpenRead("cell.gds"));      //GDSII
 var oas = OasisReader.Read(File.OpenRead("cell.oas"));    //OASIS, into the same model
 var dxf = DxfReader.Read(File.ReadAllBytes("plan.dxf"));  //DXF, text or binary
+var svg = SvgReader.Read(File.ReadAllBytes("logo.svg"));  //SVG, a drawing outlined into shapes
 
-//Or let the bytes decide, which is what the app and the tool both do.
-bool isOasis = OasisReader.LooksLikeOasis(firstThirteenBytes);
+//Or let the bytes decide, which is what the app and the tool both do - the one sniff they share.
+var any = LayoutFile.Read(bytes);                                                    //whichever of the four it is
+var read = LayoutFile.Read(stream, out LayoutFormat format, out var problems);        //and which, and what an OASIS file got wrong
+bool isOasis = LayoutFile.FormatOf(firstBytes) == LayoutFormat.Oasis;
 ```
+
+**An SVG is a drawing rather than a layout**, so reading one decides what a layout file would have said. Paint
+is area: a fill is what its fill rule covers and a stroke is what the pen covers, joins and ends included,
+both as boundaries. Each Inkscape layer is a layer - one named `68/20` is that one - and outside a layer each
+color is; curves are flattened to within a database unit; and the drawing is turned over once, since SVG
+counts down the page and GDSII up it. Text, images, clipping and masks are skipped rather than guessed at.
 
 `FromStream` and `FromStreamAsync` read straight off a handle rather than holding the whole file as an array
 first, which matters on a large library.
 
-A malformed file throws where it is read rather than three views later — an unclosed boundary, a payload that
-is not a whole number of values, a record claiming more bytes than remain. The same rules apply on the way out,
-deliberately: a file that opens is a file that saves.
+`gds.MicronsPerDatabaseUnit` is how big one database unit is, in microns, read off `UNITS` — or null when the
+file does not say, whether the record is missing, zero or not a number — so that each caller picks its own
+fallback rather than inheriting one: the DXF writer and the DRC report take a nanometer, the viewer a micron.
+
+A malformed file throws where it is read rather than three views later — a boundary of too few points, a payload
+that is not a whole number of values, a record claiming more bytes than remain. The same rules apply on the way
+out, deliberately: a file that opens is a file that saves. The one malformation real files have been met with —
+a boundary that never comes back to its first point — is repaired rather than refused: the ring is closed where
+it is read, which is how KLayout reads it too.
 
 ## Flattening and geometry
 
@@ -88,12 +106,49 @@ var poly = layout.Elements.Where(e => e.Layer.Key.Equals(new LayerKey(66, 20))).
 var diff = layout.Elements.Where(e => e.Layer.Key.Equals(new LayerKey(65, 20))).Select(e => e.Points).ToList();
 
 var gate = Booleans.Combine(poly, diff, BooleanOperation.And);
-var grown = Booleans.Offset(gate, 50);
+var grown = Booleans.Grow(gate, 50);
+```
+
+**A chain of them is better kept in rings.** Each of those answers hole-free, every hole folded into its
+outline as the keyhole GDSII needs — the shape to write out, and the worst one to hand back to Clipper, which
+takes every channel apart again and is pathologically slow at it on an outline with thousands of holes (see
+[What it costs](DRC.md#what-it-costs)). `MergeToRings` keeps the holes apart; `Merge`, `Combine` and `Grow`
+also take rings and hand rings back; and `Keyholed` folds the holes in once, at the end:
+
+```csharp
+var metal = Booleans.MergeToRings(shapes);
+var opened = Booleans.Combine(Booleans.Grow(metal, -70, 71), metal, BooleanOperation.And);
+var tooNarrow = Booleans.Keyholed(Booleans.Combine(metal, opened, BooleanOperation.Not));
 ```
 
 `Measure` answers area and extent — drawn area counts an overlap twice where covered area merges first, which
 is the difference density is computed from. `Picking.At` answers which element is under a point, and `Nets`
 traces a connected net through vias.
+
+**A flattened layout carries a spatial index**, built the first time `layout.Index` is asked for:
+`Within(box)` answers which elements reach into a box, `Under(point)` which are under a point, and
+`ExtentOf(layers)` how far a set of layers reaches, none of them by walking every element. `Picking` and the
+SVG writer's culling both go through it, which is what keeps a design of a couple of hundred thousand shapes
+interactive.
+
+An editor that changes one shape need not flatten the whole library again.
+`GdsFlattener.Reflatten(previous, gds, edit.Reshaped)` draws again only what the edit reshaped, at every
+place its cell is placed, and carries the index over. It answers null whenever it cannot be sure - a
+placement moved, say - and then `Flatten` is the answer, which is always right.
+
+Corners, fills and strokes sit beside `Combine` and `Grow`:
+
+```csharp
+var chamfered = Corners.Cut(outline, size: 50);
+var filleted = Corners.Round(outline, radius: 200, stepsPerQuarter: 16);
+
+var filled = Booleans.Fill(rings, evenOdd: true);    //the area a fill rule says the rings cover
+var stroked = Booleans.Stroke(runs, 100, Booleans.StrokeJoin.Round, Booleans.StrokeEnd.Butt, miterLimit: 4, tolerance: 1);
+```
+
+A corner takes at most half of each edge beside it, so a radius bigger than a shape can take becomes the
+biggest it can rather than a loop. And each corner is worked where it stands rather than by shrinking the
+shape and growing it back, so nothing narrower than the radius disappears.
 
 ## Design rule checking
 
@@ -125,14 +180,51 @@ else
 ```
 
 `Clean` is `Violations.Count == 0 && Complete`, so it is false when nothing was found but something did
-not run. Each `DrcViolation` carries its rule id, description, the outline to draw as a marker, its
-bounds, the measured value where there is one, and an `ElementSource` naming the cell instance at fault —
-so a report can point at the cell to edit rather than only at a coordinate.
+not run. Each `DrcViolation` carries its rule id, description, which check it is and the rule's limit, the outline to
+draw as a marker, its bounds, a `Key` that names the fault for a waiver, and an `ElementSource` naming the cell
+instance at fault — so a report can point at the cell to edit rather than only at a coordinate.
 
 To re-check after an edit, flatten again and call `Check` again: the layout is the input, and there is no
 cached state to invalidate.
 
-`DrcReport.Write` produces a KLayout `.lyrdb` for comparing against another tool's answer.
+`DrcReport.Write` produces a KLayout `.lyrdb` for comparing against another tool's answer - given a set of
+`DrcViolation.Key`s, the faults somebody waived carry KLayout's own `waived` tag - and `DrcReport.Read` takes one
+back - KLayout's own DRC run, for instance - placed on the layout it was made from:
+
+```csharp
+var layout = GdsFlattener.Flatten(gds);
+var report = DrcReport.Read(File.ReadAllBytes("faults.lyrdb"), gds, layout);
+
+foreach (var item in report.Items)
+    Console.WriteLine($"{item.Category} in {item.Cell}: {item.Markers.Count} marker(s) at {item.Bounds}");
+```
+
+Each item's markers are in the layout's database units, placed through its cell's reference the way
+KLayout's marker browser places them - a cell the report gives none for is found in the layout instead.
+`Categories` counts what each holds, waived items included, and `Problems` says what could not be read or
+placed.
+
+## Comparing two layouts
+
+```csharp
+var comparison = Compare.Layouts(GdsFlattener.Flatten(mine), GdsFlattener.Flatten(theirs));
+
+if (comparison.Same)
+    Console.WriteLine("The same drawing.");
+
+foreach (var difference in comparison.Differences)
+    Console.WriteLine($"{difference.Layer} {difference.Side}: {difference.Area} square units at {difference.Bounds}");
+```
+
+**What is drawn is compared, not what is written.** Each layer is merged before it is laid over the other's,
+so a rectangle and the same rectangle drawn as two halves are no difference, and a shape moved a unit is two:
+the strip it took (`OnlyHere`) and the strip it left (`OnlyThere`). The differences come in layer order and
+down each layer, which is the order to step through them in, and `SvgWriter.Differences` draws them as
+markers.
+
+`scaleThere` brings a file in another database unit onto this one's. `ignoreUnder` leaves out slivers
+narrower than that many units, for two files snapped to different grids; it is zero unless asked, since a
+comparison that quietly drops a difference is the worst kind.
 
 ## Layers, names and the process stack
 
@@ -150,16 +242,17 @@ int applied = mapping.ApplyTo(gds.AdditionalInformation.Layers);
 File.WriteAllText("sky130.csv", LayerNames.Export(gds.AdditionalInformation));
 ```
 
-The format is `layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize`, everything past
-the third column optional — [the CLI guide](CLI.md#layermaps) describes it in full, and it is the same file the
-web app's Import button takes.
+The format is `layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize,texture,texturesize`,
+everything past the third column optional — [the CLI guide](CLI.md#layermaps) describes it in full, and it is the same file the
+web app's PDK manager imports into a PDK. `Parse` reads a KLayout `.lyp` as well, told apart by its first character, for the
+names and the fill colors it carries.
 
 **A mapping has to be followed by a restack.** `ApplyTo` writes heights onto layers; only `SetStackingOffsets`
 reads them back as a stack, and it is what places the layers the table says nothing about:
 
 ```csharp
 mapping.ApplyTo(gds.AdditionalInformation.Layers);        //place what the table places
-gds.AdditionalInformation.SetStackingOffsets(50);          //space out whatever it did not
+gds.AdditionalInformation.SetStackingOffsets(50);          //place whatever it did not, and spread every layer 50 further apart
 ```
 
 The spacing argument is a viewing control, not part of the stack. Every layer moves with it, a mapped one
@@ -275,7 +368,7 @@ var pieces = route.Build(maxVertices: 200);   //centerlines short enough to be e
 A curve dropped into a route is placed **relative to where the route has reached and which way it points**,
 so the same curve can be used at any angle without its numbers changing. `Build` cuts a long route into
 pieces that overlap by a point, because a cut that does not overlap is a dotted line - and on a wire that is
-an open circuit that looks like a rendering artefact.
+an open circuit that looks like a rendering artifact.
 
 ### A width that changes along the route
 
@@ -306,16 +399,41 @@ start's half-width to the end point offset by the end's, and a corner is where t
 Outlining goes through the same `PathOutline` a drawn path and a read `PATH` go through, so what is built
 here is mitered, capped and wound exactly like everything else.
 
+### Marks
+
+The shapes a lithography layout needs besides the device - a die frame, alignment crosses and the windows
+they land in, verniers, lines and spaces, a Greek cross, and the first shapes of a photonic or microfluidic
+chip - are made from their numbers rather than drawn. Each comes out centered on the origin, in database
+units, without holes:
+
+```csharp
+var cross = Marks.Cross(arm: 100_000, width: 10_000);
+var frame = Marks.DieFrame(width: 5_000_000, height: 5_000_000, line: 100_000);   //four bars
+
+//Or by name, from microns, the way the editor offers them. Numbers that cannot make the mark come back as a
+//problem in words rather than as a strange shape.
+var made = Marks.Named("ring")!.Make(new Dictionary<string, double> { ["radius"] = 20 }, microns => (int)Math.Round(microns * 1000));
+
+if (made.Problem is null)
+{
+    foreach (var outline in made.Outlines)
+        new AddElement(gds, top, new LayerKey(1, 0), outline).Apply();
+}
+```
+
+`Marks.All` is the whole catalog, each with the settings it is drawn from - a name, what it means, what it
+starts at, and whether it is a count - so a tool can offer every one without knowing what any of them is.
+
 ## Editing
 
 Every edit is one class, undoable, and describable so it survives being written down and rebuilt against a
 reopened file:
 
 ```csharp
-var edit = new MoveElement(gds, structure, model, dx: 100, dy: 0);
+var edit = new MoveElement(structure, model, dx: 100, dy: 0);
 
 edit.Apply();
-edit.Undo();
+edit.Revert();
 
 EditRecord? written = edit.Describe();               //to store
 LayoutEdit? rebuilt = LayoutEdit.Rebuild(written, gds);  //against a file opened again
@@ -325,20 +443,101 @@ LayoutEdit? rebuilt = LayoutEdit.Rebuild(written, gds);  //against a file opened
 answers which cell an edit lands in and through which placement it is being seen — the two are separate on
 purpose, since an edit changes the cell and every instance of it moves.
 
+**Taking a placement apart** is `Flattening.Edits`: the placement goes, and what it draws is written into the
+cell that held it, where it was in the cell's order — one level down, an array as every place it has, and the
+placed cell taken out with its last placement. It is more than moving coordinates, and
+`Hierarchy.Through` is the part that knows it: an element's records put through a transform with a
+placement's or a label's own reflection, angle and magnification composed with it, and a path's width grown by
+the magnification. Moving the point alone leaves a placement inside a turned instance drawn the way it faced
+before. Turning a placement where it sits is the same call with a turn, which keeps an array an array.
+
+```csharp
+List<LayoutEdit>? edits = Flattening.Edits(gds, top, new[] { placement });   //null past MostElements
+
+new CompoundEdit("Flatten", edits!).Apply();
+
+List<Record>? turned = Hierarchy.Through(records, Turning.About(Turn.Quarter, pivotX, pivotY));
+```
+
+`Hierarchy.PlacementAt` finds the placement an instance came through — for an array, from any of its places.
+
+## Tools for an AI assistant
+
+A model that edits a layout should call typed tools, not write records. `AgentTools` is thirty-one of them over
+the edits above - seven that read (`list_layers`, `list_cells`, `open_cell`, `find_shapes`, `measure`,
+`check_rules`, `list_structures`), eight that draw (rectangles, polygons, circles and ellipses, rings, paths with
+radiused bends, text as shapes, labels, and the structures `Marks` makes from a few numbers, put down whole) and
+sixteen that edit (move, copy, array, turn, align, delete, change layer, the four
+booleans, grow and shrink, round and cut corners, make, place, flatten, rename and delete cells, and take back
+the assistant's own last change). A host does three things with them:
+
+```csharp
+var session = new AgentSession(gds, history);         //the same history the person undoes with
+
+foreach (var tool in AgentTools.All)
+    Offer(tool.Name, tool.Description, tool.InputSchema());   //in your provider's own format
+
+AgentResult result = AgentTools.Call(session, name, argumentsJson);
+
+//result.Text goes back to the model. IsError: refused, layout untouched. Changed: draw it again.
+```
+
+`AgentTools.Conventions` is the paragraph for the system prompt. Sizes go in as **microns** and come out on the
+file's grid; **layers by name** from the layermap or by numbers; **shapes by number**, `#12`, which every
+drawing tool and `find_shapes` hand out and which last the session, through edits and undo. `session.IdOf`
+numbers a host's own selection the same way.
+
+Every change is **one step** on the history, applied whole or not at all. With `session.Deck` set, each one is
+followed by a check of the rules within reach of it, and the answer says what the change broke - not what was
+already broken nearby. `session.HowToLoadRules` is what `check_rules` adds when there is no deck: how *this*
+host's person or model gets one. Schemas use only the keywords Anthropic, OpenAI and Google all read.
+
+Two hosts use them already: the viewer's AI assistant, and [`gds mcp`](CLI.md#gds-mcp), which serves them to any
+client of the Model Context Protocol with six tools of its own for opening and saving files in one folder.
+
 ## Writing
 
 ```csharp
 File.WriteAllBytes("cell.gds", gds.Serialize());              //byte-exact for a file read in
 File.WriteAllBytes("cell.oas", OasisWriter.Write(gds));        //hierarchy kept
-File.WriteAllText("cell.dxf", DxfWriter.Write(gds));           //release 12
-File.WriteAllText("cell.svg", SvgWriter.Build(layout, SvgWriter.AllLayers(layout), 0.5f, true));
+File.WriteAllBytes("cell.dxf", DxfWriter.Write(gds));          //release 12
+DxfWriter.Write(gds, out int skipped);                         //and how many NODEs had no entity - OasisWriter.Write(gds, out skipped) says the same
+File.WriteAllText("cell.svg", SvgWriter.Build(layout, SvgWriter.AllLayers(layout), 0.5f, true));   //markup for inside an <svg> element - gds svg wraps it in one
 
 string text = gds.AsText();          //every record, one per line
 var edited = GDS.FromText(text);     //and back, validated per record
 ```
 
-A file read and written back out is the **same bytes**, pinned against 897 real sky130 layouts in the test
-suite. The text dump round-trips the same way, which is what makes an editor possible on top of it.
+A file read and written back out is the **same bytes**, pinned against 1,220 real layouts in the test suite —
+896 sky130 standard cells, ten complete sky130 designs, 229 GF180 cells and 84 IHP SG13G2 cells among them. The text dump round-trips the same way, which is what makes an editor possible on top of it.
+
+**Masks as pictures.** Much of the equipment a lab or a small fab has - a laser writer, a maskless aligner -
+takes a black and white image at a stated pixel size rather than a GDSII file. `MaskBitmaps` makes one a
+layer:
+
+```csharp
+//A micron a pixel at a nanometer a unit, and one frame for every layer so the pictures line up.
+var frame = layout.Index.ShapeExtent;
+var metal = layout.Elements.Where(e => e.Layer.Key.Equals(new LayerKey(68, 20)) && e.Text is null && !e.IsOpen).Select(e => e.Points);
+
+var bitmap = MaskBitmaps.Rasterize(metal, frame, unitsPerPixel: 1000);
+
+File.WriteAllBytes("met1.png", MaskBitmaps.Png(bitmap, shapesDark: true, micronsPerPixel: 1));
+```
+
+A pixel is exposed when its middle is inside a shape, with no anti-aliasing to put a gray edge on something
+that has no gray, and the PNG is one bit a pixel and states its own pixel size. `MaskBitmaps.Zip` puts a set
+into one archive, and `FileNameFor(layer)` names each by its numbers and its name.
+
+## Also public
+
+The library's own parts, public so a consumer can use them, and part of the surface the version number covers:
+`TextFormat` (the text dump's reader), `DxfBinary` and `DxfCurves` (the binary flavor's pairs and the curves
+flattened), `DrcChecks`, `DrcEdges`, `DrcEdgePair` and `DrcLayers` (what `Drc` is built from), `Synthetic` (the
+layouts `gds bench` and the tests build), `LayoutFile` and `LayoutFormat`, `ConcatenatedStream`,
+`LayerKey.TryParse` (the one grammar for `65/20`), `DrcResult.ByRule(violations)`, `AgentTools.Counted`,
+`AgentTools.LookName`, `LookDescription` and `LookArea` (the `look` tool's declaration, which a host runs),
+`AgentSession.Given`, and `Preview.Document` with `yUp`, the frame `gds svg` writes.
 
 ## What is deliberately not in it
 
@@ -360,7 +559,7 @@ became one.
 A release is a tag:
 
 ```bash
-git tag v1.1.0 && git push origin v1.1.0
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 [`.github/workflows/publish-nuget.yml`](../.github/workflows/publish-nuget.yml) builds it, runs the tests, packs both,
@@ -385,12 +584,14 @@ The push is the last step, because a version on nuget.org can be unlisted but ne
 end-to-end run, and a pack — so a broken license expression or a missing package readme fails on the commit
 rather than on the tag.
 
-**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 1,989 of the 2,022 run there.
-Thirty-three use KLayout as a second implementation to check this one against, and it is a desktop EDA tool that
+**The C# tests are filtered on CI** with `--filter "Needs!=KLayout"` — 3,569 of the 3,616 run there.
+Forty-five use KLayout as a second implementation to check this one against, and it is a desktop EDA tool that
 is not on a runner. Locally, with it installed, `dotnet test` runs every one.
 
 The short readmes that ship *inside* each package are [`GdsII/README.md`](../GdsII/README.md) and
 [`GdsII.Cli/README.md`](../GdsII.Cli/README.md) — nuget.org renders those on the listing pages, so they
-stay where `PackageReadmeFile` points and are held there by a test. Their code samples are run as tests
-too, in [`tests/GDSViewer.Tests/PackageReadmeTests.cs`](../tests/GDSViewer.Tests/PackageReadmeTests.cs), because an
-example on a package page that does not compile is a worse first impression than no example at all.
+stay where `PackageReadmeFile` points and are held there by a test. Most of the library readme's code samples
+are run as tests too, transcribed into [`tests/GDSViewer.Tests/PackageReadmeTests.cs`](../tests/GDSViewer.Tests/PackageReadmeTests.cs), because an
+example on a package page that does not compile is a worse first impression than no example at all. The ring,
+the taper, the two under *Naming layers* and the `Compare.Layouts` line are not transcribed, the tool's readme
+has no C# in it, and the samples on this page are not run.

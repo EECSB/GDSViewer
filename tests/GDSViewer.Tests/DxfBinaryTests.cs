@@ -309,4 +309,67 @@ public class DxfBinaryTests
     }
 
     #endregion **********************************************************************
+
+    #region Release 13 and later *******************************************************
+
+    ///
+    ///Release 13 and later write every group code as two bytes, with no escape, behind the same sentinel. Read as
+    ///release 12 - a one-byte code, then the value - such a file was an empty drawing, the code 0 followed by a string
+    ///of no length, and the pairs lost their place at once with nothing said.
+    ///
+    [Fact]
+    public void A_release_13_drawing_with_two_byte_group_codes_reads_too()
+    {
+        var bytes = new List<byte>();
+
+        Open(bytes);
+
+        void code(int value)
+        {
+            bytes.AddRange(BitConverter.GetBytes((short)value));
+        }
+
+        void text(int value, string said)
+        {
+            code(value);
+            bytes.AddRange(Encoding.Latin1.GetBytes(said));
+            bytes.Add(0);
+        }
+
+        void real(int value, double number)
+        {
+            code(value);
+            bytes.AddRange(BitConverter.GetBytes(number));
+        }
+
+        text(0, "SECTION");
+        text(2, "ENTITIES");
+
+        text(0, "LWPOLYLINE");
+        text(8, "M1");
+        code(90);
+        bytes.AddRange(BitConverter.GetBytes(4));
+        code(70);
+        bytes.AddRange(BitConverter.GetBytes((short)1));
+
+        real(10, 0);
+        real(20, 0);
+        real(10, 10);
+        real(20, 0);
+        real(10, 10);
+        real(20, 10);
+        real(10, 0);
+        real(20, 10);
+
+        text(0, "ENDSEC");
+        text(0, "EOF");
+
+        var drawn = GdsFlattener.Flatten(DxfReader.Read(bytes.ToArray())).Elements;
+
+        var square = Assert.Single(drawn);
+
+        Assert.Contains(square.Points, point => point.X == 10000 && point.Y == 10000);
+    }
+
+    #endregion **********************************************************************
 }

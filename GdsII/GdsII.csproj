@@ -39,7 +39,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>GdsII</PackageId>
     <Title>GdsII</Title>
-    <Description>Read, write, validate and convert GDSII, OASIS and DXF layout files. Full record coverage, byte-exact round trip, hierarchy flattening with transforms, boolean operations, design rule checking against a deck you supply, SVG rendering and an ASCII record dump that reads back. Builds layouts too: rectangles, circles, ellipses, polygons and rings, Bezier curves, and routes with radiused bends and widths that taper along them - all as undoable edits. No dependencies.</Description>
+    <Description>Read, write, validate and convert GDSII, OASIS and DXF layout files. Full record coverage, byte-exact round trip, hierarchy flattening with transforms, boolean operations, design rule checking against a deck you supply, SVG and PNG rendering and an ASCII record dump that reads back. Builds layouts too: rectangles, circles, ellipses, polygons and rings, Bezier curves, and routes with radiused bends and widths that taper along them - all as undoable edits - and typed tools an AI model can call to draw, edit and check a layout. No dependencies.</Description>
     <PackageTags>gdsii;gds;calma;oasis;dxf;layout;eda;vlsi;semiconductor;cad;photomask;lithography;ic;bezier;routing</PackageTags>
 
     <!--

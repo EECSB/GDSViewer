@@ -183,6 +183,22 @@ public class DxfWriterTests
         Assert.Contains("13", text.Substring(at, 30));
     }
 
+    ///
+    ///**A UNITS that is not a size is written at a nanometer**, the way a missing one is - rather than multiplied
+    ///through every coordinate, which for an infinity is a drawing of infinities. No file can say that and the
+    ///encoder refuses to write it, so it reaches a library only behind their backs - and the writer believed it.
+    ///
+    [Fact]
+    public void A_unit_that_is_not_a_size_is_written_as_a_nanometer()
+    {
+        var sound = Built(Cell("TOP", Boundary(1, 0, 0, 0, 1000, 0, 1000, 1000, 0, 1000, 0, 0)));
+        var broken = Built(Cell("TOP", Boundary(1, 0, 0, 0, 1000, 0, 1000, 1000, 0, 1000, 0, 0)));
+
+        broken.StreamFormat.UNITS.Data = new Real8Data(0.001, double.PositiveInfinity);
+
+        Assert.Equal(DxfWriter.Text(sound), DxfWriter.Text(broken));
+    }
+
     #endregion **********************************************************************
 
 
@@ -230,7 +246,8 @@ public class DxfWriterTests
     [InlineData(32767, 32767)]
     public void A_layer_and_its_datatype_both_come_back(int layer, int dataType)
     {
-        Assert.Equal(new LayerKey((short)layer, (short)dataType),
+        Assert.Equal(
+            new LayerKey((short)layer, (short)dataType),
             DxfReader.NumberFromName(DxfWriter.LayerName((short)layer, (short)dataType)));
     }
 
@@ -372,6 +389,111 @@ public class DxfWriterTests
         //A quarter turn swaps how wide it is for how tall.
         Assert.Equal(1000, came.Width);
         Assert.Equal(4000, came.Height);
+    }
+
+    #endregion **********************************************************************
+
+    #region What was lost on the way ****************************************************
+
+    private static List<GDS.Record> Label(short layer, string text, int x, int y, TextPresentation presentation)
+    {
+        return new List<GDS.Record>
+        {
+            Hierarchy.Make(RecordType.TEXT, null),
+            Hierarchy.Make(RecordType.LAYER, new Int2Data(layer)),
+            Hierarchy.Make(RecordType.TEXTTYPE, new Int2Data(0)),
+            Hierarchy.Make(RecordType.PRESENTATION, new BitArrayData(presentation.Encode())),
+            Hierarchy.Make(RecordType.XY, new Int4Data(new int[] { x, y })),
+            Hierarchy.Make(RecordType.STRING, new AsciiData(text)),
+            Hierarchy.Make(RecordType.ENDEL, null)
+        };
+    }
+
+    private static List<GDS.Record> Node(short layer, params int[] xy)
+    {
+        return new List<GDS.Record>
+        {
+            Hierarchy.Make(RecordType.NODE, null),
+            Hierarchy.Make(RecordType.LAYER, new Int2Data(layer)),
+            Hierarchy.Make(RecordType.NODETYPE, new Int2Data(0)),
+            Hierarchy.Make(RecordType.XY, new Int4Data(xy)),
+            Hierarchy.Make(RecordType.ENDEL, null)
+        };
+    }
+
+    ///
+    ///Which part of a label sits at its point survives the trip: 72 and 73 go out from PRESENTATION and come back into
+    ///it, and the point goes out again as the second alignment point a DXF reader anchors justified text at. Neither
+    ///was written or read until 2026-11-03, so every label came back left and bottom.
+    ///
+    [Fact]
+    public void A_labels_justification_survives_the_trip()
+    {
+        var presentation = new TextPresentation(HorizontalPresentation.Right, VerticalPresentation.Top, 0);
+        var original = Built(Cell("A", Label(1, "PAD", 300, 400, presentation)));
+
+        string text = DxfWriter.Text(original);
+
+        Assert.Contains("\n 72\n2\n", text);
+        Assert.Contains("\n 73\n3\n", text);
+        Assert.Contains("\n 11\n0.3\n", text);
+
+        var back = RoundTripped(original);
+        var label = (GDS.TextModel)back.StreamFormat.Structures.Single().Elements.Single().Element;
+        var came = TextPresentation.From(label.TextBody.PRESENTATION?.Data);
+
+        Assert.Equal(HorizontalPresentation.Right, came.Horizontal);
+        Assert.Equal(VerticalPresentation.Top, came.Vertical);
+
+        var drawn = Drawn(back).Elements.Single();
+
+        Assert.Equal(300, drawn.Points[0].X);
+        Assert.Equal(400, drawn.Points[0].Y);
+    }
+
+    ///<summary>The format's default, left and bottom, is DXF's own and goes out as nothing - so a plain label's entity is what it always was.</summary>
+    [Fact]
+    public void A_label_at_the_left_and_bottom_writes_no_justification()
+    {
+        var original = Built(Cell("A", Label(1, "PAD", 0, 0, new TextPresentation(HorizontalPresentation.Left, VerticalPresentation.Bottom, 0))));
+
+        string text = DxfWriter.Text(original);
+
+        Assert.DoesNotContain("\n 72\n", text);
+        Assert.DoesNotContain("\n 73\n", text);
+    }
+
+    ///<summary>A NODE has no entity, and is counted rather than left out quietly - the OASIS writer says the same thing of the same element.</summary>
+    [Fact]
+    public void A_node_has_no_entity_and_is_counted()
+    {
+        var original = Built(Cell("A", Rectangle(1, 0, 10, 10), Node(2, 0, 0, 5, 5)));
+
+        DxfWriter.Write(original, out int skipped);
+
+        Assert.Equal(1, skipped);
+
+        DxfWriter.Write(Built(Cell("A", Rectangle(1, 0, 10, 10))), out int none);
+
+        Assert.Equal(0, none);
+    }
+
+    ///<summary>A layer's name is a data file's, not prose: under a culture whose minus sign is not one, a negative number went into it as something the reader could not take back out.</summary>
+    [Fact]
+    public void A_layer_name_is_written_invariantly()
+    {
+        Assert.Equal("L-3D7", GdsTestData.UnderHostileCulture(() => DxfWriter.LayerName(-3, 7)));
+    }
+
+    ///<summary>A negative WIDTH is the format's absolute one, drawn at its size - it was dropped, and the run came back as a line of no width.</summary>
+    [Fact]
+    public void A_negative_width_goes_out_as_its_size()
+    {
+        var original = Built(Cell("A", Path(1, -200, 0, 0, 1000, 0)));
+
+        string text = DxfWriter.Text(original);
+
+        Assert.Contains("\n 40\n0.2\n", text);
     }
 
     #endregion **********************************************************************

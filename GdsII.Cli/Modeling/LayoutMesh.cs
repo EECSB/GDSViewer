@@ -11,7 +11,7 @@ namespace GdsII.Cli
     ///The triangulation is the only piece worth a dependency: a GDSII boundary is often concave, and
     ///sky130 cells carry eight, twelve and fourteen-point outlines that a naive fan turns inside out.
     ///
-    ///**The layout is not tipped over.** The 3D view rotates the stack by 1.5 radians to look at it, which
+    ///**The layout is not tipped over.** The 3D view turns the stack a right angle to look at it, which
     ///is a property of the camera rather than of the layout; a file written here keeps the layout in its
     ///own X and Y with the layers stacked up Z, which is what whatever opens it will expect.
     ///</summary>

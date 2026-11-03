@@ -37,14 +37,31 @@ namespace GdsII.Cli
         public const int ViolationsFound = 3;
 
         ///<summary>
-        ///`drc` could not run every rule, so nothing may be concluded from what it did or did not find.
+        ///`drc` could not run every rule over the whole layout, so nothing may be concluded from what it did or did
+        ///not find.
         ///
         ///**Separate from <see cref="ViolationsFound"/> and worse than it.** A run that reports faults knows
         ///what it found; a run that skipped a rule does not know what it did not look at, and the fix is to
         ///the deck rather than to the layout. Returned whether or not violations were also found, because it
-        ///is the more important of the two things to say.
+        ///is the more important of the two things to say. The same for a layout that stopped flattening at
+        ///<see cref="MostElements"/>, where the fix is `--most-elements`.
         ///</summary>
         public const int IncompleteCheck = 4;
+
+        ///
+        ///The most elements a command flattens a layout into before it stops, unless `--most-elements` says otherwise.
+        ///
+        ///**More than the app's ceiling, because the app's is a browser's.** <see cref="GdsFlattener.MostElements"/> is a
+        ///million and a half because a tab has two gigabytes of WebAssembly memory and an element drawn there costs about
+        ///a kilobyte of it. This runs on a desktop, where a flattened element is about 250 bytes of managed heap and a
+        ///rule check over one peaks near a kilobyte: IHP's 1024x16 SRAM macro, 2,639,671 elements, took 2.5 GB to check
+        ///whole. Stopped at the app's ceiling, 1,139,139 elements short, its check found 141 faults that are not there.
+        ///
+        ///**Five million is where `gds generate` stops as well**, for the same reason: past it a machine runs out of
+        ///memory rather than answering, about five gigabytes at the peak of a check. A layout larger still is flattened
+        ///that far and every command says so - see <see cref="flatten"/>.
+        ///
+        public const int MostElements = 5_000_000;
 
         #endregion **************************************************************************
 
@@ -116,6 +133,8 @@ namespace GdsII.Cli
                         return generate(rest, output, error);
                     case "bench":
                         return bench(rest, output, error);
+                    case "mcp":
+                        return mcp(rest, output, error);
                     default:
                         error.WriteLine($"Unknown command \"{command}\".");
                         writeUsage(error);
@@ -144,6 +163,18 @@ namespace GdsII.Cli
             catch (UnauthorizedAccessException problem)
             {
                 error.WriteLine($"Not allowed to read or write that path: {problem.Message}");
+
+                return FileError;
+            }
+            catch (InvalidDataException problem)
+            {
+                //
+                //A file that could not be written - a record over the format's ceiling, say - rather than one that
+                //could not be read, which read catches where it reads. This is a SystemException rather than an
+                //IOException, so until 2026-11-03 it was nothing here caught, and `gds convert` fell over with a
+                //stack trace on a path of 8,192 points.
+                //
+                error.WriteLine($"Could not write the file: {problem.Message}");
 
                 return FileError;
             }
@@ -206,11 +237,15 @@ Usage:
   gds size <file.gds> -o <file>        Move every edge of a layer out or in: --a, --by
   gds convert <file> -o <file>         Between GDSII, OASIS and DXF
   gds generate -o <file>               A layout of a chosen size, to measure against
-  gds bench [<file.gds>]               Time parse, flatten, svg and merge over one
+  gds bench [<file.gds>]               Time parse, flatten, svg, merge, a rule check and the OASIS
+                                       write over one - and a real deck with --deck, every net with
+                                       --layermap
+  gds mcp [<folder>]                   Let an AI model open, draw on, check and save the layouts
+                                       in a folder, over MCP - see below
 
 Options:
   -o, --output <file>   Write here rather than to standard output. ""-"" means standard output.
-      --layermap <file> layers, svg, model: a CSV of layer,datatype,name and more - see below
+      --layermap <file> layers, svg, model, nets, mcp, bench: a CSV of layer,datatype,name and more - see below
       --write-layermap <file>
                         layers only: this file's own layers as a mapping to edit
       --layers <list>   svg, model: draw only these, e.g. 65/20,66/44,68
@@ -232,33 +267,48 @@ Options:
       --tree            cells only: indent each cell under whatever places it
       --at <x,y>        nets only: a point in database units, on the shape to trace from
       --shapes          nets only: also list every shape on the net, by index
-      --deck <file>     drc only: the design rules to check against
+      --deck <file>     drc, mcp, bench: the design rules to check against
       -o <file>         drc: also write the violations as a KLayout .lyrdb marker database
       --rule <id>       drc only: report only this rule. The rest of the deck still runs
       --markers         drc only: list every violation with where it is and which cell it is in
       --from <x,y>      measure only: where to measure from, in database units
       --to <x,y>        measure, convert: the point to measure to; the format to write
+      --link-port <n>   mcp only: the port a GDS Viewer tab links on, default 43707; 0 for no live link
+      --shapes <n>      generate, bench: how many shapes one cell holds, default 20000
+      --columns <n>, --rows <n>
+                        generate, bench: how many times that cell is arrayed, default 1 each
+      --layers <n>      generate, bench: how many layer numbers the shapes spread over, default 8
+      --corners <n>     generate, bench: how many corners each shape has, default 4
+      --most-elements <n>
+                        every command that flattens the layout: stop after this many elements, default
+                        5000000 - the app stops at 1500000, where a browser runs out of memory
   -r, --recursive       validate only: search directories all the way down
   -h, --help            This
   -v, --version         Version
 
-A layer is written the way `gds layers` prints it. A bare number is every data type on it, so
-65 is both 65/16 and 65/20 where 65/20 is only the drawn geometry.
+A layer is written as numbers, the way `gds layers` prints it without a layermap. A bare number
+is every data type on it, so 65 is both 65/16 and 65/20 where 65/20 is only the drawn geometry.
 
 A GDSII file carries only numbers, so what 65/20 *means* comes from a layermap you supply - the
-same file the web viewer's Import button takes, and the same one --write-layermap hands back:
+same file the web app's PDK manager imports into a PDK, and the same one --write-layermap hands back:
 
-  layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize
+  layer,datatype,name,color,height,thickness,role,fill,patterncolor,patternsize,texture,texturesize
   65,20,diff,#e69ac5,0,120,conductor
   66,20,poly,#d80000,180,180,conductor
   66,44,licon1,,300,180,via
 
 Everything past the third column is optional, but the columns are positional, so a gap is a
-comma: 66,44,licon1,,300 gives licon1 a height and no color. Names reach `layers`; names,
+comma: 66,44,licon1,,300 gives licon1 a height and no color. A name with a comma in it goes in
+double quotes, as a spreadsheet writes it: 65,20,""poly, gate"". Names reach `layers`; names,
 colors and fills reach `svg`; heights and thicknesses reach `model`, where a placed layer keeps
 its own height and --spacing only opens a gap on top of wherever a layer already rests. At its
-default of nought a model comes out at the heights the mapping gives, which is the same stack
-the 3D view opens on. Bad rows are reported by line and the good ones still applied.
+default of zero a model comes out at the heights the mapping gives, which is the same stack
+the 3D view opens on. The last two are the web viewer's 3D textures, a picture beside the CSV
+and its size, and are only carried through. Bad rows are reported by line and the good ones
+still applied.
+
+A KLayout .lyp is read too, for the two things it carries: each layer's name and the color
+KLayout fills it with. The heights and the roles are a CSV's alone.
 
   gds layers cell.gds --write-layermap sky130.csv
   gds svg cell.gds --layermap sky130.csv -o cell.svg
@@ -271,11 +321,12 @@ reporting an empty net:
   gds nets cell.gds --layermap sky130.csv --at 1200,800
 
 One net from one point rather than every net in the file - a full extraction over a large
-layout is the expensive thing this deliberately does not do. `gds layers <file> --area` prints
-each layer's bounds, which is how to find a point to aim at.
+layout is the expensive thing this deliberately does not do. `gds info <file>` prints the extent
+of what is drawn, and `gds dump` each shape's own coordinates, which is how to find a point to
+aim at.
 
 The model is written the way the layout is stored - X and Y as the file has them, layers stacked
-up Z. The 3D view's 1.5-radian tilt is its camera, not the layout, so it is not baked in here.
+up Z. The 3D view's right-angle tilt is its camera, not the layout, so it is not baked in here.
 Labels are left out: a TEXT element is an anchor and a string, which no mesh format can hold.
 
 boolean and size write a **flat** file: a boolean between two layers means nothing until the
@@ -298,6 +349,23 @@ the file starts with rather than by what it is called, so this is only needed to
 A GDSII NODE has no OASIS equivalent and is reported rather than dropped in silence. A round
 path end becomes a square one, and a label loses its justification: the format has neither.
 
+mcp is for an MCP client - Claude Desktop, Claude Code or any other - to start, rather than for
+typing: it talks the Model Context Protocol over standard input and output. The model gets the
+library's layout tools - drawing, editing, reading and checking rules - and files: it lists,
+opens, starts and saves layouts in one folder, the one given or the one it was started in, and
+no path it names can leave it. Nothing is written until it saves, and then only .gds, .oas or
+.dxf. --layermap and --deck are loaded for every file it opens, and --most-elements holds for
+its tools as it does for every other command:
+
+  claude mcp add gds -- gds mcp
+  gds mcp C:\layouts --layermap sky130.csv --deck sky130A.drc
+
+The README says how to add it to Claude Desktop.
+
+It can also work on a layout open in the GDS Viewer app, as you watch: open the app's AI settings,
+under Settings, press Start under MCP server and tell the model the code it shows. The tab links over a WebSocket to this
+computer only, on --link-port, and the layout tools then edit what the tab has open.
+
 A file argument of ""-"" reads standard input, so a dump can be piped straight back:
   gds dump cell.gds | gds build - -o roundtripped.gds
 
@@ -318,7 +386,8 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             if (!read(path, error, out GDS? gds))
                 return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error, saysItself: true) is not FlattenedLayout layout)
+                return UsageError;
 
             output.WriteLine($"file        {describe(path)}");
             output.WriteLine($"library     {nameOf(gds!.StreamFormat.LIBNAME)}");
@@ -353,6 +422,14 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             foreach (var structure in gds.StreamFormat.Structures)
                 output.WriteLine($"              {nameOf(structure.STRNAME)}  ({structure.Elements.Count} element(s))");
 
+            //
+            //**Said where the structures are listed**, because the file holds one more than that list: a reader that
+            //makes a cell of KLayout's context - this one did until 2026-11-03 - counts it among them, and this is
+            //the line that says which it is and why it is not. See StreamFormatModel.Context.
+            //
+            if (gds.StreamFormat.Context is StructureModel context)
+                output.WriteLine($"context     {StreamFormatModel.ContextName}, KLayout's record of what {describedBy(context)} cell(s) were made from - not a cell, and not drawn");
+
             output.WriteLine($"layers      {gds.AdditionalInformation.Layers.Count} layer/datatype pair(s)");
             output.WriteLine($"drawn       {layout.Elements.Count} shape(s) after resolving the hierarchy");
 
@@ -364,7 +441,7 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             {
                 output.WriteLine($"extent      {bounds}");
                 output.WriteLine(FormattableString.Invariant(
-                    $"            {bounds.Width} x {bounds.Height} database units{inMicrons(units, bounds)}"));
+                    $"            {bounds.Width} x {bounds.Height} database units{inMicrons(gds, bounds)}"));
             }
 
             int labels = layout.Elements.Count(element => element.Text is not null);
@@ -381,6 +458,12 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
                     output.WriteLine($"              {name}");
             }
 
+            if (layout.Stopped)
+            {
+                output.WriteLine(FormattableString.Invariant(
+                    $"note        flattening stopped at {layout.Elements.Count:N0} elements, so what is drawn, its extent and its labels are of part of the layout - --most-elements takes it further"));
+            }
+
             if (layout.DepthLimitReached)
                 output.WriteLine("note        nesting was cut short, so this library references itself");
 
@@ -394,20 +477,33 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
         ///is "2.8 by 1.5 um". Empty rather than guessed when UNITS is missing or nonsense, since a made-up
         ///scale is worse than none.
         ///</summary>
-        private static string inMicrons(Real8Data? units, Bounds bounds)
+        private static string inMicrons(GDS gds, Bounds bounds)
         {
-            if (units is null || units.Values.Length < 2)
+            if (gds.MicronsPerDatabaseUnit is not double micronsPerUnit)
                 return "";
-
-            double metersPerUnit = units.Values[1];
-
-            if (metersPerUnit <= 0 || double.IsNaN(metersPerUnit) || double.IsInfinity(metersPerUnit))
-                return "";
-
-            double micronsPerUnit = metersPerUnit * 1e6;
 
             return FormattableString.Invariant(
                 $", {bounds.Width * micronsPerUnit:0.###} x {bounds.Height * micronsPerUnit:0.###} um");
+        }
+
+        ///<summary>How many cells KLayout's context says were made from a PCell or a library: it places each once.</summary>
+        private static int describedBy(StructureModel context)
+        {
+            return context.Elements.Count(element => element.Element is SrefModel);
+        }
+
+        ///
+        ///How many structures a library holds, counted as `gds info` lists them: its cells, and KLayout's context named
+        ///beside them when the file has one, since that is in the file and is no cell. See StreamFormatModel.Context.
+        ///
+        private static string structuresOf(GDS gds)
+        {
+            string said = $"{gds.StreamFormat.Structures.Count} structure(s)";
+
+            if (gds.StreamFormat.Context is not null)
+                said += " and KLayout's context";
+
+            return said;
         }
 
         private static int dump(string[] args, TextWriter output, TextWriter error)
@@ -508,7 +604,7 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             foreach (string file in files)
             {
                 if (read(file, error, out GDS? gds))
-                    output.WriteLine($"ok    {describe(file)}  ({gds!.Records.Count} records, {gds.StreamFormat.Structures.Count} structure(s))");
+                    output.WriteLine($"ok    {describe(file)}  ({gds!.Records.Count} records, {structuresOf(gds)})");
                 else
                     failed++;
             }
@@ -531,9 +627,10 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
                 return FileError;
 
             if (!applyLayerMap(args, gds!, output, error))
-                return UsageError;
+                return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             var counts = new Dictionary<LayerKey, int>();
             var labels = new Dictionary<LayerKey, int>();
@@ -687,77 +784,27 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             //of prose ahead of it would be a line of prose inside the file, and `gds svg x.gds > x.svg` is the
             //obvious way to use this.
             if (!applyLayerMap(args, gds!, error, error))
-                return UsageError;
+                return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             if (!LayerFilter.TryApply(layout, valueOf(args, "--layers"), valueOf(args, "--hide"), error, out layout))
                 return UsageError;
 
-            string markup = SvgWriter.Build(layout, SvgWriter.AllLayers(layout), opacity, showLabels);
+            var layers = SvgWriter.AllLayers(layout);
+            var labeled = layers;
 
-            return writeText(wrapSvg(markup, layout), outputPath(args), output);
-        }
+            if (!showLabels)
+                labeled = new HashSet<LayerKey>();
 
-        ///<summary>
-        ///Wraps the markup in an svg element sized to what was drawn, so the result is a file something
-        ///can open rather than a fragment. The viewBox is the layout's own bounds with a small margin, and
-        ///Y is flipped because GDSII counts upward where SVG counts down.
-        ///</summary>
-        private static string wrapSvg(string markup, FlattenedLayout layout)
-        {
-            int left = 0, top = 0, right = 0, bottom = 0;
-            bool any = false;
-
-            foreach (var element in layout.Elements)
-            {
-                foreach (var point in element.Points)
-                {
-                    if (!any)
-                    {
-                        left = right = point.X;
-                        top = bottom = point.Y;
-                        any = true;
-
-                        continue;
-                    }
-
-                    left = Math.Min(left, point.X);
-                    right = Math.Max(right, point.X);
-                    top = Math.Min(top, point.Y);
-                    bottom = Math.Max(bottom, point.Y);
-                }
-            }
-
-            if (!any)
-            {
-                left = top = 0;
-                right = bottom = 1000;
-            }
-
-            int margin = Math.Max(100, (right - left) / 50);
-
-            int x = left - margin;
-            int y = top - margin;
-            int width = Math.Max(1, right - left + margin * 2);
-            int height = Math.Max(1, bottom - top + margin * 2);
-
-            var builder = new StringBuilder();
-
-            builder.AppendFormat(
-                CultureInfo.InvariantCulture,
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{0} {1} {2} {3}\" width=\"{2}\" height=\"{3}\">\n",
-                x, y, width, height);
-
-            //The layout is drawn upside down otherwise: the format's Y grows upward, SVG's grows downward.
-            builder.AppendFormat(
-                CultureInfo.InvariantCulture,
-                "<g transform=\"translate(0,{0}) scale(1,-1)\">\n",
-                (y * 2) + height);
-
-            builder.Append(markup).Append("\n</g>\n</svg>\n");
-
-            return builder.ToString();
+            //
+            //The document the app's download writes, framed the way its thumbnails are - see Preview.Document -
+            //turned the format's way up, since this is a file to read as KLayout draws the layout where the app's
+            //view and download draw y downward. This wrapped the markup on its own until 2026-11-03, with a
+            //margin of its own; the two framings were two answers to one question.
+            //
+            return writeText(Preview.Document(layout, layers, labeled, opacity, yUp: true) + "\n", outputPath(args), output);
         }
 
         ///<summary>
@@ -800,18 +847,19 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             //
             //Before the spacing, which is what makes a real process stack reachable from here at all.
             //
-            //A mapping's height and thickness columns set StackIsCustom, and SetStackingOffsets steps past a
-            //layer that carries it - so the order is: place what the mapping placed, then space out whatever
-            //it did not. The other way round, the even spacing would overwrite the wafer.
+            //A mapping's height and thickness columns set CustomHeight, which SetStackingOffsets reads back as
+            //where the layer rests - so the order is: place what the mapping placed, then spread every layer
+            //from where it rests. The other way round, the even spacing would overwrite the wafer.
             //
             if (!applyLayerMap(args, gds!, output, error))
-                return UsageError;
+                return FileError;
 
             //The same call the 3D view's spacing slider makes, so a model exported at a given spacing
             //matches what that slider shows at the same number.
             gds!.AdditionalInformation.SetStackingOffsets((int)spacing);
 
-            var layout = GdsFlattener.Flatten(gds);
+            if (flatten(gds, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             if (!LayerFilter.TryApply(layout, valueOf(args, "--layers"), valueOf(args, "--hide"), error, out layout))
                 return UsageError;
@@ -938,7 +986,13 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             {
                 try
                 {
-                    gds = readAnyFormat(source);
+                    gds = ReadLayout(source, out _, out IReadOnlyList<string> problems);
+
+                    //What the file got wrong that was read past - an OASIS file leaning on the cell before, see
+                    //OasisReader - said on standard error, where the layermap's report goes, so `gds validate` says
+                    //it and `gds svg`'s markup is not interrupted by it.
+                    foreach (string problem in problems)
+                        error.WriteLine($"warn  {describe(path)}: {problem}");
 
                     return true;
                 }
@@ -952,103 +1006,25 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
         }
 
         ///<summary>
-        ///Reads GDSII or OASIS, told apart by what the file starts with rather than by its name.
+        ///Reads GDSII, OASIS, DXF or SVG, told apart by what the file starts with rather than by its name,
+        ///and says which it was - "GDSII", "OASIS", "DXF" or "SVG". The telling apart is the library's, see
+        ///<see cref="LayoutFile"/>; this is the name of what it found.
         ///
-        ///An extension is a guess about a file that the file itself has already answered, and a renamed
-        ///one is common enough - a .oas mailed as .gds opens either way now.
+        ///Public for `gds mcp`, whose open_file reads the same four, and for the tests that read back what it saves.
         ///</summary>
-        private static GDS readAnyFormat(Stream source)
+        public static GDS ReadLayout(Stream source, out string format)
         {
-            var head = new byte[OasisHeaderLength];
-            int filled = 0;
-
-            while (filled < head.Length)
-            {
-                int read = source.Read(head, filled, head.Length - filled);
-
-                if (read == 0)
-                    break;
-
-                filled += read;
-            }
-
-            //Put back in front of the rest. A file handle can be seeked, but standard input cannot, and
-            //this has to work the same for both.
-            using var whole = new ConcatenatedStream(head[..filled], source);
-
-            if (OasisReader.LooksLikeOasis(head.AsSpan(0, filled)))
-                return OasisReader.Read(whole);
-
-            if (DxfReader.LooksLikeAnyDxf(head.AsSpan(0, filled)))
-                return DxfReader.Read(whole);
-
-            return GDS.FromStream(whole);
+            return ReadLayout(source, out format, out _);
         }
 
-        ///<summary>
-        ///Enough to hold "%SEMI-OASIS\r\n", and enough of a DXF to see past a comment line to the SECTION
-        ///after it - which is the longer of the two, so it is the one that sets this.
-        ///</summary>
-        private const int OasisHeaderLength = 256;
-
-        ///<summary>A few bytes already read, and then the rest of the stream they came from.</summary>
-        private sealed class ConcatenatedStream : Stream
+        ///<summary>The same, with what the file got wrong that was read past - see <see cref="LayoutFile.Read(Stream, out LayoutFormat, out IReadOnlyList{string})"/>.</summary>
+        public static GDS ReadLayout(Stream source, out string format, out IReadOnlyList<string> problems)
         {
-            private readonly byte[] head;
-            private readonly Stream rest;
-            private int at;
+            var gds = LayoutFile.Read(source, out LayoutFormat kind, out problems);
 
-            public ConcatenatedStream(byte[] head, Stream rest)
-            {
-                this.head = head;
-                this.rest = rest;
-            }
+            format = LayoutFile.NameOf(kind);
 
-            public override bool CanRead => true;
-            public override bool CanSeek => false;
-            public override bool CanWrite => false;
-            public override long Length => throw new NotSupportedException();
-
-            public override long Position
-            {
-                get => throw new NotSupportedException();
-                set => throw new NotSupportedException();
-            }
-
-            public override int Read(byte[] buffer, int offset, int count)
-            {
-                if (at < head.Length)
-                {
-                    int taking = Math.Min(count, head.Length - at);
-
-                    Array.Copy(head, at, buffer, offset, taking);
-
-                    at += taking;
-
-                    return taking;
-                }
-
-                return rest.Read(buffer, offset, count);
-            }
-
-            public override void Flush()
-            {
-            }
-
-            public override long Seek(long offset, SeekOrigin origin)
-            {
-                throw new NotSupportedException();
-            }
-
-            public override void SetLength(long value)
-            {
-                throw new NotSupportedException();
-            }
-
-            public override void Write(byte[] buffer, int offset, int count)
-            {
-                throw new NotSupportedException();
-            }
+            return gds;
         }
 
         ///<summary>
@@ -1088,8 +1064,33 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             "--opacity", "--spacing", "--scale", "--layers", "--hide",
             "--op", "--a", "--b", "--into", "--by",
             "--to", "--layermap", "--write-layermap", "--at", "--from",
-            "--deck", "--rule"
+            "--deck", "--rule", "--link-port", "--most-elements"
         };
+
+        ///
+        ///The whole layout flattened for a command, as far as `--most-elements` says or <see cref="MostElements"/> - or
+        ///null when `--most-elements` is not a count, which has been said.
+        ///
+        ///**Said on standard error when that was not all of it**, unless the command says so itself, as `info` and `drc`
+        ///do. A picture, a model or a boolean of part of a layout is what the app shows with a banner over it, and
+        ///here nothing else would say it; standard error, so a picture written to standard output is still only the
+        ///picture.
+        ///
+        private static FlattenedLayout? flatten(GDS gds, string[] args, TextWriter error, bool saysItself = false)
+        {
+            if (!tryReadCount(args, "--most-elements", error, out int most, MostElements))
+                return null;
+
+            var layout = GdsFlattener.Flatten(gds, most);
+
+            if (layout.Stopped && !saysItself)
+            {
+                error.WriteLine(FormattableString.Invariant(
+                    $"Only the first {layout.Elements.Count:N0} elements of the layout are here: flattening stopped there. --most-elements takes it further, at about a kilobyte of memory an element."));
+            }
+
+            return layout;
+        }
 
         ///<summary>Everything that is not an option or an option's value.</summary>
         private static IEnumerable<string> positional(string[] args)
@@ -1189,7 +1190,7 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
 
             if (applied == 0)
             {
-                output.WriteLine($"{path} says nothing about any layer this file uses. Check it is the right technology, and that the columns are layer,datatype,name.");
+                output.WriteLine($"{path} says nothing about any layer this file uses. Check it is the right technology, and that a CSV's columns are layer,datatype,name.");
 
                 return true;
             }
@@ -1204,11 +1205,11 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
         ///Invariant, so a machine with a comma for a decimal point does not read --scale 0.5 as 5.
         ///</summary>
         ///
-        ///**Nought is allowed for some of these and not others**, which is why the floor is asked for rather
+        ///**Zero is allowed for some of these and not others**, which is why the floor is asked for rather
         ///than assumed.
         ///
         ///--spacing is the gap opened on top of wherever a layer already rests, so asking for none of it is
-        ///the ordinary case and is the default. --scale and --opacity multiply the whole model, where nought
+        ///the ordinary case and is the default. --scale and --opacity multiply the whole model, where zero
         ///collapses it to a point or to nothing visible, so they keep the floor they always had.
         ///
         private static bool numberOption(
@@ -1236,7 +1237,7 @@ Exit codes: 0 fine, 1 the command line was wrong, 2 the file was.");
             if (!read || tooSmall)
             {
                 if (zeroAllowed)
-                    error.WriteLine($"\"{given}\" is not nought or more for {option}.");
+                    error.WriteLine($"\"{given}\" is not zero or more for {option}.");
                 else
                     error.WriteLine($"\"{given}\" is not a positive number for {option}.");
 

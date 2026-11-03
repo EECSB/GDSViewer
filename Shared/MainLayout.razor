@@ -11,7 +11,8 @@
 
             An embed is already inside somebody's site, under their own header - a second banner saying what
             the app is called is a band of somebody else's branding across the middle of their page. banner=
-            false takes it, and About goes with it, since About lives in it.
+            false takes it, and the About link with it - About itself is in Settings as well, so it is still
+            there to be opened. See below.
 
             Left out rather than hidden, so nothing in it is tabbable.
         *@
@@ -26,78 +27,87 @@
             </div>
 
             <div>
-                <div style="height: 100%; padding: 0.4em; font-weight: 600; color: white; cursor: pointer;" title="What this app is, who made it, and the terms it is offered under" @onclick="() => { showAbout = true; }">
+                <div id="aboutLink" style="height: 100%; padding: 0.4em; font-weight: 600; color: white; cursor: pointer;" title="What this app is, who made it, and the terms it is offered under" @onclick="() => { showAbout = true; }">
                     About
                 </div>
-
-                @if (showAbout)
-                {
-                    @*
-                        No inline placement. It used to carry left: 10% and width: 80% - and .popupDiv had
-                        already pulled it back half its own width, so a tenth of the way in came out as a
-                        tenth in *minus half a popup* and it sat off to one side of the window. The class
-                        centers it; the width it worked out for itself all along, since the cap was under 80%
-                        of any window this is read on. The same two lines were on the QR code.
-                    *@
-                    <div class="popupDiv popupZIndex_0">
-                        <div class="col">
-
-                            @*
-                                The heading was white on a white popup, so the only thing at the top of this
-                                was the close button and a gap where a title should be.
-                            *@
-                            <div class="row">
-                                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
-                                    About
-                                </div>
-
-                                <div class="col d-flex justify-content-end">
-                                    <button class="buttonStyle2 closeButton" @onclick="() => { showAbout = false; }" title="Close">&times;</button>
-                                </div>
-                            </div>
-
-                            @*Bracketing the heading off from the body, the way the one further down brackets the caveat.*@
-                            <hr class="popupDivider" />
-
-                            <div class="row">
-                                <p>This is a free and open source online layout viewer/editor. It allows you to view a chip layout in 2D/3D, edit it in 2D or directly via a text editor.</p>
-
-                                @*
-                                    What it opens and what it writes, which are not the same list.
-
-                                    Worth saying out loud rather than leaving to be discovered at the Open
-                                    dialog: it read GDSII and nothing else for most of its life, and
-                                    somebody who has a drawing in another format has no reason to try.
-
-                                    DXF is on one side only, and that is a fact about the app rather than an
-                                    oversight - the reader exists and the writer does too, but a DXF that
-                                    came in is GDSII in memory by the time anything is written, so what
-                                    comes out under a .dxf name is a conversion rather than the file back.
-                                *@
-                                <p class="mb-1"><b>Opens</b> GDSII (.gds), OASIS (.oas) and DXF (.dxf), in both the ASCII and binary flavors of the last.</p>
-                                <p><b>Writes</b> GDSII, OASIS and DXF, plus SVG images of the 2D view and STL, OBJ or GLTF models of the 3D one.</p>
-
-                                <p>Your files stay on your machine - nothing is uploaded anywhere.</p>
-
-                                @*
-                                    Two lines rather than one sentence with two links in it. They go to
-                                    different places for different reasons - the code, and the write-up -
-                                    and run together they read as one aside with a link buried at each end.
-                                *@
-                                <p class="mb-1">Link to the <a href="https://github.com/EECSB/GDSViewer" target="_blank">Github repository</a>.</p>
-                                <p>Find out more about the project in my blog post <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank">here</a>.</p>
-
-                                <hr class="popupDivider" />
-
-                                <p><b>Use it at your own discretion.</b> There is no guarantee that what you see here is correct - it may have bugs, and it may read or draw a file differently to the tool that wrote it. Please double-check anything that matters against other software before relying on it.</p>
-                            </div>
-
-                        </div>
-                    </div>
-                }
             </div>
 
         </div>
+        }
+
+        @*
+            About, opened by the title bar's link or by Settings, About - see ShowAbout.
+
+            **Outside the title bar**, which it was written inside until Settings could open it too: the bar is left
+            out of the page for an embed that asked for none, in viewer-only mode and once its button has put it
+            away, and the popup went with it - so Settings, About would have been a press that showed nothing at
+            exactly the times it is the only way to About. Placed against the window rather than against anything
+            here, so where it is written does not move it.
+
+            No inline placement. It used to carry left: 10% and width: 80% - and .popupDiv had already pulled it
+            back half its own width, so a tenth of the way in came out as a tenth in *minus half a popup* and it
+            sat off to one side of the window. The class centers it; the width it worked out for itself all
+            along, since the cap was under 80% of any window this is read on. The same two lines were on the QR
+            code.
+        *@
+        @if (showAbout)
+        {
+            <div id="aboutPopup" class="popupDiv popupZIndex_0">
+                <div class="col">
+
+                    @*
+                        The heading was white on a white popup, so the only thing at the top of this was the close
+                        button and a gap where a title should be. Since 2026-11-01 the windows' bar, as on Examples,
+                        History and Share - see .popupHeading - where it was a large title over a wide gap.
+                    *@
+                    <div class="popupHeading">
+                        <span class="popupHeadingName">About</span>
+
+                        <button id="closeAbout" class="buttonStyle2 closeButton" @onclick="() => { showAbout = false; }" title="Close">&times;</button>
+                    </div>
+
+                    @*Bracketing the heading off from the body, the way the one further down brackets the caveat.*@
+                    <hr class="popupDivider" />
+
+                    <div class="row">
+                        <p>This is a free and open source online layout viewer/editor. It allows you to view a chip layout in 2D/3D, edit it in 2D or directly via a text editor.</p>
+
+                        @*
+                            What it opens and what it writes, which are not the same list.
+
+                            Worth saying out loud rather than leaving to be discovered at the Open dialog: it read
+                            GDSII and nothing else for most of its life, and somebody who has a drawing in another
+                            format has no reason to try.
+
+                            DXF is on one side only, and that is a fact about the app rather than an oversight - the
+                            reader exists and the writer does too, but a DXF that came in is GDSII in memory by the
+                            time anything is written, so what comes out under a .dxf name is a conversion rather
+                            than the file back.
+                        *@
+                        <p class="mb-1"><b>Opens</b> GDSII (.gds), OASIS (.oas) and DXF (.dxf), in both the ASCII and binary flavors of the last.</p>
+                        <p><b>Writes</b> GDSII, OASIS and DXF, plus SVG images of the 2D view and STL, OBJ or GLTF models of the 3D one.</p>
+
+                        <p>
+                            Your files stay on your machine - nothing is uploaded anywhere, unless you ask the
+                            optional AI assistant about one: it sends what you ask, and what it reads from the
+                            layout to answer, to the AI provider you gave it a key for.
+                        </p>
+
+                        @*
+                            Two lines rather than one sentence with two links in it. They go to different places for
+                            different reasons - the code, and the write-up - and run together they read as one aside
+                            with a link buried at each end.
+                        *@
+                        <p class="mb-1">Link to the <a href="https://github.com/EECSB/GDSViewer" target="_blank">Github repository</a>.</p>
+                        <p>Find out more about the project in my blog post <a href="https://eecs.blog/online-gds-file-viewer/" target="_blank">here</a>.</p>
+
+                        <hr class="popupDivider" />
+
+                        <p><b>Use it at your own discretion.</b> There is no guarantee that what you see here is correct - it may have bugs, and it may read or draw a file differently to the tool that wrote it. Please double-check anything that matters against other software before relying on it.</p>
+                    </div>
+
+                </div>
+            </div>
         }
 
 
@@ -186,6 +196,14 @@
     public void ToggleBanner()
     {
         bannerHiddenByHand = !bannerHiddenByHand;
+
+        StateHasChanged();
+    }
+
+    ///<summary>Opens About, the popup the title bar's link opens. Called by the page's Settings menu; see the cascade above.</summary>
+    public void ShowAbout()
+    {
+        showAbout = true;
 
         StateHasChanged();
     }

@@ -20,6 +20,45 @@ namespace GdsII
         ///</summary>
         public const int LabelFontSize = 60;
 
+        ///
+        ///How tall a name has to be on screen, in pixels, before it is worth drawing in a view.
+        ///
+        ///Five, which is where letters stop being a smudge. See <see cref="LabelsLegibleAt"/>.
+        ///
+        public const double LeastLabelPixels = 5;
+
+        ///
+        ///Whether a label is drawn big enough to read at this many layout units a pixel.
+        ///
+        ///**A name is drawn in layout units, so it shrinks with the zoom like everything else.** At sixty
+        ///units tall it reads well across a standard cell, and at a chip's fit it is a quarter of a pixel -
+        ///and the RGB mixer has 23,170 of them, every one a text node with a halo that the browser lays out
+        ///and rasters again on every frame of a pan. Measured, they were 1.6 seconds of the 1.8 a frame took
+        ///at the fit, where not one of them could be read.
+        ///
+        ///**All of them or none**, because every label is the same size: whether one can be read is a
+        ///question about the zoom, not about the label. So the view asks this and hands over no labeled layers
+        ///when the answer is no, which is the same thing as every layer's labels being switched off - and the
+        ///test is in the library, beside the size it is about, rather than in the view.
+        ///
+        ///Zero or less means the scale is not known yet, which is never a reason to leave anything out.
+        ///
+        public static bool LabelsLegibleAt(double unitsPerPixel)
+        {
+            if (unitsPerPixel <= 0)
+                return true;
+
+            return LabelFontSize / unitsPerPixel >= LeastLabelPixels;
+        }
+
+        ///
+        ///How wide a shape's outline is drawn, in layout units.
+        ///
+        ///Public because the 2D view's interop drops the outlines once they are thinner than a pixel can show
+        ///- see scaleOutlines in JavaScriptInterOp.js, whose OUTLINE_UNITS has to be this number.
+        ///
+        public const int OutlineWidth = 6;
+
         ///<summary>
         ///Every element on a visible layer, as one polygon or one text element.
         ///
@@ -65,65 +104,220 @@ namespace GdsII
             long smallest = 0,
             string picture = "")
         {
-            var builder = new StringBuilder();
+            var writing = new Writing(layout, visibleLayers, opacity, labeledLayers, context, shown, smallest, picture);
 
-            //
-            //Off the whole layout rather than off what is on screen.
-            //
-            //`shown` is the culling window, which changes on every pan - and a pattern whose tile changed
-            //size as the view moved would crawl across the shapes. The layout's own extent is the one thing
-            //here that does not move.
-            //
-            appendStyle(builder, layout, visibleLayers, opacity, TileFor(layout), picture);
+            using var candidates = Writing.Candidates(layout, labeledLayers, shown, smallest).GetEnumerator();
+
+            writing.Gather(candidates, int.MaxValue);
+
+            for (int group = 0; group < writing.Groups; group++)
+                writing.Write(group);
+
+            return writing.Finished();
+        }
+
+        ///
+        ///The same picture, offering to stop as it goes: <paramref name="pause"/> is awaited every so many shapes,
+        ///so a caller on a single thread can let its page answer while a real chip is written out - and throw from
+        ///it to give the picture up. See <see cref="Pauses"/>.
+        ///
+        ///**The same steps as <see cref="Build(FlattenedLayout, IReadOnlySet{LayerKey}, float, IReadOnlySet{LayerKey}, CellContext?, Bounds?, long, string)"/>**,
+        ///a run of shapes at a time, so the two cannot write different pictures - and each run is a plain loop
+        ///rather than one inside this method, whose locals would live on the heap: in the browser's interpreter
+        ///that is a cost on every shape.
+        ///
+        public static async ValueTask<string> BuildAsync(
+            FlattenedLayout layout,
+            IReadOnlySet<LayerKey> visibleLayers,
+            float opacity,
+            IReadOnlySet<LayerKey> labeledLayers,
+            CellContext? context,
+            Bounds? shown,
+            long smallest,
+            Func<ValueTask> pause,
+            string picture = "")
+        {
+            var writing = new Writing(layout, visibleLayers, opacity, labeledLayers, context, shown, smallest, picture);
+
+            using var candidates = Writing.Candidates(layout, labeledLayers, shown, smallest).GetEnumerator();
+
+            while (writing.Gather(candidates, Pauses.Every))
+                await pause();
+
+            for (int group = 0; group < writing.Groups; group++)
+            {
+                writing.Write(group);
+
+                await pause();
+            }
+
+            return writing.Finished();
+        }
+
+        ///
+        ///One picture being written: the style, the shapes gathered into a path per layer, and the labels - kept
+        ///between the runs of a picture written a run at a time. See <see cref="BuildAsync"/>.
+        ///
+        private sealed class Writing
+        {
+            private readonly FlattenedLayout layout;
+            private readonly IReadOnlySet<LayerKey> visibleLayers;
+            private readonly IReadOnlySet<LayerKey> labeledLayers;
+            private readonly CellContext? context;
+            private readonly Bounds? shown;
+            private readonly long smallest;
+            private readonly string picture;
+
+            private readonly StringBuilder builder = new StringBuilder();
 
             //One group per layer and editing state, each collecting the shapes that belong to it. Kept in
             //the order the first shape of each appeared, so what is drawn over what stays as it was: a
             //dictionary's own order is not promised, and the answer here is visible.
-            var order = new List<(LayerKey Layer, string Classes, bool Open)>();
-            var groups = new Dictionary<(LayerKey, string, bool), Merged>();
-            var labels = new StringBuilder();
+            private readonly List<(LayerKey Layer, string Classes, bool Open)> order = new List<(LayerKey Layer, string Classes, bool Open)>();
+            private readonly Dictionary<(LayerKey, string, bool), Merged> groups = new Dictionary<(LayerKey, string, bool), Merged>();
+            private readonly StringBuilder labels = new StringBuilder();
 
-            for (int index = 0; index < layout.Elements.Count; index++)
+            //A view drawing through a window draws the same shapes again and again, so it keeps the text of each
+            //one; a picture drawn once does not. See Element.Drawn.
+            private readonly bool keep;
+
+            public Writing(
+                FlattenedLayout layout,
+                IReadOnlySet<LayerKey> visibleLayers,
+                float opacity,
+                IReadOnlySet<LayerKey> labeledLayers,
+                CellContext? context,
+                Bounds? shown,
+                long smallest,
+                string picture)
             {
-                var element = layout.Elements[index];
+                this.layout = layout;
+                this.visibleLayers = visibleLayers;
+                this.labeledLayers = labeledLayers;
+                this.context = context;
+                this.shown = shown;
+                this.smallest = smallest;
+                this.picture = picture;
 
-                //Skip the element if the layer it is on is disabled, or is not listed at all.
-                if (!visibleLayers.Contains(element.Layer.Key))
-                    continue;
+                keep = shown is not null;
 
-                if (Beyond(element, shown, smallest))
-                    continue;
-
-                string classes = classesFor(element, context);
-
-                if (element.Text is not null)
-                {
-                    if (labeledLayers.Contains(element.Layer.Key))
-                        appendLabel(labels, element, index, classes);
-
-                    continue;
-                }
-
-                var key = (element.Layer.Key, classes, element.IsOpen);
-
-                if (!groups.TryGetValue(key, out var merged))
-                {
-                    merged = new Merged();
-
-                    groups.Add(key, merged);
-                    order.Add(key);
-                }
-
-                merged.Add(element, index);
+                //
+                //Off the whole layout rather than off what is on screen.
+                //
+                //`shown` is the culling window, which changes on every pan - and a pattern whose tile changed
+                //size as the view moved would crawl across the shapes. The layout's own extent is the one thing
+                //here that does not move.
+                //
+                //**Out of the layout's index when there is a window**, which is a view drawing the same layout
+                //again and again as it pans: the extent and the layers in use do not change between one redraw
+                //and the next, and working them out was two more walks of every element on each of them. A
+                //picture drawn once - a download, `gds svg` - walks rather than building an index to use once.
+                //
+                if (shown is null)
+                    appendStyle(builder, shapeLayersOf(layout), visibleLayers, opacity, TileFor(layout), picture);
+                else
+                    appendStyle(builder, layout.Index.ShapeLayers, visibleLayers, opacity, TileFor(layout.Index.ShapeExtent), picture);
             }
 
-            foreach (var key in order)
+            ///<summary>How many paths there are to write, once the shapes have all been gathered.</summary>
+            public int Groups => order.Count;
+
+            ///<summary>See <see cref="SvgWriter.candidates"/>.</summary>
+            public static IEnumerable<int> Candidates(FlattenedLayout layout, IReadOnlySet<LayerKey> labeledLayers, Bounds? shown, long smallest)
+            {
+                return candidates(layout, labeledLayers, shown, smallest);
+            }
+
+            ///
+            ///The next <paramref name="most"/> candidates into their groups, or their labels; true while there are more.
+            ///
+            ///What the loop reads is taken into locals first, as the loop reads it on every shape.
+            ///
+            public bool Gather(IEnumerator<int> candidates, int most)
+            {
+                var elements = layout.Elements;
+                var visible = visibleLayers;
+                var labeled = labeledLayers;
+                var window = shown;
+                long tiniest = smallest;
+                var cell = context;
+
+                for (int gathered = 0; gathered < most; gathered++)
+                {
+                    if (!candidates.MoveNext())
+                        return false;
+
+                    int index = candidates.Current;
+                    var element = elements[index];
+
+                    //Skip the element if the layer it is on is disabled, or is not listed at all.
+                    if (!visible.Contains(element.Layer.Key))
+                        continue;
+
+                    if (Beyond(element, window, tiniest))
+                        continue;
+
+                    string classes = classesFor(element, cell);
+
+                    if (element.Text is not null)
+                    {
+                        if (labeled.Contains(element.Layer.Key))
+                            appendLabel(labels, element, index, classes);
+
+                        continue;
+                    }
+
+                    var key = (element.Layer.Key, classes, element.IsOpen);
+
+                    if (!groups.TryGetValue(key, out var merged))
+                    {
+                        merged = new Merged(keep);
+
+                        groups.Add(key, merged);
+                        order.Add(key);
+                    }
+
+                    merged.Add(element, index);
+                }
+
+                return true;
+            }
+
+            ///<summary>One group's path, in the order the groups first appeared.</summary>
+            public void Write(int group)
+            {
+                var key = order[group];
+
                 appendMerged(builder, key.Layer, key.Classes, key.Open, groups[(key.Layer, key.Classes, key.Open)], picture);
+            }
 
-            //Labels last, so a name is never drawn under the geometry of a layer that comes after it.
-            builder.Append(labels);
+            ///<summary>The picture, with the labels last so a name is never drawn under the geometry of a layer that comes after it.</summary>
+            public string Finished()
+            {
+                builder.Append(labels);
 
-            return builder.ToString();
+                return builder.ToString();
+            }
+        }
+
+        ///
+        ///Which elements are worth looking at: all of them, or only those the window shows.
+        ///
+        ///**The same elements in the same order either way**, so what is drawn does not depend on which of
+        ///the two was taken. With a window, the layout's index reads only the part of it under the window and
+        ///leaves out the shapes too small to see before they are looked at - see
+        ///<see cref="LayoutIndex.Within"/> - and the test in <see cref="Beyond"/> still runs over what it
+        ///hands back, so the two can never disagree about what is in.
+        ///
+        ///Labels are not asked for when no layer's labels are wanted, which is what a view zoomed out too far
+        ///to read them passes - otherwise every label in the window would be found and then thrown away.
+        ///
+        private static IEnumerable<int> candidates(FlattenedLayout layout, IReadOnlySet<LayerKey> labeledLayers, Bounds? shown, long smallest)
+        {
+            if (shown is Bounds window)
+                return layout.Index.Within(window, smallest, labeledLayers.Count > 0);
+
+            return Enumerable.Range(0, layout.Elements.Count);
         }
 
         ///
@@ -138,17 +332,38 @@ namespace GdsII
             public readonly StringBuilder Drawn = new StringBuilder();
             public readonly StringBuilder Elements = new StringBuilder();
 
+            private readonly bool keep;
+
+            public Merged(bool keep)
+            {
+                this.keep = keep;
+            }
+
             public void Add(Element element, int index)
             {
+                //Nothing between one subpath and the next: the move that starts each one is separator enough.
                 if (Elements.Length > 0)
-                {
-                    Drawn.Append(' ');
                     Elements.Append(' ');
+
+                appendWhole(Elements, index);
+
+                if (!keep)
+                {
+                    appendSubpath(Drawn, element);
+
+                    return;
                 }
 
-                Elements.Append(index.ToString(CultureInfo.InvariantCulture));
+                if (element.Drawn is null)
+                {
+                    var subpath = new StringBuilder();
 
-                appendSubpath(Drawn, element);
+                    appendSubpath(subpath, element);
+
+                    element.Drawn = subpath.ToString();
+                }
+
+                Drawn.Append(element.Drawn);
             }
         }
 
@@ -209,8 +424,9 @@ namespace GdsII
         ///half out still draws; too small is decided against the area one pixel covers at the current zoom,
         ///which is a shape that would be drawn and never seen.
         ///
-        ///A label is never dropped for being small - a name is the same size on screen at every zoom, so its
-        ///own extent says nothing about whether it can be read.
+        ///A label is never dropped here for being small. Its box is its anchor, a point, so its own extent
+        ///says nothing about how big its name is drawn - that is a question about the zoom, and it has one
+        ///answer for every label at once: see <see cref="LabelsLegibleAt"/>.
         ///
         ///Both off by default, because most layouts do not need either and a viewer that quietly leaves
         ///things out is a viewer nobody should trust with a layout they are checking. See the threshold in
@@ -235,7 +451,7 @@ namespace GdsII
         ///**The markup was mostly boilerplate.** Each shape carried its own `fill`, `opacity`, `stroke` and
         ///`stroke-width` - about a hundred bytes of attributes repeated per element, where the coordinates of
         ///a rectangle are forty. At twenty thousand elements that is a megabyte and a half of the same words
-        ///over and over, marshalled into the browser and parsed there; measured, the whole document was 3.3 M
+        ///over and over, marshaled into the browser and parsed there; measured, the whole document was 3.3 M
         ///characters and the browser's share of opening it was ninety-nine percent of the wall clock.
         ///
         ///The color is per layer, so it becomes a class per layer. Everything else is the same on every
@@ -248,16 +464,17 @@ namespace GdsII
         ///The `!important` declarations in app.css - the faded context, the outlined instances, the selection
         ///- still win over these, the same way they already won over the attributes these replace.
         ///
-        private static void appendStyle(StringBuilder builder, FlattenedLayout layout, IReadOnlySet<LayerKey> visibleLayers, float opacity, long tile, string picture)
+        private static void appendStyle(StringBuilder builder, IReadOnlyList<Layer> shapeLayers, IReadOnlySet<LayerKey> visibleLayers, float opacity, long tile, string picture)
         {
-            //Which layers are actually drawn, so the block names those and not a whole PDK's worth. Walked
-            //rather than taken from the layer table because a layer with nothing on it needs no rule.
+            //Which layers are actually drawn, so the block names those and not a whole PDK's worth. Taken
+            //from the layers the shapes are on rather than from the layer table, because a layer with nothing
+            //on it needs no rule.
             var used = new Dictionary<LayerKey, Layer>();
 
-            foreach (var element in layout.Elements)
+            foreach (var layer in shapeLayers)
             {
-                if (element.Text is null && visibleLayers.Contains(element.Layer.Key))
-                    used.TryAdd(element.Layer.Key, element.Layer);
+                if (visibleLayers.Contains(layer.Key))
+                    used.TryAdd(layer.Key, layer);
             }
 
             if (used.Count == 0)
@@ -304,11 +521,12 @@ namespace GdsII
 
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
-                    "path{3}.{0}{{fill:{1};stroke:black;stroke-width:6;opacity:{2}}}",
+                    "path{3}.{0}{{fill:{1};stroke:black;stroke-width:{4};opacity:{2}}}",
                     name,
                     fillFor(layer.Key, layer.Value, picture),
                     transparency,
-                    scope);
+                    scope,
+                    OutlineWidth);
 
                 //An open run is stroked rather than filled, and at a width that does not scale - it stands
                 //in for a path of no width, which has no thickness to scale. See Element.IsOpen.
@@ -318,15 +536,34 @@ namespace GdsII
                 //whichever was emitted last.
                 builder.AppendFormat(
                     CultureInfo.InvariantCulture,
-                    "path{4}.{0}.{3}{{fill:none;stroke:{1};stroke-width:2;vector-effect:non-scaling-stroke;opacity:{2}}}",
+                    "path{4}.{0}.{3}{{fill:none;stroke:{1};stroke-width:{5};vector-effect:non-scaling-stroke;opacity:{2}}}",
                     name,
                     layer.Value.Color,
                     transparency,
                     OpenRunClass,
-                    scope);
+                    scope,
+                    OpenRunPixels);
             }
 
             builder.Append("</style>");
+        }
+
+        ///<summary>
+        ///The layers the shapes are on, each once, in the order each first appears - which is the order their
+        ///rules are written in. A walk, for a picture drawn once; a view takes it from the layout's index.
+        ///</summary>
+        private static List<Layer> shapeLayersOf(FlattenedLayout layout)
+        {
+            var layers = new List<Layer>();
+            var seen = new HashSet<LayerKey>();
+
+            foreach (var element in layout.Elements)
+            {
+                if (element.Text is null && seen.Add(element.Layer.Key))
+                    layers.Add(element.Layer);
+            }
+
+            return layers;
         }
 
         ///
@@ -424,6 +661,12 @@ namespace GdsII
                     whole = whole.Union(element.Box);
             }
 
+            return TileFor(whole);
+        }
+
+        ///<summary>The same, off an extent already worked out - the shapes', not the labels'. PngWriter's patterns are this size too.</summary>
+        internal static long TileFor(Bounds whole)
+        {
             if (whole.IsEmpty)
                 return LeastTile;
 
@@ -939,14 +1182,21 @@ namespace GdsII
             //
             builder.AppendFormat(
                 CultureInfo.InvariantCulture,
-                "<rect width=\"{0}\" height=\"{0}\" fill=\"{1}\" opacity=\"0.35\" />",
+                "<rect width=\"{0}\" height=\"{0}\" fill=\"{1}\" opacity=\"{2}\" />",
                 tile,
-                ground);
+                ground,
+                PatternGround);
 
             appendMotif(builder, fill, marks, tile);
 
             builder.Append("</pattern>");
         }
+
+        ///<summary>How strong a pattern's ground is: the layer's color at this opacity, under the marks. PngWriter paints the same.</summary>
+        internal const float PatternGround = 0.35f;
+
+        ///<summary>How wide an open run is stroked, in screen pixels whatever the zoom. PngWriter strokes one the same.</summary>
+        internal const int OpenRunPixels = 2;
 
         ///<summary>Marks every generated pattern, so the view can find them all to rescale without knowing the layers.</summary>
         public const string PatternClass = "layerFill";
@@ -1111,18 +1361,38 @@ namespace GdsII
         ///</summary>
         public static string Markers(IEnumerable<DrcViolation> violations)
         {
+            return Markers(violations.ToList(), new HashSet<string>(), -1);
+        }
+
+        ///<summary>Added to the marker of a fault somebody has waived - see <see cref="DrcViolation.Key"/>.</summary>
+        public const string MarkerWaivedClass = "drcMarkerWaived";
+
+        ///<summary>Added to the marker of the fault a rule's row has stepped to.</summary>
+        public const string MarkerCurrentClass = "drcMarkerCurrent";
+
+        ///<summary>Which fault of the run a marker is, by its place in the list.</summary>
+        public const string MarkerViolationAttribute = "data-violation";
+
+        ///<summary>
+        ///The same, with the faults in <paramref name="waived"/> drawn quieter and the one at
+        ///<paramref name="current"/> picked out - last, so it is on top of its neighbors.
+        ///
+        ///**A waived fault is still drawn.** It was found, and somebody looked at it and let it stand; taking it
+        ///off the drawing would make the layout look cleaner than its check says, and leave nothing to click
+        ///to take the waiver back.
+        ///</summary>
+        public static string Markers(IReadOnlyList<DrcViolation> violations, IReadOnlySet<string> waived, int current)
+        {
             var builder = new StringBuilder();
 
-            foreach (var violation in violations)
+            for (int i = 0; i < violations.Count; i++)
             {
-                if (violation.Marker.Count == 0)
-                    continue;
-
-                if (violation.Marker.Count < 3)
-                    appendPoint(builder, violation);
-                else
-                    appendRegion(builder, violation);
+                if (i != current)
+                    appendViolation(builder, violations[i], i, waived.Contains(violations[i].Key), false);
             }
+
+            if (current >= 0 && current < violations.Count)
+                appendViolation(builder, violations[current], current, waived.Contains(violations[current].Key), true);
 
             if (builder.Length == 0)
                 return "";
@@ -1130,9 +1400,213 @@ namespace GdsII
             return $"<g id=\"{MarkersId}\">{builder}</g>";
         }
 
-        private static void appendRegion(StringBuilder builder, DrcViolation violation)
+        private static void appendViolation(StringBuilder builder, DrcViolation violation, int at, bool waived, bool current)
         {
-            builder.Append("<polygon class=\"").Append(MarkerClass).Append("\" ");
+            if (violation.Marker.Count == 0)
+                return;
+
+            var also = new StringBuilder();
+
+            if (waived)
+                also.Append(' ').Append(MarkerWaivedClass);
+
+            if (current)
+                also.Append(' ').Append(MarkerCurrentClass);
+
+            string tags = $"{also}\" {MarkerViolationAttribute}=\"{at.ToString(CultureInfo.InvariantCulture)}";
+
+            if (violation.Marker.Count < 3)
+                appendPoint(builder, violation, tags);
+            else
+                appendRegion(builder, violation, tags);
+        }
+
+        ///<summary>The group a report's markers are drawn in, beside a run's own.</summary>
+        public const string ReportMarkersId = "reportMarkers";
+
+        ///<summary>An area a report's item marks.</summary>
+        public const string ReportMarkerClass = "reportMarker";
+
+        ///<summary>An edge a report's item marks - a line, since an edge has length and no area.</summary>
+        public const string ReportEdgeClass = "reportMarkerEdge";
+
+        ///<summary>A point a report's item marks: an edge of no length, or where a label is anchored.</summary>
+        public const string ReportPointClass = "reportMarkerPoint";
+
+        ///<summary>Added to every marker of an item somebody has waived.</summary>
+        public const string ReportWaivedClass = "reportMarkerWaived";
+
+        ///<summary>Added to every marker of the item being looked at.</summary>
+        public const string ReportCurrentClass = "reportMarkerCurrent";
+
+        ///<summary>Which item of the report a marker belongs to, by its place in the list.</summary>
+        public const string ReportItemAttribute = "data-item";
+
+        ///<summary>
+        ///A report's items, as markup to lay over the layout - what KLayout or another tool found, where
+        ///<see cref="Markers(IEnumerable{DrcViolation})"/> is what this one did.
+        ///
+        ///**Their own classes, so the two can be told apart on screen at once.** A report is often the same
+        ///check run by a different engine, and somebody comparing the two needs to see which marker is whose.
+        ///A waived item is drawn too, quieter: it was found, and somebody has looked at it and let it stand.
+        ///
+        ///**Drawn up to <paramref name="most"/> items**, because every marker is an element the browser lays
+        ///out and paints, and a report from a whole chip can hold more than a view can carry. The item being
+        ///looked at, <paramref name="current"/>, is drawn whatever the count and last, so it is on top of its
+        ///neighbors. Categories in <paramref name="hidden"/> are not drawn at all, the item being looked at
+        ///included.
+        ///</summary>
+        public static string ReportMarkers(IReadOnlyList<DrcReportItem> items, IReadOnlySet<string>? hidden = null, int current = -1, int most = int.MaxValue)
+        {
+            var builder = new StringBuilder();
+            int drawn = 0;
+
+            for (int i = 0; i < items.Count && drawn < most; i++)
+            {
+                if (i == current || !drawable(items[i], hidden))
+                    continue;
+
+                appendReportItem(builder, items[i], i, false);
+
+                drawn++;
+            }
+
+            if (current >= 0 && current < items.Count && drawable(items[current], hidden))
+                appendReportItem(builder, items[current], current, true);
+
+            if (builder.Length == 0)
+                return "";
+
+            return $"<g id=\"{ReportMarkersId}\">{builder}</g>";
+        }
+
+        private static bool drawable(DrcReportItem item, IReadOnlySet<string>? hidden)
+        {
+            if (item.Markers.Count == 0)
+                return false;
+
+            return hidden is null || !hidden.Contains(item.Category);
+        }
+
+        private static void appendReportItem(StringBuilder builder, DrcReportItem item, int at, bool current)
+        {
+            var also = new StringBuilder();
+
+            if (item.Waived)
+                also.Append(' ').Append(ReportWaivedClass);
+
+            if (current)
+                also.Append(' ').Append(ReportCurrentClass);
+
+            string tags = $"{also}\" {RuleAttribute}=\"{escaped(item.Category)}\" {ReportItemAttribute}=\"{at.ToString(CultureInfo.InvariantCulture)}\"";
+
+            foreach (var marker in item.Markers)
+            {
+                if (marker.Count >= 3)
+                {
+                    builder.Append("<polygon class=\"").Append(ReportMarkerClass).Append(tags).Append(" points=\"");
+
+                    for (int k = 0; k < marker.Count; k++)
+                    {
+                        if (k > 0)
+                            builder.Append(' ');
+
+                        builder.Append(marker[k].X.ToString(CultureInfo.InvariantCulture));
+                        builder.Append(',');
+                        builder.Append(marker[k].Y.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    builder.Append("\" />");
+
+                    continue;
+                }
+
+                string kind = ReportEdgeClass;
+
+                if (marker.Count == 1)
+                    kind = ReportPointClass;
+
+                var from = marker[0];
+                var to = marker[^1];
+
+                builder.Append("<line class=\"").Append(kind).Append(tags).Append(' ');
+                builder.Append("x1=\"").Append(from.X.ToString(CultureInfo.InvariantCulture)).Append("\" y1=\"").Append(from.Y.ToString(CultureInfo.InvariantCulture)).Append("\" ");
+                builder.Append("x2=\"").Append(to.X.ToString(CultureInfo.InvariantCulture)).Append("\" y2=\"").Append(to.Y.ToString(CultureInfo.InvariantCulture)).Append("\" />");
+            }
+        }
+
+        ///
+        ///A comparison's differences, over the layout: what only this file has in one color, what only the
+        ///other has in another, and the one being stepped to picked out.
+        ///
+        ///**Filled as well as outlined**, unlike a rule's marker. A violation marks a place to look at something
+        ///else; a difference *is* the area - a shape missing or extra - and an outline alone round a sliver one
+        ///unit wide is a line nobody would find. Filled faintly, so the layout under it still reads.
+        ///
+        ///Each carries its place in the list, so a test or anything else can find the one stepped to.
+        ///
+        public static string Differences(IReadOnlyList<Difference> differences, int current = -1)
+        {
+            if (differences.Count == 0)
+                return "";
+
+            var builder = new StringBuilder();
+
+            builder.Append("<g id=\"").Append(DifferencesId).Append("\">");
+
+            for (int i = 0; i < differences.Count; i++)
+            {
+                var difference = differences[i];
+
+                string kind = DifferenceThereClass;
+
+                if (difference.Side == DifferenceSide.OnlyHere)
+                    kind = DifferenceHereClass;
+
+                builder.Append("<polygon class=\"").Append(kind);
+
+                if (i == current)
+                    builder.Append(' ').Append(DifferenceCurrentClass);
+
+                builder.Append("\" ").Append(DifferenceAttribute).Append("=\"").Append(i.ToString(CultureInfo.InvariantCulture)).Append("\" points=\"");
+
+                for (int k = 0; k < difference.Region.Count; k++)
+                {
+                    if (k > 0)
+                        builder.Append(' ');
+
+                    appendWhole(builder, difference.Region[k].X);
+                    builder.Append(',');
+                    appendWhole(builder, difference.Region[k].Y);
+                }
+
+                builder.Append("\" />");
+            }
+
+            builder.Append("</g>");
+
+            return builder.ToString();
+        }
+
+        ///<summary>The group a comparison's differences are drawn in.</summary>
+        public const string DifferencesId = "compareMarkers";
+
+        ///<summary>What only the file open has. See .differenceHere in app.css.</summary>
+        public const string DifferenceHereClass = "differenceHere";
+
+        ///<summary>What only the other file has.</summary>
+        public const string DifferenceThereClass = "differenceThere";
+
+        ///<summary>The one stepped to.</summary>
+        public const string DifferenceCurrentClass = "differenceCurrent";
+
+        ///<summary>A difference's place in the list.</summary>
+        public const string DifferenceAttribute = "data-difference";
+
+        ///<summary>A fault with area, outlined. <paramref name="tags"/> carries on the class and adds attributes, closing on an open quote.</summary>
+        private static void appendRegion(StringBuilder builder, DrcViolation violation, string tags)
+        {
+            builder.Append("<polygon class=\"").Append(MarkerClass).Append(tags).Append("\" ");
             builder.Append(RuleAttribute).Append("=\"").Append(escaped(violation.RuleId)).Append("\" points=\"");
 
             bool first = true;
@@ -1152,14 +1626,14 @@ namespace GdsII
             builder.Append("\" />");
         }
 
-        private static void appendPoint(StringBuilder builder, DrcViolation violation)
+        private static void appendPoint(StringBuilder builder, DrcViolation violation, string tags)
         {
             var at = violation.Marker[0];
 
             string x = at.X.ToString(CultureInfo.InvariantCulture);
             string y = at.Y.ToString(CultureInfo.InvariantCulture);
 
-            builder.Append("<line class=\"").Append(MarkerPointClass).Append("\" ");
+            builder.Append("<line class=\"").Append(MarkerPointClass).Append(tags).Append("\" ");
             builder.Append(RuleAttribute).Append("=\"").Append(escaped(violation.RuleId)).Append("\" ");
             builder.Append("x1=\"").Append(x).Append("\" y1=\"").Append(y).Append("\" ");
             builder.Append("x2=\"").Append(x).Append("\" y2=\"").Append(y).Append("\" />");
@@ -1292,14 +1766,27 @@ namespace GdsII
         ///<see cref="appendStyle"/>. What is left is what actually differs between one shape and the next.
         ///
         ///
-        ///One shape, as a subpath: move to the first corner, line to the rest, close if it is a ring.
+        ///One shape, as a subpath: move to the first corner, step to each of the rest, close if it is a ring.
+        ///
+        ///**Steps rather than corners, because a layout's edges are level or upright.** A corner is two
+        ///numbers as long as the layout is wide - `L1234500,-678900` - where the step to it along an edge is
+        ///one number as long as the edge: `h400`. A slanted edge is an `l` with both. All of what a view
+        ///rebuilds is moving this text, from the builder into the page and through the browser's parser, so
+        ///its length is the cost; see DOCUMENTATION.md, "The cell tree, the margin and the markers".
+        ///
+        ///**Every corner the shape has is still written**, a ring's closing repeat as a step back to where it
+        ///began and a corner given twice as `h0`, so the nth corner read back is the element's nth corner. The
+        ///corner-drag preview moves corners by that number, and the specs compare them. `subpaths` in
+        ///viewGeometry.js is what reads them back, for the preview, the snapping index and the specs alike.
+        ///
+        ///**A step is a long**, since two corners can be further apart than an int reaches.
         ///
         ///**Straight into the builder, not `string.Join` over a `Select`.** That allocated an interpolated
         ///string per point and a joined one per shape before anything was appended - two and a third million
         ///strings for a half-million element layout, every one copied again on the way in and thrown away.
         ///
         ///Invariant, because SVG is a data format: a coordinate needs an ASCII minus, and a layout's
-        ///coordinates are routinely negative.
+        ///coordinates are routinely negative - and so is every step left or up.
         ///
         private static void appendSubpath(StringBuilder builder, Element element)
         {
@@ -1308,21 +1795,58 @@ namespace GdsII
             for (int i = 0; i < points.Count; i++)
             {
                 if (i == 0)
+                {
                     builder.Append('M');
-                else
-                    builder.Append('L');
+                    appendWhole(builder, points[i].X);
+                    builder.Append(',');
+                    appendWhole(builder, points[i].Y);
 
-                //Comma-separated, which SVG allows and which keeps a corner written exactly as the `points`
-                //attribute wrote it - so a coordinate reads the same in a path as it did in a polygon.
-                builder.Append(points[i].X.ToString(CultureInfo.InvariantCulture));
-                builder.Append(',');
-                builder.Append(points[i].Y.ToString(CultureInfo.InvariantCulture));
+                    continue;
+                }
+
+                long across = (long)points[i].X - points[i - 1].X;
+                long down = (long)points[i].Y - points[i - 1].Y;
+
+                if (down == 0)
+                {
+                    builder.Append('h');
+                    appendWhole(builder, across);
+                }
+                else if (across == 0)
+                {
+                    builder.Append('v');
+                    appendWhole(builder, down);
+                }
+                else
+                {
+                    builder.Append('l');
+                    appendWhole(builder, across);
+                    builder.Append(',');
+                    appendWhole(builder, down);
+                }
             }
 
             //A run is left open and a ring is closed, which is the same distinction the polyline and the
             //polygon used to carry between them.
             if (!element.IsOpen)
                 builder.Append('Z');
+        }
+
+        ///
+        ///A whole number, written straight into the builder.
+        ///
+        ///Invariant like every number here, and without a string of its own: formatting each coordinate into a
+        ///string and appending that made a string per number, a few hundred thousand of them per picture of a
+        ///real chip, every one thrown away the moment it was copied in. A long, for the steps between corners;
+        ///an int widens to one.
+        ///
+        private static void appendWhole(StringBuilder builder, long value)
+        {
+            Span<char> digits = stackalloc char[20];
+
+            value.TryFormat(digits, out int written, default, CultureInfo.InvariantCulture);
+
+            builder.Append(digits[..written]);
         }
 
         ///<summary>

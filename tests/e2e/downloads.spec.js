@@ -7,7 +7,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { gotoExample, selectView, downloadBytes, MOSFET, openedOnItsOwn, uploadFile } = require('./helpers');
+const { gotoExample, selectView, downloadBytes, MOSFET, openedOnItsOwn, uploadFile, saveImage } = require('./helpers');
 
 const MOSFET_ON_DISK = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
 
@@ -118,6 +118,34 @@ test('the download can be switched to DXF', async ({ page }) => {
 });
 
 ///
+///The download can be a picture too: the whole layout as an SVG file of its own, from any view.
+///
+///Not the camera on the canvas, which keeps what is on screen and only exists in the 2D view - this writes
+///the file, framed to fit, so it is the same picture from the 3D view, where there is no drawing to take.
+///A hidden layer stays out of it, as it is out of the view.
+///
+test('the download can be switched to SVG, from any view', async ({ page }) => {
+    await gotoExample(page, MOSFET, '3d');
+
+    await page.locator('#downloadFormat').selectOption('.svg');
+
+    const started = page.waitForEvent('download');
+
+    await page.locator('#downloadGds').click();
+
+    const download = await started;
+
+    expect(download.suggestedFilename()).toBe('Mosfet.svg');
+
+    const svg = (await downloadBytes(download)).toString('utf8');
+
+    //A document of its own: the namespace a file needs, a frame round the drawing, and the drawing.
+    expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="-?\d+ -?\d+ \d+ \d+">/);
+    expect(svg).toContain('<path');
+    expect(svg.trimEnd()).toMatch(/<\/svg>$/);
+});
+
+///
 ///And the app says what it did to the layers, every time rather than never.
 ///
 ///Nothing is lost in the conversion, so this is not a warning - it is the one thing somebody has to know
@@ -206,7 +234,7 @@ test('the 2D view exports its SVG', async ({ page }) => {
 
     const started = page.waitForEvent('download');
 
-    await page.locator('#downloadImage').click();
+    await saveImage(page, 'svg');
 
     const download = await started;
 
@@ -255,4 +283,61 @@ test.describe('3D model export', () => {
             expect(contents.length).toBeGreaterThan(1000);
         });
     }
+
+    ///
+    ///**The model is the slabs and nothing else.** A layer's labels are a mesh in the scene too - quads that
+    ///only turn to face the camera in the shader - and written into a file each would be a blank square at the
+    ///layout's origin, which a check on the format's first word never sees. So this counts triangles: every
+    ///slab's in the scene, against every facet in the STL.
+    ///
+    test('the exported model is the slabs, with no label quads in it', async ({ page }) => {
+        await gotoExample(page, MOSFET, '3d');
+
+        await expect(page.locator('#container canvas')).toBeVisible();
+
+        const scene = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const added = [];
+            const original = THREE.Object3D.prototype.add;
+
+            THREE.Object3D.prototype.add = function (...objects) {
+                for (const object of objects)
+                    added.push(object);
+
+                return original.apply(this, objects);
+            };
+
+            //A nudge of the spacing slider redraws the scene, which is how its objects are caught.
+            const slider = document.getElementById('layerSpacing');
+
+            slider.value = String(Number(slider.value) + 10);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            THREE.Object3D.prototype.add = original;
+
+            const slabs = added.filter(object => object.isMesh && object.userData.outlines != null);
+            const labels = added.filter(object => object.isMesh && object.userData.labels != null);
+
+            return {
+                triangles: slabs.reduce((sum, mesh) => sum + (mesh.geometry.getIndex().count / 3), 0),
+                labelMeshes: labels.length
+            };
+        });
+
+        //There are labels in the scene to leave out, or this says nothing about leaving them out.
+        expect(scene.labelMeshes).toBeGreaterThan(0);
+        expect(scene.triangles).toBeGreaterThan(0);
+
+        await page.locator('#modelFormat').selectOption('.stl');
+
+        const started = page.waitForEvent('download');
+
+        await page.locator('#downloadModel').click();
+
+        const stl = (await downloadBytes(await started)).toString('utf8');
+
+        expect((stl.match(/facet normal/g) || []).length).toBe(scene.triangles);
+    });
 });

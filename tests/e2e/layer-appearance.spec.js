@@ -17,6 +17,7 @@ const {
     layerPairs,
     svgCounts,
     fillsDrawn,
+    bareNumbers,
     MOSFET,
     MOSFET_POLYGONS,
     MOSFET_LABELS
@@ -31,20 +32,6 @@ const UNLABELED_ROW = 0;
 ///Every fill color currently drawn, as hex. See fillsDrawn in helpers for why it is computed and converted.
 async function fills(page) {
     return fillsDrawn(page);
-}
-
-///
-///Back to bare numbers, for the tests that are about an *unnamed* layer.
-///
-///A bundled example arrives with the shipped sky130 mapping over it, so 65/20 is called diff before anything
-///is touched. Clear is the same button somebody wanting numbers would press, and it is durable - see
-///SavedSession.NoBundledLayerNames.
-///
-async function clearNames(page) {
-    await page.locator('.layerSidebarClear').click();
-
-    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-        { timeout: 20000 }).not.toContain('met1');
 }
 
 test.beforeEach(async ({ page }) => {
@@ -277,9 +264,9 @@ test('a layer can be put back on the palette', async ({ page }) => {
 ///sidebar narrow enough that the box had no room to show what was being typed.
 ///
 test('a layer can be named from its settings', async ({ page }) => {
-    //Cleared first, because a bundled example arrives with the shipped sky130 mapping over it and 65/20 is
-    //called diff. This test is about the *unnamed* case, which now has to be got back to.
-    await clearNames(page);
+    //On bare numbers first, because a bundled example arrives with the shipped sky130 mapping over it and 65/20
+    //is called diff. This test is about the *unnamed* case, which now has to be got back to - see bareNumbers.
+    await bareNumbers(page);
 
     await openLayerSettings(page, 0);
 
@@ -301,10 +288,10 @@ test('a layer can be named from its settings', async ({ page }) => {
 ///The box starts out holding the pair, so leaving it alone must not name the layer after itself.
 ///
 ///Without this, opening the settings and closing them would set the name to "65/20": the row would then
-///read "65/20 (65/20)", and the file would count as having a layermap loaded.
+///read "65/20 (65/20)", a name nobody gave it.
 ///
 test('leaving the name box alone does not name a layer after itself', async ({ page }) => {
-    await clearNames(page);
+    await bareNumbers(page);
 
     await openLayerSettings(page, 0);
 
@@ -419,6 +406,51 @@ test('the layer settings popup sits against the edge of the canvas', async ({ pa
 ///The panel opens over the layout with a name box, two numbers, a role and a color field in it, and until
 ///now nothing saying what any of that belonged to - the row it was opened from is behind it once it is up.
 ///
+///
+///Pressing another row while a layer's settings are up shows that row's settings instead, where they are.
+///
+///They went on showing the layer they were opened for, so moving on to the next layer meant closing them and
+///finding that row's gear. The popup stays put rather than jumping level with the row - a panel that moves on
+///every press has to be found again after each one - and the lit gear says which row it belongs to now.
+///
+///Rows 0 and 1 because both are solid: a patterned layer's swatch is a picture, with no color to read off it.
+///
+test('pressing another row moves the open settings to that layer', async ({ page }) => {
+    const rows = page.locator('.layerRow');
+
+    //What the name box holds for a row: its name without the pair, or the pair when it has no name.
+    const nameOf = async (index) => (await rows.nth(index).locator('.layerName').textContent()).replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+
+    //The swatch's color and the picker's three channels, as the same [r, g, b].
+    const swatchOf = async (index) => {
+        const hex = await rows.nth(index).locator('span.layerSwatch').getAttribute('title');
+
+        return [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
+    };
+    const channels = async () => (await page.locator('.layerSettingsChannel').evaluateAll(boxes => boxes.map(box => Number(box.value))));
+
+    await openLayerSettings(page, 0);
+
+    await expect(layerNameBox(page)).toHaveValue(await nameOf(0));
+    expect(await channels()).toEqual(await swatchOf(0));
+    await expect(rows.nth(0).locator('.layerSettingsButton')).toHaveClass(/layerSettingsButtonOn/);
+
+    const before = await page.locator('.layerSettingsPopup').boundingBox();
+
+    await rows.nth(1).locator('.layerName').click();
+
+    await expect(layerNameBox(page)).toHaveValue(await nameOf(1));
+    await expect.poll(async () => channels()).toEqual(await swatchOf(1));
+
+    await expect(rows.nth(1).locator('.layerSettingsButton')).toHaveClass(/layerSettingsButtonOn/);
+    await expect(rows.nth(0).locator('.layerSettingsButton')).not.toHaveClass(/layerSettingsButtonOn/);
+
+    const after = await page.locator('.layerSettingsPopup').boundingBox();
+
+    expect(after.x).toBe(before.x);
+    expect(after.y).toBe(before.y);
+});
+
 test('the layer settings popup is titled, with the way out at the other end', async ({ page }) => {
     await openLayerSettings(page, 0);
 
@@ -426,13 +458,14 @@ test('the layer settings popup is titled, with the way out at the other end', as
 
     await expect(title).toHaveText('Layer settings');
 
-    //Left, with the close button at the far end of the same row.
+    //Left, with the close button at the far end of the same row - the bar's own padding in from its edge, since the bar reaches the popup's sides.
     const laidOut = await page.evaluate(() => {
         const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+        const padding = parseFloat(getComputedStyle(document.querySelector('.layerSettingsHeader')).paddingLeft);
 
         return {
             titleEndsBeforeClose: box('.layerSettingsTitle').right < box('.layerSettingsHeader .closeButton').left,
-            titleAtTheLeft: Math.round(box('.layerSettingsTitle').left - box('.layerSettingsHeader').left)
+            titleAtTheLeft: Math.round(box('.layerSettingsTitle').left - box('.layerSettingsHeader').left - padding)
         };
     });
 

@@ -1,6 +1,6 @@
 //Opening an OASIS file, the format meant to replace GDSII.
 //
-//The reader itself is covered by OasisTests, which checks it against all 897 samples converted by
+//The reader itself is covered by OasisTests, which checks it against all 1,220 samples converted by
 //KLayout. What needs a browser is the rest of the path: that the format is recognized from the file
 //rather than its name, that what comes out draws, and that it reaches everything a .gds does.
 const { test, expect } = require('@playwright/test');

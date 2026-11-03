@@ -292,6 +292,8 @@ The rule is about what ships. The **test** tooling does use npm (Playwright, in 
 
 The vendored files are marked `-text -diff` in `.gitattributes` so they stay byte-identical to upstream and never produce multi-megabyte diffs. They are replaced wholesale on a version bump, never edited in place.
 
+The same holds for the stylesheets and fonts vendored under [`wwwroot/css/`](wwwroot/css) — Bootstrap, Open Iconic and Roboto, beside the app's own `app.css` — whose versions are recorded in [`docs/THIRD-PARTY-NOTICES.md`](docs/THIRD-PARTY-NOTICES.md).
+
 ## Tests
 
 Three layers, all under [`tests/`](tests) — the xUnit project in `tests/GDSViewer.Tests/`, and the browser
@@ -299,20 +301,20 @@ tooling (both Playwright configs, `package.json`, the specs) beside it. Run all 
 crosses into the browser:
 
 ```bash
-dotnet test          # C# units and the 897-file corpus, from the repository root
+dotnet test          # C# units and the 1,220-file corpus, from the repository root
 
 cd tests             # the npm scripts live with the specs they run
 npm test             # browser-JS units (Node's own runner, nothing to install)
 npm run test:e2e     # Playwright end-to-end (npm install first; it starts the app itself)
 ```
 
-The parser and the layer/color logic are pure C# and are covered directly. Pure JS belongs in
-[`wwwroot/js/viewGeometry.js`](wwwroot/js/viewGeometry.js), which has no DOM or three.js dependency so
-Node can require it. Anything needing a real browser — WebGL, Monaco, pointer events, component lifecycle
+The parser and the layer/color logic are pure C# and are covered directly. Pure JS belongs in a file with
+no DOM or three.js dependency, so Node can require it - [`wwwroot/js/viewGeometry.js`](wwwroot/js/viewGeometry.js)
+for the views, and `chipGame.js` and `chipGameMusic.js` for the chip game - with its units in `tests/jstests/`. Anything needing a real browser — WebGL, Monaco, pointer events, component lifecycle
 — belongs in [`tests/e2e/`](tests/e2e). See [DOCUMENTATION.md](docs/DOCUMENTATION.md#testing) for what is
 and is not covered.
 
-When writing e2e specs: **poll rather than read once** (a view is drawn after it is mounted, so a single read races it), and do not wait on the layer sidebar — the text view has none.
+When writing e2e specs: **poll rather than read once** (a view is drawn after it is mounted, so a single read races it), and do not wait on the layer sidebar — it can be put away, and viewer mode has none.
 
 **Never set a file on `#fileUpload` after a bare `page.goto` — reach the app through `gotoApp` first.** It waits for Blazor's `InputFile` to have attached its own listener, and a file set before that carries no files at all: the handler sees `FileCount` 0 and takes the same silent return a canceled file dialog takes. Nothing is drawn, nothing is logged, there is no dialog and not even a history entry — the app simply keeps whatever it opened by itself, so the spec fails much later reporting the *default example's* shape count. Only a spec can reach this. The input is hidden, so the two ways to a file are the dialog — which cannot be answered inside the window — and a drop on the view, and [`fileDrop.js`](wwwroot/js/fileDrop.js) reads that same flag and declines rather than dispatching a `change` nothing is listening for.
 

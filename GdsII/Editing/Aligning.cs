@@ -135,7 +135,8 @@ namespace GdsII
             {
                 int which = order[i];
 
-                int shift = (int)Math.Round((first + (step * i) - doubledMiddle(boxes[which], along)) / 2.0,
+                int shift = (int)Math.Round(
+                    (first + (step * i) - doubledMiddle(boxes[which], along)) / 2.0,
                     MidpointRounding.AwayFromZero);
 
                 if (along == Along.X)

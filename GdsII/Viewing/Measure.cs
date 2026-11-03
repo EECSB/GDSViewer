@@ -201,7 +201,8 @@ namespace GdsII
         ///would miss a sparse patch that straddles two windows.
         ///
         ///Only windows that fit entirely inside the layer's extent are measured - see
-        ///<see cref="DensityWindows"/> for why one hanging over the edge fails every layout ever drawn.
+        ///<see cref="DensityWindows(List{List{Element.Point}}, Bounds, int, int)"/> for why one hanging over the
+        ///edge fails every layout ever drawn.
         ///
         ///Null when the layer draws nothing, and null when it is smaller than the window: an empty layer
         ///has no windows to have a worst one, and neither has a layout the window does not fit inside.
@@ -229,7 +230,11 @@ namespace GdsII
 
             //Merged once, outside the sweep. Merging per window would be the same clipping pass repeated
             //for every position of the window, which on a die is thousands of them.
-            var merged = Booleans.Merge(shapes);
+            //
+            //And merged into rings, its holes kept as holes, the way the density rule takes a layer: every window
+            //is a boolean against the whole layer, and a layer keyholed is the one input Clipper is pathologically
+            //slow on - see Booleans' ring operations.
+            var merged = Booleans.MergeToRings(shapes);
 
             if (merged.Count == 0)
                 return null;
@@ -274,6 +279,29 @@ namespace GdsII
             int window,
             int step)
         {
+            return windows(extent, window, step, box => coveredWithin(merged, box));
+        }
+
+        ///<summary>
+        ///The same sweep over a layer kept as rings, holes still holes - what a density rule measures, for the
+        ///reason <see cref="DrcLayers"/> keeps a layer that way: each window is a boolean against the whole
+        ///layer, and a keyholed one is the input Clipper is slowest on.
+        ///</summary>
+        public static IEnumerable<(Bounds Window, double Density)> DensityWindows(
+            IReadOnlyList<Booleans.Ring> merged,
+            Bounds extent,
+            int window,
+            int step)
+        {
+            return windows(extent, window, step, box => coveredWithin(merged, box));
+        }
+
+        private static IEnumerable<(Bounds Window, double Density)> windows(
+            Bounds extent,
+            int window,
+            int step,
+            Func<Bounds, double> covered)
+        {
             if (window <= 0 || step <= 0 || extent.IsEmpty)
                 yield break;
 
@@ -295,7 +323,7 @@ namespace GdsII
                         checked((int)(left + window)),
                         checked((int)(bottom + window)));
 
-                    yield return (box, coveredWithin(merged, box) / area);
+                    yield return (box, covered(box) / area);
                 }
             }
         }
@@ -303,23 +331,39 @@ namespace GdsII
         ///<summary>How much of a window one merged layer covers, by clipping it to the window.</summary>
         private static double coveredWithin(List<List<Element.Point>> merged, Bounds window)
         {
-            var box = new List<IReadOnlyList<Element.Point>>
-            {
-                new List<Element.Point>
-                {
-                    new Element.Point { X = window.Left, Y = window.Bottom },
-                    new Element.Point { X = window.Right, Y = window.Bottom },
-                    new Element.Point { X = window.Right, Y = window.Top },
-                    new Element.Point { X = window.Left, Y = window.Top }
-                }
-            };
-
             double covered = 0;
 
-            foreach (var piece in Booleans.Combine(merged, box, BooleanOperation.And))
+            foreach (var piece in Booleans.Combine(merged, new[] { outlineOf(window) }, BooleanOperation.And))
                 covered += AreaOf(piece);
 
             return covered;
+        }
+
+        ///<summary>The same of a layer kept as rings, each hole's ground taken back off.</summary>
+        private static double coveredWithin(IReadOnlyList<Booleans.Ring> merged, Bounds window)
+        {
+            double covered = 0;
+
+            foreach (var piece in Booleans.Combine(merged, Booleans.AsRings(new[] { outlineOf(window) }), BooleanOperation.And))
+            {
+                covered += AreaOf(piece.Boundary);
+
+                foreach (var hole in piece.Holes)
+                    covered -= AreaOf(hole);
+            }
+
+            return covered;
+        }
+
+        private static List<Element.Point> outlineOf(Bounds window)
+        {
+            return new List<Element.Point>
+            {
+                new Element.Point { X = window.Left, Y = window.Bottom },
+                new Element.Point { X = window.Right, Y = window.Bottom },
+                new Element.Point { X = window.Right, Y = window.Top },
+                new Element.Point { X = window.Left, Y = window.Top }
+            };
         }
 
         #endregion **************************************************************************

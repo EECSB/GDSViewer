@@ -1,0 +1,123 @@
+[
+  {
+    "file": "LUT4AB.gds",
+    "title": "eFPGA logic tile",
+    "author": "Leo Moser",
+    "about": "One LUT4AB tile of a FABulous eFPGA - its lookup tables, flip-flops and routing switch matrix - from the 480-LUT FPGA he built with FABulous for wafer.space's GF180 runs.",
+    "project": "https://github.com/mole99/gf180mcu-fabulous-fpga",
+    "gds": "https://github.com/mole99/gf180mcu-fabulous-fpga/blob/97da81d42c9eca37be496deca176a2a3ca3e621d/ip/tile_library/tiles/LUT4AB/macro/gf180mcuD/gds/LUT4AB.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/mole99/gf180mcu-fabulous-fpga/97da81d42c9eca37be496deca176a2a3ca3e621d/ip/tile_library/tiles/LUT4AB/macro/gf180mcuD/gds/LUT4AB.gds",
+    "size": 4599234
+  },
+  {
+    "file": "chipathon2023_CS_BGR.gds",
+    "title": "Bandgap and current source",
+    "author": "Akira Tsuchiya",
+    "about": "A bandgap reference - a diode and a current mirror, aiming at 1.2 V - and a 20 µA current source referenced to a threshold voltage, with pads to probe them, on ISHI-KAI's die on wafer.space Run 1.",
+    "project": "https://github.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1",
+    "gds": "https://github.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1/blob/ae2164f4467793373d5fd351330a96c95ceb744c/gds/member_project/chipathon2023_CS_BGR.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1/ae2164f4467793373d5fd351330a96c95ceb744c/gds/member_project/chipathon2023_CS_BGR.gds",
+    "size": 2359266
+  },
+  {
+    "file": "chipathon2023_PLL.gds",
+    "title": "Analog PLL",
+    "author": "Akira Tsuchiya",
+    "about": "A phase-locked loop - phase detector, charge pump, loop filter and a ring-oscillator VCO - taking 8 MHz to 48 or 40 MHz at 3.3 V, on ISHI-KAI's die on wafer.space Run 1.",
+    "project": "https://github.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1",
+    "gds": "https://github.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1/blob/ae2164f4467793373d5fd351330a96c95ceb744c/gds/member_project/chipathon2023_PLL.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/ishi-kai/ISHI-KAI_Multiple_Projects_WaferSapce-GF180-1/ae2164f4467793373d5fd351330a96c95ceb744c/gds/member_project/chipathon2023_PLL.gds",
+    "size": 2814198
+  },
+  {
+    "file": "gf180mcu_fd_io__bi_t_5lm.gds",
+    "title": "GPIO pad",
+    "author": "GlobalFoundries",
+    "about": "GlobalFoundries' bidirectional I/O pad cell, drawn for the five-metal stack, from the gf180mcu I/O cell library.",
+    "project": "https://github.com/fossi-foundation/globalfoundries-pdk-libs-gf180mcu_fd_io",
+    "gds": "https://github.com/fossi-foundation/globalfoundries-pdk-libs-gf180mcu_fd_io/blob/40cdef6d74ec5c9b7d596c147df94c98366afc5b/cells/bi_t/gf180mcu_fd_io__bi_t_5lm.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/fossi-foundation/globalfoundries-pdk-libs-gf180mcu_fd_io/40cdef6d74ec5c9b7d596c147df94c98366afc5b/cells/bi_t/gf180mcu_fd_io__bi_t_5lm.gds",
+    "size": 2354782
+  },
+  {
+    "file": "gf180mcu_fd_ip_sram__sram64x8m8wm1.gds",
+    "title": "64×8 SRAM",
+    "author": "GlobalFoundries",
+    "about": "A 64-word by 8-bit SRAM macro, from GlobalFoundries' gf180mcu SRAM library.",
+    "project": "https://github.com/fossi-foundation/globalfoundries-pdk-ip-gf180mcu_fd_ip_sram",
+    "gds": "https://github.com/fossi-foundation/globalfoundries-pdk-ip-gf180mcu_fd_ip_sram/blob/ef93217c7677975aa03c690889ae9f15bdb4b550/cells/gf180mcu_fd_ip_sram__sram64x8m8wm1/gf180mcu_fd_ip_sram__sram64x8m8wm1.gds",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/fossi-foundation/globalfoundries-pdk-ip-gf180mcu_fd_ip_sram/ef93217c7677975aa03c690889ae9f15bdb4b550/cells/gf180mcu_fd_ip_sram__sram64x8m8wm1/gf180mcu_fd_ip_sram__sram64x8m8wm1.gds",
+    "size": 2322528
+  },
+  {
+    "file": "tt_um_rejunity_sn76489.oas",
+    "title": "SN76489 sound generator",
+    "author": "Renaldas Zioma",
+    "about": "Texas Instruments' SN76489, the programmable sound generator of the 8-bit era, recreated - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/rejunity/tt05-psg-sn76489",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_rejunity_sn76489/tt_um_rejunity_sn76489.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_rejunity_sn76489/tt_um_rejunity_sn76489.oas",
+    "size": 161545
+  },
+  {
+    "file": "tt_um_rejunity_z80.oas",
+    "title": "Z80",
+    "author": "Renaldas Zioma",
+    "about": "The Zilog Z80 in open silicon, aiming to be a silicon-proven, pin-compatible replacement for the classic CPU - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/rejunity/z80-open-silicon",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_rejunity_z80/tt_um_rejunity_z80.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_rejunity_z80/tt_um_rejunity_z80.oas",
+    "size": 436653
+  },
+  {
+    "file": "tt_um_spi_cpu_top.oas",
+    "title": "Super-Simple SPI CPU",
+    "author": "James Ashie Kotey",
+    "about": "A 4-bit CPU that loads its programs from the SPI flash on Tiny Tapeout's QSPI Pmod - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/Sheffield-Chip-Design-Team/SPI-CPU-Final",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_spi_cpu_top/tt_um_spi_cpu_top.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_spi_cpu_top/tt_um_spi_cpu_top.oas",
+    "size": 94457
+  },
+  {
+    "file": "tt_um_urish_simon.oas",
+    "title": "Simon Says",
+    "author": "Uri Shaked",
+    "about": "The Simon Says memory game: repeat the sequence of colors and sounds to win - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/urish/tt-simon-game",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_urish_simon/tt_um_urish_simon.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_urish_simon/tt_um_urish_simon.oas",
+    "size": 133876
+  },
+  {
+    "file": "tt_um_vga_clock.oas",
+    "title": "VGA clock",
+    "author": "Matt Venn",
+    "about": "A clock drawn on a VGA screen by racing the beam, its font held in registers and its colors cycling every minute - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/mattvenn/GF180-VGA-clock-waferspace",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_vga_clock/tt_um_vga_clock.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_vga_clock/tt_um_vga_clock.oas",
+    "size": 99166
+  },
+  {
+    "file": "tt_um_waferspace_vga_screensaver.oas",
+    "title": "wafer.space VGA screensaver",
+    "author": "Uri Shaked",
+    "about": "The wafer.space logo bouncing round a 640×480 VGA screen - the design Tiny Tapeout showed when it confirmed its first wafer.space chips work - on Tiny Tapeout GF 0.2.",
+    "project": "https://github.com/TinyTapeout/tt-waferspace-vga-screensaver",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-gf-0p2/blob/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_waferspace_vga_screensaver/tt_um_waferspace_vga_screensaver.oas",
+    "license": "Apache-2.0",
+    "download": "https://raw.githubusercontent.com/TinyTapeout/tinytapeout-gf-0p2/4150e9654790addc851ad2e6db8d7b6d9663e6ff/projects/tt_um_waferspace_vga_screensaver/tt_um_waferspace_vga_screensaver.oas",
+    "size": 232303
+  }
+]

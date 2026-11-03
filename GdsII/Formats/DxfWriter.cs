@@ -26,20 +26,20 @@ namespace GdsII
     ///**The mapping**, which is the reader's run backwards:
     ///
     ///- **A layer is named `L68D20`**, the pair spelled out. DXF layers are names and GDSII layers are
-    ///  numbers, so the numbers have to live in the name or not at all - and this is the spelling KLayout
-    ///  uses, the one <see cref="DxfReader.NumberFromName"/> reads, and one of the few that contains no
-    ///  character DXF forbids in a layer name. A name from a layermap is not used: `/` is illegal in one,
-    ///  and a name that cannot carry the numbers loses them.
+    ///numbers, so the numbers have to live in the name or not at all - and this is the spelling KLayout
+    ///uses, the one <see cref="DxfReader.NumberFromName"/> reads, and one of the few that contains no
+    ///character DXF forbids in a layer name. A name from a layermap is not used: `/` is illegal in one,
+    ///and a name that cannot carry the numbers loses them.
     ///- **Coordinates are microns**, with `$INSUNITS` saying so rather than leaving it to be assumed.
     ///- **Every placed structure is a block**; the top-level ones' elements go straight into ENTITIES,
-    ///  which is what a drawing is. A file with more than one top puts all of their elements there
-    ///  together, since that is what having more than one top means.
+    ///which is what a drawing is. A file with more than one top puts all of their elements there
+    ///together, since that is what having more than one top means.
     ///- **A boundary or a box is a closed run, a path is an open one** with the drawing's constant width.
-    ///  The reader's rule, in reverse, and for the same reason: an open run has no area.
+    ///The reader's rule, in reverse, and for the same reason: an open run has no area.
     ///- **An SREF is an INSERT and an AREF is a MINSERT**, which is release 12's own repeated insert - one
-    ///  entity for a whole array, the way an AREF is one record. An array whose axes are not the drawing's
-    ///  becomes one INSERT per position instead, because MINSERT spaces along the block's own axes and
-    ///  cannot say anything else.
+    ///entity for a whole array, the way an AREF is one record. An array whose axes are not the drawing's
+    ///becomes one INSERT per position instead, because MINSERT spaces along the block's own axes and
+    ///cannot say anything else.
     ///
     public static class DxfWriter
     {
@@ -70,14 +70,30 @@ namespace GdsII
         ///<summary>The library as a DXF, in the encoding the file is written in.</summary>
         public static byte[] Write(GDS gds)
         {
+            return Write(gds, out _);
+        }
+
+        ///
+        ///The same, saying how many elements have no DXF entity and were left out: a NODE, which marks an
+        ///electrical connection rather than drawing anything. Normally zero, and worth saying out loud when it is
+        ///not - the OASIS writer reports the same count for the same reason, and a shape quietly missing from a
+        ///converted file is the kind of thing found much later by whoever opens it.
+        ///
+        public static byte[] Write(GDS gds, out int skipped)
+        {
             //ASCII rather than UTF-8: release 12 predates any statement about encoding, and a byte over 127
             //in a release 12 file is read as whatever code page the reader happens to be in. AsAscii has
             //already taken anything else out of every name and label on the way into the library.
-            return Encoding.ASCII.GetBytes(Text(gds));
+            return Encoding.ASCII.GetBytes(Text(gds, out skipped));
         }
 
         ///<summary>The same, as the text it is - which is what the tests read and what a person can look at.</summary>
         public static string Text(GDS gds)
+        {
+            return Text(gds, out _);
+        }
+
+        public static string Text(GDS gds, out int skipped)
         {
             var drawing = new StringBuilder();
 
@@ -88,8 +104,8 @@ namespace GdsII
             appendHeader(drawing);
             appendTables(drawing, gds);
 
-            appendBlocks(drawing, gds, placed, microns);
-            appendEntities(drawing, gds, placed, microns);
+            skipped = appendBlocks(drawing, gds, placed, microns);
+            skipped += appendEntities(drawing, gds, placed, microns);
 
             Pair(drawing, 0, "EOF");
 
@@ -97,19 +113,17 @@ namespace GdsII
         }
 
         ///
-        ///How many microns one database unit is, off the library's own UNITS.
+        ///How many microns one database unit is, off the library's own UNITS - <see cref="GDS.MicronsPerDatabaseUnit"/>,
+        ///which is the one reading of that record.
         ///
-        ///The second value in that record is meters per database unit, which is the one that means anything
-        ///absolute - the first is a ratio between two units the file names and nothing else. A file with no
-        ///UNITS at all, or one saying zero, is taken as the nanometer nearly every real file uses; the
-        ///alternative is dividing by zero and writing a drawing of infinities.
+        ///A file with no UNITS at all, one saying zero, or anything else that is not a size, is taken as the
+        ///nanometer nearly every real file uses; the alternative is dividing by zero - or multiplying by an
+        ///infinity, which no file can carry but a library built in memory can - and writing a drawing of
+        ///infinities.
         ///
         public static double MicronsPerUnit(GDS gds)
         {
-            if (gds.StreamFormat?.UNITS?.Data is Real8Data units && units.Values.Length > 1 && units.Values[1] > 0)
-                return units.Values[1] * 1e6;
-
-            return 0.001;
+            return gds.MicronsPerDatabaseUnit ?? 0.001;
         }
 
         ///<summary>The name a GDSII layer and datatype are given, which is the only place DXF can hold them.</summary>
@@ -119,7 +133,9 @@ namespace GdsII
             if (dataType < 0)
                 dataType = 0;
 
-            return $"L{layer}D{dataType}";
+            //Invariant: a layer name in a data file is not prose, and a culture with its own minus sign would
+            //write one into a name the reader could not take the numbers back out of.
+            return FormattableString.Invariant($"L{layer}D{dataType}");
         }
 
         #endregion **************************************************************************
@@ -197,8 +213,11 @@ namespace GdsII
             return layers;
         }
 
-        private static void appendBlocks(StringBuilder drawing, GDS gds, HashSet<string> placed, double microns)
+        ///<summary>The blocks, and how many of their elements had no entity to go out as.</summary>
+        private static int appendBlocks(StringBuilder drawing, GDS gds, HashSet<string> placed, double microns)
         {
+            int skipped = 0;
+
             Pair(drawing, 0, "SECTION");
             Pair(drawing, 2, "BLOCKS");
 
@@ -222,16 +241,24 @@ namespace GdsII
                 Pair(drawing, 30, 0);
 
                 foreach (var element in structure.Elements)
-                    appendElement(drawing, element, microns);
+                {
+                    if (!appendElement(drawing, element, microns))
+                        skipped++;
+                }
 
                 Pair(drawing, 0, "ENDBLK");
             }
 
             Pair(drawing, 0, "ENDSEC");
+
+            return skipped;
         }
 
-        private static void appendEntities(StringBuilder drawing, GDS gds, HashSet<string> placed, double microns)
+        ///<summary>The entities of every top-level structure, and how many of their elements had no entity to go out as.</summary>
+        private static int appendEntities(StringBuilder drawing, GDS gds, HashSet<string> placed, double microns)
         {
+            int skipped = 0;
+
             Pair(drawing, 0, "SECTION");
             Pair(drawing, 2, "ENTITIES");
 
@@ -243,10 +270,15 @@ namespace GdsII
                     continue;
 
                 foreach (var element in structure.Elements)
-                    appendElement(drawing, element, microns);
+                {
+                    if (!appendElement(drawing, element, microns))
+                        skipped++;
+                }
             }
 
             Pair(drawing, 0, "ENDSEC");
+
+            return skipped;
         }
 
         ///<summary>Every structure something else places, which is what has to become a block.</summary>
@@ -269,7 +301,8 @@ namespace GdsII
 
         #region The elements ****************************************************************
 
-        private static void appendElement(StringBuilder drawing, ElementModel element, double microns)
+        ///<summary>One element as its entity, or false for the one kind with no entity to be: a NODE, which draws nothing.</summary>
+        private static bool appendElement(StringBuilder drawing, ElementModel element, double microns)
         {
             if (element.Element is BoundaryModel || element.Element is BoxModel)
                 appendRun(drawing, element, microns, closed: true, width: 0);
@@ -281,6 +314,10 @@ namespace GdsII
                 appendPlacement(drawing, element, Hierarchy.SnameOf(element), microns, 1, 1, 0, 0);
             else if (element.Element is ArefModel aref)
                 appendArray(drawing, element, aref, microns);
+            else
+                return false;
+
+            return true;
         }
 
         ///
@@ -362,6 +399,49 @@ namespace GdsII
             Pair(drawing, 40, SvgWriter.LabelFontSize * microns, Coordinate);
 
             Pair(drawing, 1, says);
+
+            //
+            //**Which part of the string sits at the point**, from PRESENTATION: 72 horizontally and 73 vertically,
+            //as the reader takes them back. Both are left out for the format's default, left and bottom, which is
+            //DXF's own default too - and when either is set, the point goes out again as the second alignment
+            //point, 11/21, which is the one a DXF reader anchors justified text at.
+            //
+            var presentation = TextPresentation.From(text.TextBody.PRESENTATION?.Data);
+
+            int horizontal = HorizontalCode(presentation.Horizontal);
+            int vertical = VerticalCode(presentation.Vertical);
+
+            if (horizontal == 0 && vertical == 0)
+                return;
+
+            Pair(drawing, 72, horizontal);
+            Pair(drawing, 73, vertical);
+            Pair(drawing, 11, points[0].X * microns, Coordinate);
+            Pair(drawing, 21, points[0].Y * microns, Coordinate);
+        }
+
+        ///<summary>Group 72 for the format's horizontal anchor: 0 left, 1 center, 2 right.</summary>
+        private static int HorizontalCode(HorizontalPresentation horizontal)
+        {
+            if (horizontal == HorizontalPresentation.Center)
+                return 1;
+
+            if (horizontal == HorizontalPresentation.Right)
+                return 2;
+
+            return 0;
+        }
+
+        ///<summary>Group 73 for the vertical: 2 middle, 3 top, and 0 - the baseline - for the format's bottom, which is what the reader takes 0 back as.</summary>
+        private static int VerticalCode(VerticalPresentation vertical)
+        {
+            if (vertical == VerticalPresentation.Middle)
+                return 2;
+
+            if (vertical == VerticalPresentation.Top)
+                return 3;
+
+            return 0;
         }
 
         ///<summary>A placement, with its transform - and its repeats when it is a whole array.</summary>
@@ -533,10 +613,11 @@ namespace GdsII
             return "0";
         }
 
+        ///<summary>A path's width as a size. A negative WIDTH is the format's absolute one, drawn at its size like any other.</summary>
         private static int WidthOf(PathModel path)
         {
-            if (path.WIDTH?.Data is Int4Data width && width.Values.Length > 0 && width.Values[0] > 0)
-                return width.Values[0];
+            if (path.WIDTH?.Data is Int4Data width && width.Values.Length > 0)
+                return (int)Math.Min(int.MaxValue, Math.Abs((long)width.Values[0]));
 
             return 0;
         }

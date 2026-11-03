@@ -43,6 +43,41 @@
 }
 
 /*
+    **Never narrower than the bar it carries, from 1280 up.**
+
+    80% is the frame the page keeps on a laptop, and below about 1500 pixels it is narrower than the bar. The
+    bar at its widest - a drawing tool in hand, so Merge is in it; an edit made, so undo and redo are; and
+    Share and the settings gear at the end - needs the frame 1194 wide to stay on one line since Compare joined
+    the file buttons, and 80% of a 1280 window is 1005. So from 1280 up the frame gives way to the bar rather
+    than the bar to a second row: 1216 or 80%, whichever is wider. Above about 1550 the 80% is the wider and
+    nothing changes.
+
+    **1256 since the AI assistant joined the bar**, a button and its gap after the Cells and Layers switches: measured, the
+    widest bar then needs the frame 1248, and 1244 is two rows. The rest is a margin for a font that sets a word a
+    pixel wider. At 1280 that leaves the frame thirteen pixels of page either side, where it had thirty-three, and
+    from about 1570 up the 80% is the wider again.
+
+    **1276 while the PDK manager had a button at the end of the bar** (2026-10-18), beside Share: measured, the
+    widest bar then needed 1282, past any window of 1280, so the spaces at that end may close to the pairs' own
+    gap and it needed 1270 - see .toolbarEndSpace in app.css. **1256 again since it went** (2026-10-19): the PDK
+    button over the layer panel and the gear's line are the ways in, and the bar is a button and its gap shorter.
+
+    The undo pair already pushed the bar onto two rows at 1280, before Share and the gear were added to it;
+    the spec that pins the one line measured it with a tool in hand and nothing yet edited, so it never saw
+    that. It makes an edit now.
+
+    Below 1280 the bar is let wrap, as it always was, and the frame is left alone.
+
+    Full screen and a phone still take the whole width: their rules carry more weight than this one - see
+    the full-screen and phone blocks in app.css.
+*/
+@media (min-width: 1280px) {
+    #mainAppContainer {
+        max-width: max(80%, 1256px);
+    }
+}
+
+/*
     Whatever is left once the toolbar above it has taken its share.
 
     This was 55em, a height picked to look right on one screen: taller than a laptop, so the page grew a
@@ -56,8 +91,9 @@
     /*
         Single-line for the same reason as .viewerPageRow: the view and the sidebar take this row's height.
 
-        Except on a phone, where it wraps and the sidebar goes under the view - see the phone block after
-        full screen in app.css, which is where the page is let off the window's height as well.
+        Except on a phone held upright, where it wraps and the sidebar goes under the view - see the second
+        phone block after full screen in app.css, which is where the page is let off the window's height as
+        well.
     */
     flex-wrap: nowrap;
 }

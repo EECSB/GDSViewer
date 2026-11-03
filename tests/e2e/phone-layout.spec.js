@@ -3,6 +3,7 @@
 //Below 768 pixels the layer sidebar and the cell tree stop sharing a row with the drawing - see the phone
 //blocks in wwwroot/css/app.css. Before them a phone drew nothing at all: at 375 wide the two sidebars wanted
 //496 pixels of a 345-pixel row, the drawing was left zero, and the page could be dragged four pixels sideways.
+//A phone on its side keeps the row and loses only the margins, which is decided by the height.
 const { test, expect } = require('@playwright/test');
 const {
     gotoExample,
@@ -233,6 +234,80 @@ test.describe('on a phone', () => {
         await expect.poll(async () => sizeOf(page, '#gdsTextEditor', 'height')).toBeGreaterThan(PHONE.height / 2);
         expect(await sizeOf(page, '#gdsTextEditor', 'width')).toBeGreaterThanOrEqual(PHONE.width - 4);
     });
+});
+
+///
+///A phone on its side: wider than 768, so the sidebars stay beside the drawing - but short, so the margins go.
+///
+///Before, it kept the laptop's frame. 128 of its 390 pixels went on the page's padding, the bar wrapped to two
+///rows in what was left, and the drawing measured 256 by 135: a third of the screen tall, under 195. The page
+///could be dragged four pixels sideways as well, the row's gutter hanging past the padding it sat in.
+///
+test.describe('on a phone held sideways', () => {
+    const SIDEWAYS = { width: 844, height: 390 };
+
+    test.use({ viewport: SIDEWAYS, isMobile: true, hasTouch: true });
+
+    test('the page keeps no margins here either', async ({ page }) => {
+        await gotoExample(page, MOSFET, '2d');
+
+        const padding = await page.locator('.content').evaluate((content) => {
+            const style = getComputedStyle(content);
+
+            return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft];
+        });
+
+        expect(padding).toEqual(['0px', '0px', '0px', '0px']);
+
+        const banner = await box(page, '.top-row');
+        const bar = await box(page, '#mainAppContainer > .viewBorderBackground');
+
+        expect(bar.left).toBe(0);
+        expect(bar.width).toBe(SIDEWAYS.width);
+        expect(Math.round(bar.top)).toBe(Math.round(banner.bottom));
+
+        expect(await sidewaysOverflow(page)).toBe(0);
+    });
+
+    ///
+    ///Only the margins: the layer sidebar and the cell tree keep their places beside the drawing, and the page
+    ///is still the height of the window - nothing to scroll to, since nothing went underneath. What the margins
+    ///gave back goes to the drawing, which has over half the window's height where it had a third.
+    ///
+    test('the sidebars stay beside the drawing, and the page the height of the window', async ({ page }) => {
+        await gotoExample(page, MOSFET, '2d', true);
+
+        await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
+        await expect.poll(async () => sizeOf(page, '#gdsSVG', 'height')).toBeGreaterThan(SIDEWAYS.height / 2);
+
+        const canvas = await box(page, '.viewCanvas');
+        const tree = await box(page, '#cellTree');
+        const pane = await box(page, '#viewPane');
+        const sidebar = await box(page, '#layerSidebar');
+
+        expect(tree.right).toBeLessThanOrEqual(canvas.left + 1);
+        expect(sidebar.left).toBeGreaterThanOrEqual(pane.right - 1);
+        expect(Math.round(sidebar.top)).toBe(Math.round(pane.top));
+
+        expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(SIDEWAYS.height);
+    });
+});
+
+///
+///That edge, from both sides: 500 pixels tall loses the margins and 501 keeps them, at a width that is no phone's
+///- the line is drawn by the height, so a desktop window dragged that short gets the room as well.
+///
+test.describe('where the margins come off for a short screen', () => {
+    for (const [height, expected] of [[500, '0px'], [501, '64px']]) {
+        test(`${height} pixels tall gives a padding of ${expected} above the bar`, async ({ page }) => {
+            await page.setViewportSize({ width: 1024, height });
+
+            //With the margins asked for: full screen, the default, has none at any height.
+            await gotoExample(page, MOSFET, '2d', false, false);
+
+            expect(await page.locator('.content').evaluate(content => getComputedStyle(content).paddingTop)).toBe(expected);
+        });
+    }
 });
 
 ///

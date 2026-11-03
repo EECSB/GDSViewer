@@ -117,6 +117,60 @@ namespace GdsII.Cli
                 $"       {quiet.Violations.Count:N0} found, then {loud.Violations.Count:N0} - the gap between them is what attribution costs"));
         }
 
+        ///
+        ///**A real rule deck**, with --deck: the whole of it over the layout, the way `gds drc` runs it.
+        ///
+        ///The pair above is two made-up rules on one layer, which says what the engine costs and nothing about what
+        ///a foundry's deck costs over a real design - dozens of rules, several layers each, booleans between them.
+        ///Asked for by the 2026-11-03 audit, which found no instrument for it. Nothing is printed without --deck.
+        ///
+        private static bool benchDeck(string[] args, TextWriter output, TextWriter error, FlattenedLayout layout)
+        {
+            string? deckPath = valueOf(args, "--deck");
+
+            if (deckPath is null)
+                return true;
+
+            if (!File.Exists(deckPath))
+            {
+                error.WriteLine($"No deck at \"{deckPath}\".");
+
+                return false;
+            }
+
+            var deck = DrcDeck.Parse(File.ReadAllText(deckPath));
+
+            var result = time(output, "deck", () => Drc.Check(deck, layout));
+
+            output.WriteLine(FormattableString.Invariant(
+                $"       {deck.Rules.Count:N0} rule(s) from {Path.GetFileName(deckPath)}, {result.Violations.Count:N0} violation(s)"));
+
+            return true;
+        }
+
+        ///
+        ///**Every net traced**, when a layermap has said which layers are metal and which are vias - the whole
+        ///file's worth, which is the most a click on a wire can ever cost, and what the app's Nets panel lists.
+        ///
+        ///Nothing without roles: a GDSII file does not say which of its numbers conduct, so a file read on its own
+        ///has no nets to trace. Asked for by the 2026-11-03 audit, which found no instrument for it.
+        ///
+        private static void benchNets(TextWriter output, GDS gds, FlattenedLayout layout)
+        {
+            if (!Nets.AnyRolesSet(gds.AdditionalInformation.Layers.Values))
+                return;
+
+            var nets = time(output, "nets", () => Nets.All(layout));
+
+            int largest = 0;
+
+            foreach (var net in nets)
+                largest = Math.Max(largest, net.Count);
+
+            output.WriteLine(FormattableString.Invariant(
+                $"       {nets.Count:N0} net(s), the largest {largest:N0} shape(s)"));
+        }
+
         private static int bench(string[] args, TextWriter output, TextWriter error)
         {
             string? path = fileAmong(args);
@@ -142,6 +196,8 @@ namespace GdsII.Cli
                     $"generated {shape.PerCell:N0} x {shape.Columns}x{shape.Rows}, {shape.Layers} layer(s), {shape.Corners} corner(s)");
             }
 
+            peakHeap = 0;
+
             byte[] bytes = gds.Serialize();
 
             output.WriteLine($"bench  {what}");
@@ -151,6 +207,10 @@ namespace GdsII.Cli
             //Parsed from the bytes rather than reusing what is in hand, because opening a file is the thing
             //being measured and a library already in memory has had its parse paid for.
             var parsed = time(output, "parse", () => new GDS(bytes));
+
+            //The roles a net is traced by live on the layers, so they go on before the flatten that points at them.
+            if (!applyLayerMap(args, parsed, output, error))
+                return FileError;
 
             var layout = time(output, "flatten", () => GdsFlattener.Flatten(parsed));
 
@@ -167,6 +227,11 @@ namespace GdsII.Cli
 
             benchDrc(output, parsed, layout);
 
+            if (!benchDeck(args, output, error, layout))
+                return FileError;
+
+            benchNets(output, parsed, layout);
+
             //
             //And writing the layout back out as OASIS, which is the other end of opening one.
             //
@@ -180,12 +245,21 @@ namespace GdsII.Cli
             output.WriteLine(FormattableString.Invariant(
                 $"       {oasis.Length:N0} bytes of OASIS, {oasis.Length * 100.0 / bytes.Length:N1}% of the GDSII"));
 
+            //
+            //**The highest reading, not the last.** Taken after every run of every stage rather than once here,
+            //because what is on the heap at the end is whatever the collector has not got round to yet - a number
+            //that moved fifty megabytes between two runs of the same code. A reading between stages still misses
+            //what a stage allocated and freed inside itself, so this is a floor under the peak rather than the peak.
+            //
             output.WriteLine();
             output.WriteLine(FormattableString.Invariant(
-                $"       peak managed heap {GC.GetTotalMemory(forceFullCollection: false) / (1024.0 * 1024.0):N1} MB"));
+                $"       peak managed heap {Math.Max(peakHeap, GC.GetTotalMemory(forceFullCollection: false)) / (1024.0 * 1024.0):N1} MB"));
 
             return Ok;
         }
+
+        ///<summary>The most managed heap seen after any run of any stage; see time.</summary>
+        private static long peakHeap;
 
         ///<summary>Runs it twice and prints both, reporting the second - the first pays for the JIT.</summary>
         private static T time<T>(TextWriter output, string stage, Func<T> work)
@@ -194,9 +268,13 @@ namespace GdsII.Cli
             work();
             first.Stop();
 
+            peakHeap = Math.Max(peakHeap, GC.GetTotalMemory(forceFullCollection: false));
+
             var second = Stopwatch.StartNew();
             T result = work();
             second.Stop();
+
+            peakHeap = Math.Max(peakHeap, GC.GetTotalMemory(forceFullCollection: false));
 
             output.WriteLine(FormattableString.Invariant(
                 $"  {stage,-8} {second.ElapsedMilliseconds,8:N0} ms   (first run {first.ElapsedMilliseconds:N0} ms)"));

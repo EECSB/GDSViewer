@@ -28,7 +28,7 @@ namespace GdsII.Cli
             if (deckPath is null)
             {
                 error.WriteLine("drc needs --deck <file>, the design rules to check against.");
-                error.WriteLine("There is no standard format for one and no deck ships with this tool - a starter deck for sky130 is in wwwroot/resources/GDS Files/sky130A.drc, and docs/DRC.md says how to write one.");
+                error.WriteLine("There is no standard format for one and no deck ships with this tool - starter decks for sky130, gf180mcu and ihp-sg13g2 are in wwwroot/resources/GDS Files/sky130A.drc, gf180mcuD.drc and sg13g2.drc, and docs/DRC.md says how to write one.");
 
                 return UsageError;
             }
@@ -55,13 +55,14 @@ namespace GdsII.Cli
             if (!read(path, error, out GDS? gds))
                 return FileError;
 
-            var layout = GdsFlattener.Flatten(gds!);
+            if (flatten(gds!, args, error, saysItself: true) is not FlattenedLayout layout)
+                return UsageError;
 
             var result = Drc.Check(deck, layout);
 
             string? only = valueOf(args, "--rule");
 
-            report(result, deck, describe(path), describe(deckPath), only, args.Contains("--markers"), output);
+            report(result, deck, describe(path), describe(deckPath), only, args.Contains("--markers"), layout.Stopped, output);
 
             if (outputPath(args) is string destination && destination != "-")
             {
@@ -117,6 +118,7 @@ namespace GdsII.Cli
             string deckName,
             string? only,
             bool markers,
+            bool stopped,
             TextWriter output)
         {
             output.WriteLine($"Checked {layout} against {deckName}.");
@@ -134,7 +136,7 @@ namespace GdsII.Cli
             if (markers)
                 writeMarkers(result, only, output);
 
-            writeNotRun(result, output);
+            writeNotRun(result, stopped, output);
 
             writeSummary(result, deck, counted, only, output);
         }
@@ -148,29 +150,15 @@ namespace GdsII.Cli
         ///</summary>
         private static List<KeyValuePair<string, int>> countByRule(DrcResult result, string? only)
         {
-            var counts = new Dictionary<string, int>();
+            var violations = result.Violations.AsEnumerable();
 
-            foreach (var violation in result.Violations)
-            {
-                if (only is not null && violation.RuleId != only)
-                    continue;
+            if (only is not null)
+                violations = violations.Where(violation => violation.RuleId == only);
 
-                counts.TryGetValue(violation.RuleId, out int found);
-                counts[violation.RuleId] = found + 1;
-            }
-
-            var ordered = new List<KeyValuePair<string, int>>();
-
-            foreach (var violation in result.Violations)
-            {
-                if (counts.TryGetValue(violation.RuleId, out int found))
-                {
-                    ordered.Add(new KeyValuePair<string, int>(violation.RuleId, found));
-                    counts.Remove(violation.RuleId);
-                }
-            }
-
-            return ordered;
+            //Grouped by the library, in the order the first of each was found - see DrcResult.ByRule.
+            return DrcResult.ByRule(violations)
+                .Select(rule => new KeyValuePair<string, int>(rule.Key, rule.Count()))
+                .ToList();
         }
 
         private static void writeCounts(DrcDeck deck, List<KeyValuePair<string, int>> counted, TextWriter output)
@@ -251,13 +239,27 @@ namespace GdsII.Cli
             var bounds = violation.Bounds;
 
             if (violation.Check == DrcCheck.OffGrid)
-                return $"{bounds.Left},{bounds.Bottom}";
+                return FormattableString.Invariant($"{bounds.Left},{bounds.Bottom}");
 
-            return $"{bounds.Left},{bounds.Bottom} to {bounds.Right},{bounds.Top}";
+            return FormattableString.Invariant($"{bounds.Left},{bounds.Bottom} to {bounds.Right},{bounds.Top}");
         }
 
-        private static void writeNotRun(DrcResult result, TextWriter output)
+        private static void writeNotRun(DrcResult result, bool stopped, TextWriter output)
         {
+            //First, because it is about every count above it: each one is a count over part of the layout.
+            if (result.NotChecked.Count > 0)
+            {
+                output.WriteLine("Not all of the layout was checked:");
+
+                foreach (string missing in result.NotChecked)
+                    output.WriteLine($"  {missing}");
+
+                if (stopped)
+                    output.WriteLine("  --most-elements takes a flatten further, at about a kilobyte of memory an element.");
+
+                output.WriteLine();
+            }
+
             if (result.NotRun.Count > 0)
             {
                 output.WriteLine($"{result.NotRun.Count} rule(s) did not run:");

@@ -366,3 +366,19 @@ FodyWeavers.xsd
 /tests/test-results/
 /tests/playwright-report/
 /tests/playwright/.cache/
+
+# Secrets: API keys for the AI assistant, used in development and testing. Never commit these;
+# .env.example carries the variable names with no values.
+.env
+.env.*
+!.env.example
+*.key
+appsettings.*.local.json
+
+# The AI models a Development build adds under Settings, keys and all - see Ai/DevSecrets.cs. Served from wwwroot by
+# the dev server, so anything that can reach it can read it; the project file keeps it out of every publish, and this
+# keeps it out of the repository. dev-secrets.example.json at the root is the template.
+dev-secrets.json
+
+# This machine's own registration of gds mcp with Claude Code, pointing at its own build.
+.mcp.json

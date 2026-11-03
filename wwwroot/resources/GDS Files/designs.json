@@ -1,0 +1,92 @@
+[
+  {
+    "file": "rgb_mixer.gds",
+    "title": "RGB mixer",
+    "author": "Matt Venn",
+    "about": "The Zero to ASIC course's demo: debounced rotary encoders driving three PWM outputs, hardened as a Caravel user project.",
+    "project": "https://github.com/mattvenn/caravel_rgb_mixer",
+    "gds": "https://github.com/mattvenn/caravel_rgb_mixer/blob/c0ba2c47d83113218372ddb692c9a458586e2544/gds/rgb_mixer.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "sky130_ef_ip__opamp.gds",
+    "title": "Op-amp",
+    "author": "Efabless",
+    "about": "A simple operational amplifier drawn in Magic, Efabless's example of an analog IP block characterized with CACE.",
+    "project": "https://github.com/fossi-foundation/sky130_ef_ip__opamp",
+    "gds": "https://github.com/fossi-foundation/sky130_ef_ip__opamp/blob/f0eb5cd47112d90fd6d7792ba68e763beacac8e7/gds/sky130_ef_ip__opamp.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "sky130_ef_ip__rc_osc_500k.gds",
+    "title": "500 kHz RC oscillator",
+    "author": "Tim Edwards, Efabless",
+    "about": "A low-power, current-starved ring oscillator with an enable, slowed down by capacitors rather than a huge bias resistor.",
+    "project": "https://github.com/RTimothyEdwards/sky130_ef_ip__rc_osc_500k",
+    "gds": "https://github.com/RTimothyEdwards/sky130_ef_ip__rc_osc_500k/blob/343f4481b2199efe4ddba48428c89fcf1029ae9a/gds/sky130_ef_ip__rc_osc_500k.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "sky130_fd_io__top_gpiov2.gds",
+    "title": "GPIO pad",
+    "author": "SkyWater Technology",
+    "about": "SkyWater's general-purpose I/O pad cell, from the sky130 I/O cell library.",
+    "project": "https://github.com/fossi-foundation/skywater-pdk-libs-sky130_fd_io",
+    "gds": "https://github.com/fossi-foundation/skywater-pdk-libs-sky130_fd_io/blob/3ea30515f909f1c2f7e6ee887e83bd7fb4a78b90/cells/top_gpiov2/sky130_fd_io__top_gpiov2.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_mcs4_cpu.gds",
+    "title": "MCS-4 4004 CPU",
+    "author": "Munetomo Maruyama",
+    "about": "Intel's 4004, the CPU of the first microcomputer set, rebuilt from scratch in Verilog - on Tiny Tapeout SKY25a.",
+    "project": "https://github.com/munetomo-maruyama/ttsky25a_MCS4_CPU",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-sky-25a/blob/85e372cfc19e94d7b572a6feae9174bc21070982/projects/tt_um_mcs4_cpu/tt_um_mcs4_cpu.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_oscillating_bones.gds",
+    "title": "Oscillating Bones",
+    "author": "Uri Shaked",
+    "about": "A ring oscillator made of a chain of 21 SkullFET inverters - on Tiny Tapeout 09.",
+    "project": "https://github.com/urish/tt08-oscillating-bones",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-09/blob/c9701782ae3a61874681404a88c7ec2c23476991/projects/tt_um_oscillating_bones/tt_um_oscillating_bones.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_rnunes2311_12bit_sar_adc.gds",
+    "title": "12-bit SAR ADC",
+    "author": "Ricardo Nunes",
+    "about": "A successive-approximation ADC whose capacitor DAC is built from metal1-to-metal2 capacitors of about 0.8 fF each - on Tiny Tapeout 07.",
+    "project": "https://github.com/rnunes2311/tt07-12bit_SAR_ADC",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-07/blob/239db054bafb02b90bfd25d141c6b22b3c54d7f1/projects/tt_um_rnunes2311_12bit_sar_adc/tt_um_rnunes2311_12bit_sar_adc.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_urish_skullfet.gds",
+    "title": "SkullFET",
+    "author": "Uri Shaked",
+    "about": "Hand-crafted, skull-shaped transistors, built into a NOT gate, a NAND gate and an SR flip-flop - on Tiny Tapeout 05.",
+    "project": "https://github.com/urish/tt05-skullfet",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-05/blob/774826437e2dd0f939a2b20154ab0b62e262020b/projects/tt_um_urish_skullfet/tt_um_urish_skullfet.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_vaf_555_timer.gds",
+    "title": "555 timer",
+    "author": "Vincent Fusco",
+    "about": "A clone of the classic 555 timer, as an analog design - on Tiny Tapeout 06.",
+    "project": "https://github.com/vincentfusco/tt06_555",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-06/blob/4f8caad5f922725e81f85e38e301f856363efbde/projects/tt_um_vaf_555_timer/tt_um_vaf_555_timer.gds",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "tt_um_vga_clock.gds",
+    "title": "VGA clock",
+    "author": "Matt Venn",
+    "about": "A clock drawn on a VGA screen by racing the beam, with its font held in registers - on Tiny Tapeout 08.",
+    "project": "https://github.com/mattvenn/tt08-vga-clock",
+    "gds": "https://github.com/TinyTapeout/tinytapeout-08/blob/b4342ed12fe5759cf989cc621f22d3e4d539341d/projects/tt_um_vga_clock/tt_um_vga_clock.gds",
+    "license": "Apache-2.0"
+  }
+]

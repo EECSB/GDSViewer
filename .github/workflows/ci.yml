@@ -4,7 +4,7 @@
 # run - because a change that crosses into the browser is not covered by any one of them. The e2e job
 # starts the app itself; tests/playwright.config.js has the dotnet run in it.
 #
-# The C# tests are filtered. Thirty-three of them use KLayout as a second implementation to check this one
+# The C# tests are filtered. Forty-seven of them use KLayout as a second implementation to check this one
 # against, and it is not on a runner and not worth installing there: it is a desktop EDA tool, and what
 # those tests cover is agreement with somebody else's reader, which is a thing to check on a machine that
 # has one rather than a thing to gate a merge on.
@@ -52,7 +52,7 @@ jobs:
         run: dotnet test --configuration Release --no-build --filter "Needs!=KLayout" --logger "console;verbosity=normal"
 
       # Proves the two packages still build as packages, on the same commit rather than only on a tag -
-      # a licence expression or a missing readme fails here rather than on the release.
+      # a license expression or a missing readme fails here rather than on the release.
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./artifacts
 

@@ -1,0 +1,284 @@
+#A layermap for IHP's SG13G2 open PDK, as GDS Viewer's built-in ihp-sg13g2 carries it - the counterpart of
+#sky130-roles.csv and gf180mcu-roles.csv, in the same columns and for the same reasons: a name for each layer, a height
+#for the 3D view, and a role for Trace net.
+#
+#**Every pair and every name is IHP's own**, from the layer table of the SG13G2 layout rules - chapter 2 of
+#SG13G2_os_layout_rules.pdf, Rev. 0.4, in github.com/IHP-GmbH/IHP-Open-PDK at 5e6d592 - read out of the PDF into
+#OtherResources/IHP/sg13g2-layer-table.csv, where IhpLayermapTests holds this file to it. The KLayout layer properties
+#the PDK ships, sg13g2.lyp, vendored beside it, agree with that table on all 296 of its rows. A layer's drawing purpose
+#is its bare name, Metal1, and any other is written after a dot as the table writes it: Metal1.pin, Metal1.text.
+#
+#**Not the whole table, which is IHP's for every process it runs** - graphene, waveguides, sensors and MEMS among them.
+#The rows here are the table's for each layer SG13G2's own rules govern: the layers chapters 5 to 9 give rules for, the
+#marker layers chapter 3.1 names, and the few more IHP's own SG13G2 libraries draw - the standard cells, the devices of
+#sg13g2_pr and the SRAM macros. Never a layer chapter 3.2 forbids, whose layout IHP rejects at tape-in: BiWind, BasPoly,
+#EmPoly, DeepCo, ColWind, NoDRC and the rest.
+#
+#**And five pairs the table does not list, from sg13g2.lyp**, each drawn by IHP's libraries or by a design the picker
+#lists: the boundaries the standard cells, the inductors and the seal ring are drawn with, 189/4, 27/4 and 39/4; GatPoly's
+#boundary, 5/4; and Metal1.label, 8/1, the purpose the layout flows write some of their pin names on beside Metal1.text.
+#
+#The columns are layer,datatype,name,color,height,thickness,role,fill, as in sky130-roles.csv, and the colors are left
+#to the palette for the reason that file gives.
+#
+#**The heights and thicknesses are IHP's, in nanometers**, which is the database unit SG13G2 layouts are written in -
+#from the layer thicknesses of the process specification, SG13G2_os_process_spec.pdf 2.16, measured up from the silicon
+#surface, the top of the shallow trench:
+#
+#  the trench is 400 deep and gate poly 160 thick, and 640 of oxide put Metal1 at 640;
+#  Metal1 is 420 thick and Metal2 to Metal5 490 each, with 540 between each metal and the next, which a via spans;
+#  850 up from Metal5 is TopMetal1, 2000 thick, at 6030, and 2800 up from that TopMetal2, 3000 thick, at 10830;
+#  and the MIM's top plate is 150 thick on 40 nm of dielectric over Metal5, so at 5220.
+#
+#The 2.5D script the PDK ships for KLayout, sg13g2_beol.lyd25, builds the same metals and vias 400 higher - it starts
+#from the bottom of the trench - and differs in two places: gate poly 140 thick, and the MIM 24 above Metal5. The
+#specification is the document of record, so its numbers are the ones here.
+#
+#Two kinds of row are a judgment rather than a measurement, as in gf180mcu-roles.csv.
+#
+#**A pin, a word or a copy takes the height of the layer it is on.** A pin and the text over it sit on their metal; fill
+#and what the mask shop adds at mask generation are the same film, poured on the same level. The rest of a layer's
+#purposes - its fill exclusions, its slits, its OPC and extraction instructions, its resistor and probe marks - are
+#instructions to a tool, and none of them has a height.
+#
+#**And the wells and the buried layer, which the specification gives no depth for.** The implants into Activ take the
+#trench's depth, 400; the wells are put deeper, 1500, and the n buried layer deeper again, 2500 - which says what order
+#they are in and nothing more.
+#layer,datatype,name,color,height,thickness,role,fill
+#
+#The wells and the buried layer, with no role: none of them carries a signal. The blocks are where a well's or the
+#buried layer's implant is held off, and have no height.
+31,0,NWell,,-1500,1500,,
+32,0,nBuLay,,-2500,2500,,
+32,21,nBuLay.block,,,,,
+46,0,PWell,,-1500,1500,,
+46,21,PWell.block,,,,,
+257,0,isoNWell,,-1500,1500,,
+#
+#The implants into Activ, and the masks that change what is grown rather than adding a film: EXTBlock keeps the tip and
+#halo implants off, ThickGateOx is where the gate oxide is grown thick for the 3.3 V devices, and SalBlock keeps the
+#silicide off. nSD's block is an instruction too. Only the two implants have a height.
+7,0,nSD,,-400,400,,
+7,21,nSD.block,,,,,
+14,0,pSD,,-400,400,,
+28,0,SalBlock,,,,,
+44,0,ThickGateOx,,,,,
+111,0,EXTBlock,,,,,
+#
+#**Activ is given no role, though a source and a drain are both net nodes** - for the reason sky130-roles.csv gives for
+#diff: a transistor's Activ is one shape with the gate across it, so a conductor here would join source to drain through
+#the channel. A trace stops at the contacts down to Activ instead. Cont spans the 640 from the surface to Metal1.
+1,0,Activ,,-400,400,,
+5,0,GatPoly,,0,160,conductor,
+6,0,Cont,,0,640,via,
+#
+#The metal stack, each level joined to the next by its own via.
+8,0,Metal1,,640,420,conductor,
+19,0,Via1,,1060,540,via,
+10,0,Metal2,,1600,490,conductor,
+29,0,Via2,,2090,540,via,
+30,0,Metal3,,2630,490,conductor,
+49,0,Via3,,3120,540,via,
+50,0,Metal4,,3660,490,conductor,
+66,0,Via4,,4150,540,via,
+67,0,Metal5,,4690,490,conductor,
+125,0,TopVia1,,5180,850,via,
+126,0,TopMetal1,,6030,2000,conductor,
+133,0,TopVia2,,8030,2800,via,
+134,0,TopMetal2,,10830,3000,conductor,
+#
+#The MIM capacitor's top plate and Vmim, the via from the plate up to TopMetal1, with **no role** - for the reason
+#sky130-roles.csv gives for capm. A via landing on the plate also overlaps the Metal5 under it, and a via joins
+#everything it overlaps, so a conductor or a via here would short the two plates in every trace. IHP made Vmim for
+#exactly this: inside a MIM it is drawn in place of TopVia1, "to prevent false short circuit detection" by tools that
+#cannot tell the capacitor from interconnect (layout rules 6.11). A TopVia1 drawn over the plate instead still joins
+#TopMetal1 to Metal5 in a trace.
+36,0,MIM,,5220,150,,
+129,0,Vmim,,5370,660,,
+#
+#The openings in the passivation, where a pad's TopMetal2 is bared, at TopMetal2's height and with no role, as gf180mcu's
+#Pad is: the opening for a bond wire, for a solder bump and for a copper pillar. The dicing line and dfpad, which
+#recognizes a pad, are marks.
+9,0,Passiv,,10830,3000,,
+9,36,Passiv.sbump,,10830,3000,,
+9,35,Passiv.pillar,,10830,3000,,
+9,40,Passiv.pdl,,,,,
+41,0,dfpad,,,,,
+41,35,dfpad.pillar,,,,,
+41,36,dfpad.sbump,,,,,
+#
+#The pins and the words, each at the height of the layer it names. No role: the name of a traced net is read from
+#whatever text lands on it, whatever that layer is said to be. **Text is where IHP writes a net's name** - its LVS deck
+#reads labels(8, 25), and its cells write them there.
+1,2,Activ.pin,,-400,400,,
+5,2,GatPoly.pin,,0,160,,
+8,2,Metal1.pin,,640,420,,
+8,25,Metal1.text,,640,420,,
+9,2,Passiv.pin,,10830,3000,,
+10,2,Metal2.pin,,1600,490,,
+10,25,Metal2.text,,1600,490,,
+27,2,IND.pin,,,,,
+27,25,IND.text,,,,,
+30,2,Metal3.pin,,2630,490,,
+30,25,Metal3.text,,2630,490,,
+31,2,NWell.pin,,-1500,1500,,
+32,2,nBuLay.pin,,-2500,2500,,
+40,25,Substrate.text,,,,,
+46,2,PWell.pin,,-1500,1500,,
+50,2,Metal4.pin,,3660,490,,
+50,25,Metal4.text,,3660,490,,
+67,2,Metal5.pin,,4690,490,,
+67,25,Metal5.text,,4690,490,,
+99,2,Recog.pin,,,,,
+126,2,TopMetal1.pin,,6030,2000,,
+126,25,TopMetal1.text,,6030,2000,,
+128,2,PolyRes.pin,,,,,
+134,2,TopMetal2.pin,,10830,3000,,
+134,25,TopMetal2.text,,10830,3000,,
+8,1,Metal1.label,,640,420,,
+#
+#Fill, and what the mask shop adds to a layer as the same film: at the layer's height. Fill takes no role - floating
+#metal and poly poured in to even the density out, joined to nothing - but a metal's mask purpose conducts, since it
+#becomes that metal.
+1,20,Activ.mask,,-400,400,,
+1,22,Activ.filler,,-400,400,,
+5,22,GatPoly.filler,,0,160,,
+8,20,Metal1.mask,,640,420,conductor,
+8,22,Metal1.filler,,640,420,,
+10,20,Metal2.mask,,1600,490,conductor,
+10,22,Metal2.filler,,1600,490,,
+30,20,Metal3.mask,,2630,490,conductor,
+30,22,Metal3.filler,,2630,490,,
+50,20,Metal4.mask,,3660,490,conductor,
+50,22,Metal4.filler,,3660,490,,
+67,20,Metal5.mask,,4690,490,conductor,
+67,22,Metal5.filler,,4690,490,,
+126,20,TopMetal1.mask,,6030,2000,conductor,
+126,22,TopMetal1.filler,,6030,2000,,
+134,20,TopMetal2.mask,,10830,3000,conductor,
+134,22,TopMetal2.filler,,10830,3000,,
+#
+#The instructions on each layer: where fill may not go, slits cut in wide metal, OPC and extraction hints, and marks
+#over a metal resistor and a current probe. No height and no role.
+1,23,Activ.nofill,,,,,
+1,26,Activ.OPC,,,,,
+1,27,Activ.iOPC,,,,,
+1,28,Activ.noqrc,,,,,
+5,23,GatPoly.nofill,,,,,
+5,26,GatPoly.OPC,,,,,
+5,27,GatPoly.iOPC,,,,,
+5,28,GatPoly.noqrc,,,,,
+6,26,Cont.OPC,,,,,
+8,23,Metal1.nofill,,,,,
+8,24,Metal1.slit,,,,,
+8,26,Metal1.OPC,,,,,
+8,28,Metal1.noqrc,,,,,
+8,29,Metal1.res,,,,,
+8,33,Metal1.iprobe,,,,,
+8,34,Metal1.diffprb,,,,,
+10,23,Metal2.nofill,,,,,
+10,24,Metal2.slit,,,,,
+10,26,Metal2.OPC,,,,,
+10,28,Metal2.noqrc,,,,,
+10,29,Metal2.res,,,,,
+10,33,Metal2.iprobe,,,,,
+10,34,Metal2.diffprb,,,,,
+30,23,Metal3.nofill,,,,,
+30,24,Metal3.slit,,,,,
+30,26,Metal3.OPC,,,,,
+30,28,Metal3.noqrc,,,,,
+30,29,Metal3.res,,,,,
+30,33,Metal3.iprobe,,,,,
+30,34,Metal3.diffprb,,,,,
+33,26,EmWind.OPC,,,,,
+50,23,Metal4.nofill,,,,,
+50,24,Metal4.slit,,,,,
+50,26,Metal4.OPC,,,,,
+50,28,Metal4.noqrc,,,,,
+50,29,Metal4.res,,,,,
+50,33,Metal4.iprobe,,,,,
+50,34,Metal4.diffprb,,,,,
+67,23,Metal5.nofill,,,,,
+67,24,Metal5.slit,,,,,
+67,26,Metal5.OPC,,,,,
+67,28,Metal5.noqrc,,,,,
+67,29,Metal5.res,,,,,
+67,33,Metal5.iprobe,,,,,
+67,34,Metal5.diffprb,,,,,
+99,33,Recog.iprobe,,,,,
+99,34,Recog.diffprb,,,,,
+126,23,TopMetal1.nofill,,,,,
+126,24,TopMetal1.slit,,,,,
+126,28,TopMetal1.noqrc,,,,,
+126,29,TopMetal1.res,,,,,
+126,33,TopMetal1.iprobe,,,,,
+126,34,TopMetal1.diffprb,,,,,
+134,23,TopMetal2.nofill,,,,,
+134,24,TopMetal2.slit,,,,,
+134,28,TopMetal2.noqrc,,,,,
+134,29,TopMetal2.res,,,,,
+134,33,TopMetal2.iprobe,,,,,
+134,34,TopMetal2.diffprb,,,,,
+#
+#The devices' recognition layers - the bipolar transistors' TRANS and emitter windows, the resistors, the inductors,
+#ESD and diodes - none of them on a wafer as a film here, so named and nothing else.
+24,0,RES,,,,,
+26,0,TRANS,,,,,
+27,0,IND,,,,,
+33,0,EmWind,,,,,
+51,0,HeatTrans,,,,,
+52,0,HeatRes,,,,,
+69,0,MemCap,,,,,
+99,0,Recog,,,,,
+99,30,Recog.esd,,,,,
+99,31,Recog.diode,,,,,
+99,32,Recog.tsv,,,,,
+99,35,Recog.pillar,,,,,
+99,36,Recog.sbump,,,,,
+99,37,Recog.otp,,,,,
+99,38,Recog.pdiode,,,,,
+99,39,Recog.mom,,,,,
+99,100,Recog.pcm,,,,,
+128,0,PolyRes,,,,,
+156,0,EmWiHV,,,,,
+27,4,IND.boundary,,,,,
+#
+#The rest of the marks: digital and SRAM regions, fill and extraction exclusions, the text layer for a macro's name,
+#the substrate's net, the seal ring, the cells' boundaries and backside etching. None of them is on a wafer, so the 3D
+#view leaves them out.
+16,0,DigiBnd,,,,,
+25,0,SRAM,,,,,
+39,0,EdgeSeal,,,,,
+40,0,Substrate,,,,,
+60,0,DigiSub,,,,,
+63,0,TEXT,,,,,
+68,0,RadHard,,,,,
+148,0,NoRCX,,,,,
+148,41,NoRCX.m2m3,,,,,
+148,42,NoRCX.m2m4,,,,,
+148,43,NoRCX.m2m5,,,,,
+148,44,NoRCX.m2tm1,,,,,
+148,45,NoRCX.m2tm2,,,,,
+148,46,NoRCX.m3m4,,,,,
+148,47,NoRCX.m3m5,,,,,
+148,48,NoRCX.m3tm1,,,,,
+148,49,NoRCX.m3tm2,,,,,
+148,50,NoRCX.m4m5,,,,,
+148,51,NoRCX.m4tm1,,,,,
+148,52,NoRCX.m4tm2,,,,,
+148,53,NoRCX.m5tm1,,,,,
+148,54,NoRCX.m5tm2,,,,,
+148,55,NoRCX.tm1tm2,,,,,
+148,123,NoRCX.m1sub,,,,,
+148,124,NoRCX.m2sub,,,,,
+148,125,NoRCX.m3sub,,,,,
+148,126,NoRCX.m4sub,,,,,
+148,127,NoRCX.m5sub,,,,,
+148,300,NoRCX.tm1sub,,,,,
+148,301,NoRCX.tm2sub,,,,,
+157,0,LBE,,,,,
+160,0,NoMetFiller,,,,,
+189,0,prBoundary,,,,,
+5,4,GatPoly.boundary,,,,,
+189,4,prBoundary.boundary,,,,,
+39,4,EdgeSeal.boundary,,,,,

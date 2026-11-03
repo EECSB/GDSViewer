@@ -37,7 +37,13 @@ namespace GdsII
             int found = -1;
             int inContext = -1;
 
-            for (int index = 0; index < layout.Elements.Count; index++)
+            //
+            //**Only the elements whose box holds the point**, out of the layout's index and in layout order -
+            //so the walk below decides between the same candidates in the same order it always did, and the
+            //last one still wins. It used to be every element: half a second a click on a real chip, on the
+            //dev server, before anything was chosen.
+            //
+            foreach (int index in layout.Index.Under(point))
             {
                 var element = layout.Elements[index];
 
@@ -62,6 +68,44 @@ namespace GdsII
                 return inContext;
 
             return found;
+        }
+
+        ///<summary>
+        ///Whether anything that picks may take this element at all: on a layer in <paramref name="reachable"/>,
+        ///or on any layer when that is null.
+        ///
+        ///**One test for every way of picking.** <see cref="At"/> has always kept a hidden layer from taking a
+        ///click; a rubber band and Select All asked only about a lock, so a band caught a hidden layer's
+        ///shapes by their boxes and they came back as outlines over empty canvas. A click with a pixel of
+        ///movement in it is a band, which made that a click as far as anybody pressing could tell.
+        ///</summary>
+        public static bool InReach(Element element, IReadOnlySet<LayerKey>? reachable)
+        {
+            return reachable is null || reachable.Contains(element.Layer.Key);
+        }
+
+        ///<summary>
+        ///Every element a rubber band over <paramref name="box"/> catches, in layout order.
+        ///
+        ///Caught by touching rather than by being wholly inside, which is what a drag across a dense layout is
+        ///usually reaching for - and only within <paramref name="reachable"/>, the same set a click is
+        ///measured against. See <see cref="InReach"/>.
+        ///</summary>
+        public static List<int> Caught(FlattenedLayout layout, Bounds box, IReadOnlySet<LayerKey>? reachable = null)
+        {
+            var caught = new List<int>();
+
+            //Out of the index, which reads only the part of the layout under the band - and in layout order,
+            //which is the order this has always handed back.
+            foreach (int index in layout.Index.Within(box))
+            {
+                if (!InReach(layout.Elements[index], reachable))
+                    continue;
+
+                caught.Add(index);
+            }
+
+            return caught;
         }
 
         ///<summary>
@@ -106,9 +150,9 @@ namespace GdsII
         ///<summary>
         ///Whether a shape covers a point: its box first, then its actual outline.
         ///
-        ///The box rejects nearly every element for almost nothing, which is what makes a walk of the whole
-        ///layout cheap enough to do on a click - and it is already worked out and cached, see
-        ///<see cref="Element.Box"/>.
+        ///The box rejects nearly every element for almost nothing, and it is already worked out and cached -
+        ///see <see cref="Element.Box"/>. The layout's index has usually rejected the rest before this is
+        ///asked; see <see cref="At"/>.
         ///
         ///**A label is its anchor and nothing else**, so it is never picked here. Labels are still drawn as
         ///their own nodes and the browser still hit-tests those; what this answers for is the geometry,

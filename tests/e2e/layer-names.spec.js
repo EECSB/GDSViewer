@@ -3,18 +3,30 @@
 //
 //Driven through the real file picker rather than by calling the parser, because the parser is already
 //covered by LayerNamesTests - what needs a browser is the upload, the relabeling of the sidebar, and the
-//redraw that follows.
+//redraw that follows. The picker is the PDK manager's layers Import since 2026-10-19, when the layer panel's
+//own Import, Export, Clear and Example went there: a mapping goes into the PDK in use, which names the file.
+const fs = require('fs');
+const path = require('path');
 const { test, expect } = require('@playwright/test');
 const {
+    gotoApp,
     gotoExample,
+    expectLoaded,
+    importLayermap,
     layerPairs,
     svgCounts,
     fillsDrawn,
-    selectExample,
     openFile,
+    uploadFile,
+    openedOnItsOwn,
+    onOtherLayers,
     MOSFET,
+    MOSFET_ELSEWHERE,
     MOSFET_POLYGONS
 } = require('./helpers');
+
+//A file of the visitor's own: the bundled Mosfet, under another name, which is a file the shipped mapping is not for.
+const MOSFET_ON_DISK = path.join(__dirname, '..', '..', 'wwwroot', 'resources', 'GDS Files', 'Sky130 GDS', 'Mosfet.gds');
 
 //Real sky130 names for the pairs Mosfet.gds uses, in the format the loader reads. The same shape a PDK
 //layermap converts to with one substitution.
@@ -30,35 +42,14 @@ const MAPPING = [
 ].join('\n');
 
 ///
-///Picks a mapping file, waits for it to land, and gives back anything the app said about it.
+///Imports a mapping into the PDK in use, sky130 on Mosfet, and gives back what the PDK manager said about how it
+///read - see importLayermap. What it says about a pair replaces what sky130 said, and Mosfet is named again by it.
 ///
-///**A mapping that works says nothing**, so waiting for a dialog would be waiting for one that is never
-///coming. What is waited on instead is either effect: the panel rewritten, or the app speaking up. One of
-///the two always happens, and which one it was is the thing the individual tests are about.
+///**What reaches the panel is each test's to poll for**: the layers are laid over the file again after the manager
+///has said its line. Generous, because the whole suite shares one dev server.
 ///
-///Generous, because the whole suite shares one dev server: at six workers the read, the apply and the
-///redraw have been seen to take past 15s, which showed up as this spec alone failing in a full run and
-///passing on its own.
-///
-async function loadMapping(page, contents, name = 'sky130.csv') {
-    const said = [];
-
-    await page.exposeFunction('reportAlert', message => said.push(String(message)));
-    await page.evaluate(() => { window.alert = message => window.reportAlert(message); });
-
-    const labels = () => page.locator('.layerRow .layerName').allTextContents();
-
-    const before = (await labels()).join('|');
-
-    await page.locator('#layerNamesImport').setInputFiles({
-        name,
-        mimeType: 'text/csv',
-        buffer: Buffer.from(contents, 'utf8')
-    });
-
-    await expect.poll(async () => said.length > 0 || (await labels()).join('|') !== before, { timeout: 60000 }).toBe(true);
-
-    return said.join(' ');
+async function loadMapping(page, contents, name = 'sky130.csv', mimeType = 'text/csv') {
+    return importLayermap(page, { name, mimeType, buffer: Buffer.from(contents, 'utf8') });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -69,13 +60,14 @@ test('a mapping names the layers and keeps the numbers visible', async ({ page }
     const said = await loadMapping(page, MAPPING);
 
     //
-    //And it said nothing, because there was nothing to say.
+    //And it says how it read beside the Import, rather than in a dialog.
     //
-    //The names are in the panel one line away, which is the whole result - a dialog reporting it stood
-    //between somebody and the layers it was describing, and had to be dismissed before they could be
-    //looked at. What the app still speaks up about is the two cases the panel cannot show, below.
+    //The names are in the panel, which is the whole result - a dialog reporting it stood between somebody and
+    //the layers it was describing, and had to be dismissed before they could be looked at.
     //
-    expect(said).toBe('');
+    expect(said).toBe('Imported: 7 layers.');
+
+    await expect.poll(async () => labelFor(page, '65/20'), { timeout: 60000 }).toContain('diff.drawing (65/20)');
 
     const pairs = await layerPairs(page);
 
@@ -107,6 +99,8 @@ test('naming layers does not change what is drawn', async ({ page }) => {
 
     await loadMapping(page, MAPPING);
 
+    await expect.poll(async () => labelFor(page, '65/20'), { timeout: 60000 }).toContain('diff.drawing');
+
     expect((await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 });
 
@@ -119,43 +113,44 @@ test('a fourth column recolors the layer', async ({ page }) => {
 
     await loadMapping(page, '65,20,diff.drawing,#00ff00');
 
-    const fillsAfter = await fillsDrawn(page);
-
-    expect(fillsAfter).toContain('#00ff00');
-});
-
-test('clearing puts the bare numbers and the palette colors back', async ({ page }) => {
-    await loadMapping(page, '65,20,diff.drawing,#00ff00');
-
-    await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
-
-    await expect.poll(async () => {
-        const labels = await page.locator('.layerRow .layerName').allTextContents();
-
-        return labels.some(text => text.includes('diff.drawing'));
-    }).toBe(false);
-
-    const fills = await fillsDrawn(page);
-
-    expect(fills).not.toContain('#00ff00');
+    await expect.poll(async () => fillsDrawn(page), { timeout: 60000 }).toContain('#00ff00');
 });
 
 ///
-///The case that would otherwise look like the feature being broken: every row read, none of them matching.
+///**A KLayout .lyp is a layermap too**, for the names and the colors it carries - read through the same parser as a
+///CSV, which LayerNamesTests covers against KLayout itself. What is here is the browser's half: the PDK manager's
+///Import taking the file, with the type a browser gives a .lyp, which is none.
 ///
-test('a mapping for another technology says so rather than failing quietly', async ({ page }) => {
-    const said = await loadMapping(page, '1,0,metal1\n2,0,metal2');
+test('a KLayout .lyp names the layers and colors them', async ({ page }) => {
+    await expect.poll(async () => (await svgCounts(page)).polygons).toBe(MOSFET_POLYGONS);
 
-    expect(said).toContain('none of them match a layer this file uses');
+    const lyp = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<layer-properties>',
+        ' <properties>',
+        '  <fill-color>#00ff00</fill-color>',
+        '  <name>lypdiff_m 65/20</name>',
+        '  <source>65/20@1</source>',
+        ' </properties>',
+        '</layer-properties>'
+    ].join('\n');
 
-    expect(await layerPairs(page)).toContain('65/20');
+    const said = await loadMapping(page, lyp, 'sky130.lyp', '');
+
+    expect(said).toBe('Imported: 1 layer.');
+
+    //sky130's .lyp names end in their pair, which the label shows already.
+    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).some(text => text.includes('lypdiff_m (65/20)'))).toBe(true);
+    await expect.poll(async () => fillsDrawn(page)).toContain('#00ff00');
 });
 
 test('a mapping with a bad row keeps the good ones and names the line', async ({ page }) => {
     const said = await loadMapping(page, '65,20,diff.drawing\nnonsense\n66,20,poly.drawing');
 
-    expect(said).toContain('Updated 2');
+    expect(said).toContain('Imported: 2 layers.');
     expect(said).toContain('Line 2');
+
+    await expect.poll(async () => labelFor(page, '66/20'), { timeout: 60000 }).toContain('poly.drawing');
 });
 
 ///
@@ -250,61 +245,75 @@ test('a typed name survives a reload, and carries to another file', async ({ pag
     await expect.poll(async () => labelFor(page, '65/20')).toContain('diffusion (65/20)');
 });
 
-test('clear drops the stored names too, not just the ones on screen', async ({ page }) => {
+///A visit of the visitor's own, with nothing in the address - and then a file of theirs, opened on its own.
+async function comeBackAndUpload(page, bytes = fs.readFileSync(MOSFET_ON_DISK)) {
+    await page.waitForTimeout(1000);
+
+    await gotoApp(page, '', null);
+    await expectLoaded(page);
+
+    await uploadFile(page, { name: 'mine.gds', mimeType: 'application/octet-stream', buffer: bytes });
+    await openedOnItsOwn(page);
+
+    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('mine.gds');
+}
+
+///
+///**The PDK's names stay off a file from another process, after a reload too.** They name a file drawn in the PDK -
+///most of its layers the PDK's own - and a file off somebody's machine could be any technology, where sky130 labels
+///would read as right when they are wrong. The shipped names used to reach any upload after a reload: the session
+///kept the example's names, and restoring them as the names that carry made them the visitor's own. Mosfet here on
+///gf180mcu's numbers, none of them sky130's.
+///
+test('the PDK\'s names stay off a file from another process the visitor uploads, after a reload as well', async ({ page }) => {
+    await expect.poll(async () => labelFor(page, '65/20')).toBe('diff (65/20)');
+
+    await comeBackAndUpload(page, onOtherLayers(fs.readFileSync(MOSFET_ON_DISK), MOSFET_ELSEWHERE));
+
+    await expect.poll(async () => labelFor(page, '22/20')).toBe('22/20');
+    await expect.poll(async () => labelFor(page, '34/20')).toBe('34/20');
+});
+
+///And a sky130 file of the visitor's own is drawn in the PDK, so it is named by it - the reason the rule is about layers.
+test('a sky130 file the visitor uploads is named by the PDK in use, after a reload as well', async ({ page }) => {
+    await comeBackAndUpload(page);
+
+    await expect.poll(async () => labelFor(page, '65/20')).toBe('diff (65/20)');
+});
+
+///And a name the visitor typed is theirs, so it still reaches their upload after the same reload.
+test('a typed name still reaches a file the visitor uploads after a reload', async ({ page }) => {
     const box = await startRenaming(page, '65/20');
 
-    await box.fill('diffusion');
+    await box.fill('mydiff');
     await box.press('Enter');
 
-    await expect.poll(async () => labelFor(page, '65/20')).toContain('diffusion');
+    await expect.poll(async () => labelFor(page, '65/20')).toBe('mydiff (65/20)');
 
-    await page.getByTitle('Drop every layer name and put the palette colors back, leaving the bare numbers').click();
+    await comeBackAndUpload(page);
 
-    await gotoExample(page, MOSFET);
-
-    await expect.poll(async () => labelFor(page, '65/20')).toBe('65/20');
+    await expect.poll(async () => labelFor(page, '65/20')).toBe('mydiff (65/20)');
 });
 
 ///
-///Export closes the loop: it is the open file's own layers, in the format the loader reads, so what is on
-///screen can be edited in a spreadsheet and loaded back.
+///**A name with a comma in it survives a reload.** The session keeps names as layermap rows, and the comma used to
+///split the row: `poly, gate` came back as `poly`, with its color gone and the rest of the row one column along. It
+///is written in quotes now, the way a spreadsheet writes one - see LayerNamesTests.
 ///
-///By id rather than by the button's title, which is UI copy - matching that tied this test to the wording,
-///and it broke the moment the pair was renamed from Names and Template to Import and Export.
-///
-test('export writes this file own layers as a mapping, every column filled', async ({ page }) => {
-    const download = page.waitForEvent('download');
+test('a name with a comma in it survives a reload', async ({ page }) => {
+    const box = await startRenaming(page, '66/20');
 
-    await page.locator('#layerNamesExport').click();
+    await box.fill('poly, gate');
+    await box.press('Enter');
 
-    const file = await download;
-    const stream = await file.createReadStream();
+    await expect.poll(async () => labelFor(page, '66/20')).toBe('poly, gate (66/20)');
 
-    let text = '';
-    for await (const chunk of stream)
-        text += chunk.toString('utf8');
+    await page.waitForTimeout(1000);
 
-    expect(file.suggestedFilename()).toBe('Mosfet layers.csv');
-    expect(text).toContain('#layer,datatype,name,color,height,thickness');
+    await gotoApp(page, '', null);
+    await expectLoaded(page);
 
-    //Every pair the sidebar lists, so nothing has to be typed from scratch.
-    for (const pair of ['65,20', '66,20', '66,44', '67,20', '67,44', '68,5', '68,20', '93,44', '95,20'])
-        expect(text).toContain(pair);
-
-    //
-    //And every row filled as far as the six the stack needs.
-    //
-    //The bug this was written for is a row of *four* columns under a six-column header: building a stack
-    //then meant knowing to type two columns that were not there. Six was the whole row when it was written,
-    //and it is a floor now - a bundled example arrives with the shipped sky130 mapping over it, so the rows
-    //carrying a role or a fill write the columns those live in as well. See carryLayerNamesOver.
-    //
-    const rows = text.split('\n').filter(row => row.length > 0 && !row.startsWith('#'));
-
-    expect(rows).toHaveLength(9);
-
-    for (const row of rows)
-        expect(row.split(',').length).toBeGreaterThanOrEqual(6);
+    await expect.poll(async () => labelFor(page, '66/20')).toBe('poly, gate (66/20)');
 });
 
 ///
@@ -312,13 +321,14 @@ test('export writes this file own layers as a mapping, every column filled', asy
 ///
 ///**Because every file in the picker is a sky130 cell.** The app compiles no PDK table in, which is right for
 ///a file off somebody's machine - it could be any technology - and was never right for the files the app
-///itself chose to ship. Left as bare numbers, the one feature that needs a mapping was a greyed-out button on
+///itself chose to ship. Left as bare numbers, the one feature that needs a mapping was a grayed-out button on
 ///every file on offer.
 ///
 test('a bundled example is named from the shipped mapping', async ({ page }) => {
     await gotoExample(page, MOSFET, 'View2DSvg');
 
-    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
+    await expect.poll(
+        async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
         { timeout: 20000 }).toContain('met1');
 
     //The roles landed too, which is the half that matters: a name is a label, a role is what the walk
@@ -340,48 +350,4 @@ test('a bundled example is named from the shipped mapping', async ({ page }) => 
     await page.mouse.click(at.x, at.y);
 
     await expect(page.locator('#traceNet')).toBeEnabled({ timeout: 20000 });
-});
-
-///
-///Clear means it for the file it was made on, and stops there.
-///
-///Both halves matter and they pull opposite ways. Dropping the names has to survive a reload, or the panel
-///would fill straight back up and Clear would read as a button that does nothing. But it used to survive
-///everything: one Clear, and every example opened afterwards arrived with bare numbers - the app
-///withholding a mapping it ships, for a PDK it knows the file belongs to, on the strength of something said
-///about a different layout. Nothing on screen explained it and the way back was behind a hover.
-///
-///The Example offer is what says which state the panel is in: it is there only while nothing is named.
-///
-test('a Clear holds for its own file and not for the next one', async ({ page }) => {
-    await gotoExample(page, MOSFET, 'View2DSvg');
-
-    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-        { timeout: 20000 }).toContain('met1');
-
-    await page.locator('.layerSidebarClear').click();
-
-    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-        { timeout: 20000 }).not.toContain('met1');
-
-    await expect(page.locator('#layerExampleOffer')).toBeVisible();
-
-    //The same file again: still bare, because that is what was asked for about this one.
-    await page.reload();
-
-    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe(`${MOSFET}.gds`);
-
-    await expect(page.locator('#layerExampleOffer')).toBeVisible({ timeout: 60000 });
-
-    expect((await page.locator('.layerRow .layerName').allTextContents()).join(' ')).not.toContain('met1');
-
-    //Another example, through the picker, which is a fresh start on a file whose technology is known.
-    await selectExample(page, 'sky130_fd_sc_hd__nand2_1.gds');
-
-    await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('sky130_fd_sc_hd__nand2_1.gds');
-
-    await expect.poll(async () => (await page.locator('.layerRow .layerName').allTextContents()).join(' '),
-        { timeout: 20000 }).toContain('met1');
-
-    await expect(page.locator('#layerExampleOffer')).toHaveCount(0);
 });

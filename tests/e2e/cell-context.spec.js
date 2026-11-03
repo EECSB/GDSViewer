@@ -2,7 +2,8 @@
 //
 //The model is covered in CellContextTests - what is only checkable here is that descending marks the
 //right shapes, the breadcrumb goes where it says, and the fade actually happens. Against the fixture,
-//because no bundled file has a placement that resolves: see selection.spec.js.
+//for the reason selection.spec.js gives: no bundled cell has a placement that resolves, and the designs
+//that do are thousands of shapes.
 const { test, expect } = require('@playwright/test');
 const { gotoApp, shapeCount, shapeBox, shapesMarked, snapToGrid, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
 
@@ -76,6 +77,23 @@ test('entering a cell fades what is outside it and marks what is in', async ({ p
 test('the bar says how many times the cell is placed', async ({ page }) => {
     await clickIntoLeaf(page);
 
+    await expect(page.locator('#contextBar')).toContainText('placed 3 times');
+});
+
+///
+///**And says it still once a shape in it has moved.** A move leaves every element where it was in the file, so
+///the layout after it is worked out from the one before and the count is carried across rather than taken
+///again - which walks every element, and was 38 ms of each corner dropped on the RGB mixer. See afterEdit.
+///
+test('the count stands after a shape in the cell is moved', async ({ page }) => {
+    await clickIntoLeaf(page);
+
+    //The shape inside, and not the placement - which a press of an arrow would move instead.
+    await expect(page.locator('#gdsSVG .shapeSelected')).toHaveCount(1);
+
+    await page.keyboard.press('ArrowRight');
+
+    await expect(page.locator('#undoEdit')).toHaveAttribute('title', /Undo Move/, { timeout: 15000 });
     await expect(page.locator('#contextBar')).toContainText('placed 3 times');
 });
 

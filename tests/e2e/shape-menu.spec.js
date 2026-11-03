@@ -514,8 +514,8 @@ test.describe('how long it is', () => {
         await chooseAShape(page);
 
         //The whole window for the view, which is what puts a right-click close enough to the edge for the
-        //side a submenu opens on to matter at all.
-        await page.locator('#fullScreen').click();
+        //side a submenu opens on to matter at all - where the app starts.
+        await expect(page.locator('.viewerPageFull')).toHaveCount(1);
 
         const window = page.viewportSize();
         const view = await page.locator('#gdsSVG').boundingBox();

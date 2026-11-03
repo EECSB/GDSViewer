@@ -89,6 +89,20 @@ public class SerializeTests
         Assert.Equal(expected, mag.Serialize()[4..]);
     }
 
+    ///
+    ///**An infinity or a NaN is refused rather than written.** The format's real has no encoding for either, and
+    ///the normalizing loop never ends on an infinity - a sixteenth of it is still infinite - which is how this was
+    ///found: a test that built a UNITS of infinity, to see it read as nothing, never came back.
+    ///
+    [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    public void Real8_refuses_what_it_has_no_encoding_for(double value)
+    {
+        Assert.Throws<ArgumentException>(() => new Real8Data(value).Encode());
+    }
+
     [Fact]
     public void Int4_coordinates_are_written_big_endian()
     {

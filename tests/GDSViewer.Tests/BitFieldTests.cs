@@ -261,8 +261,12 @@ public class BitFieldTests
     }
 
     ///<summary>
-    ///Every label in the sample files must land on one of the two justifications the survey found, since
-    ///that is what the 2D view now positions from.
+    ///Every label in the sample files must land on one of the justifications the survey found, since that is
+    ///what the 2D view now positions from.
+    ///
+    ///The standard cells use three. The bundled designs bring five more - every horizontal and every vertical
+    ///setting turns up somewhere, mostly in the GPIO pad - so the whole of SvgWriter's positioning is now
+    ///reached by a real file. Only Center/Top is not.
     ///</summary>
     [Fact]
     public void Every_label_in_the_corpus_decodes_to_a_defined_justification()
@@ -280,7 +284,7 @@ public class BitFieldTests
             }
         }
 
-        Assert.Equal(new[] { "Center/Middle", "Left/Middle", "Left/Top" }, seen.ToArray());
+        Assert.Equal(new[] { "Center/Bottom", "Center/Middle", "Left/Bottom", "Left/Middle", "Left/Top", "Right/Bottom", "Right/Middle", "Right/Top" }, seen.ToArray());
     }
 
     #endregion ************************************************************************

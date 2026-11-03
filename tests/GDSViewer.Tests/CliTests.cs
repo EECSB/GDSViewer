@@ -1066,6 +1066,39 @@ public class CliTests : IDisposable
         Assert.Contains("65/20", Output);
     }
 
+    ///<summary>A KLayout .lyp names them the same way: --layermap takes either, through the one parser.</summary>
+    [Fact]
+    public void Layers_names_the_pairs_a_klayout_lyp_names()
+    {
+        string map = TemporaryPath(".lyp");
+
+        File.WriteAllText(map, """
+            <?xml version="1.0" encoding="utf-8"?>
+            <layer-properties>
+             <properties>
+              <fill-color>#e69ac5</fill-color>
+              <name>diffdrawing_m 65/20</name>
+              <source>65/20@1</source>
+             </properties>
+            </layer-properties>
+            """);
+
+        Assert.Equal(Cli.Ok, Run("layers", Sample, "--layermap", map));
+
+        Assert.Contains("diffdrawing_m (65/20)", Output);
+
+        //And written out again as a CSV, which is how a .lyp becomes the start of one with heights and roles - the
+        //command docs/CLI.md gives for it.
+        string written = TemporaryPath(".csv");
+
+        Assert.Equal(Cli.Ok, Run("layers", Sample, "--layermap", map, "--write-layermap", written));
+
+        var reread = LayerNames.Parse(File.ReadAllText(written));
+
+        Assert.Equal("diffdrawing_m", reread.Names[new LayerKey(65, 20)]);
+        Assert.Equal("#e69ac5", reread.Colors[new LayerKey(65, 20)]);
+    }
+
     ///<summary>And without one, the pairs are all there is - which is what the tool did before.</summary>
     [Fact]
     public void Layers_without_a_mapping_prints_the_pairs_alone()
@@ -1123,7 +1156,7 @@ public class CliTests : IDisposable
         string path = TemporaryPath(".stl");
 
         //
-        //**At rest, which is nought and no longer 50.**
+        //**At rest, which is zero and no longer 50.**
         //
         //A placed layer is carried by the slider like every other one - that is its own guarantee, in
         //LayerSpacingTests.A_layer_given_a_height_moves_with_the_slider_too - so "the height it was given"
@@ -1180,7 +1213,8 @@ public class CliTests : IDisposable
     [Fact]
     public void A_layermap_that_is_not_there_is_a_file_error_rather_than_a_crash()
     {
-        Assert.Equal(Cli.UsageError, Run("layers", Sample, "--layermap", "no-such-map.csv"));
+        //2, as a missing layout is and as gds mcp has it: the file is wrong, not the command line (the 2026-10-21 audit).
+        Assert.Equal(Cli.FileError, Run("layers", Sample, "--layermap", "no-such-map.csv"));
 
         Assert.Contains("Could not read the layermap", Error);
     }
@@ -1377,6 +1411,30 @@ public class CliTests : IDisposable
     }
 
     ///
+    ///**bench times a whole rule deck and every net when asked**, the two instruments the 2026-11-03 audit found
+    ///missing: --deck runs the deck over the file the way `gds drc` does, and --layermap gives the layers the roles
+    ///a net is traced by. Without them, neither line is printed.
+    ///
+    [Fact]
+    public void Bench_times_a_whole_deck_and_every_net_when_asked()
+    {
+        string deck = Path.Combine(GdsTestData.RepositoryRoot, "wwwroot", "resources", "GDS Files", "sky130A.drc");
+
+        Assert.Equal(Cli.Ok, Run("bench", Sample, "--deck", deck, "--layermap", Sky130Roles));
+
+        Assert.Matches(@"(?m)^  deck\s+[\d,]+ ms", Output);
+        Assert.Matches(@"rule\(s\) from sky130A\.drc, [\d,]+ violation\(s\)", Output);
+        Assert.Matches(@"(?m)^  nets\s+[\d,]+ ms", Output);
+        Assert.Matches(@"[\d,]+ net\(s\), the largest [\d,]+ shape\(s\)", Output);
+
+        int before = Output.Length;
+
+        Assert.Equal(Cli.Ok, Run("bench", Sample));
+
+        Assert.DoesNotMatch(@"(?m)^  (deck|nets) ", Output[before..]);
+    }
+
+    ///
     ///**A real net, walked out of a real file.**
     ///
     ///`-700,850` is inside one of Mosfet.gds's li1 wires. Tracing it reaches the mcon above it and the met1
@@ -1390,29 +1448,35 @@ public class CliTests : IDisposable
 
         Assert.Contains("Traced from li1 (67/20) at -700,850.", Output);
 
+        //And the same in a culture whose minus is not a hyphen, which --at would not take back (the 2026-10-21 audit).
+        var hostile = new StringWriter();
+
+        GdsTestData.UnderHostileCulture(() => Cli.Run(new[] { "nets", Sample, "--layermap", Sky130Roles, "--at", "-700,850" }, hostile, new StringWriter()));
+
+        Assert.Equal(Output, hostile.ToString());
+
         //Up through the contact into the metal above it.
         Assert.Contains("li1 (67/20)", Output);
         Assert.Contains("mcon (67/44)", Output);
         Assert.Contains("met1 (68/20)", Output);
 
         //
-        //**Nine across five, where this was three across three.**
+        //**Four across four: down to the contact and no further.**
         //
-        //The example gained two licon1 contacts, and licon1 is a via - it joins whatever it overlaps. They
-        //take the walk down into diff (65/20) and back up the other terminal, so a trace that used to stop
-        //at li1/mcon/met1 now spans the whole source-drain path.
+        //The licon1 under the wire is the contact down to diffusion, and the walk stops there. It went on
+        //through the diff and up the other terminal while the shipped map made diffusion a conductor - nine
+        //shapes across five layers, source and drain one net through the channel between them.
         //
-        Assert.Contains("9 shape(s) across 5 layer(s).", Output);
+        Assert.Contains("licon1 (66/44)", Output);
+        Assert.Contains("4 shape(s) across 4 layer(s).", Output);
+        Assert.DoesNotContain("diff (65/20)", Output);
     }
 
     ///
     ///And the label on it, which is what somebody checking a net is the net they think it is wants.
     ///
-    ///**Asked of the gate**, which is the terminal that still carries one name. It used to ask at -700,850
-    ///and read back "source" - and since the example grew its two licon1 contacts, that point reaches both
-    ///source and drain through the diff they both land on, so what comes back there is the two-name warning
-    ///rather than a name. That case is <see cref="Nets_says_when_a_net_carries_two_names"/> below; this one
-    ///is still about a net that has exactly one.
+    ///**Asked of the gate.** The source answers with one name too since the shipped map stopped making
+    ///diffusion a conductor - see <see cref="Nets_walks_a_net_up_through_its_vias"/>.
     ///
     [Fact]
     public void Nets_reports_the_name_sitting_on_it()
@@ -1427,13 +1491,20 @@ public class CliTests : IDisposable
     ///
     ///A net reaching two different labels is either the same wire spelled twice or two wires shorted
     ///together, and the command cannot tell which - so it says both rather than picking one and sounding
-    ///certain. Worth a test of its own now the bundled example produces it: its source and drain contacts
-    ///both land on one diff polygon, and nothing in a connectivity walk knows a channel separates them.
+    ///certain.
+    ///
+    ///**Shorted here on purpose**, by a map that makes diffusion a conductor: the example's source and drain
+    ///contacts both land on one diff polygon, so the walk crosses the channel between them. The shipped map
+    ///gave diffusion that role once, and every trace on a chip came back as most of the chip.
     ///
     [Fact]
     public void Nets_says_when_a_net_carries_two_names()
     {
-        Assert.Equal(Cli.Ok, Run("nets", Sample, "--layermap", Sky130Roles, "--at", "-700,850"));
+        string shorted = TemporaryPath(".csv");
+
+        File.WriteAllText(shorted, File.ReadAllText(Sky130Roles).Replace("65,20,diff,,-120,120,,", "65,20,diff,,-120,120,conductor,"));
+
+        Assert.Equal(Cli.Ok, Run("nets", Sample, "--layermap", shorted, "--at", "-700,850"));
 
         Assert.Contains("Carries 2 distinct names", Output);
         Assert.Contains("drain", Output);
@@ -1446,7 +1517,7 @@ public class CliTests : IDisposable
     ///This is the failure the command will hit most often. Nothing in a GDSII file records which of its
     ///numbers carry a net, so a bare file has no roles and the walk has nothing to follow - and an empty net
     ///reported as a result would read as "this wire connects to nothing", which is a different and wrong
-    ///answer. The app greys its own button out for the same reason.
+    ///answer. The app grays its own button out for the same reason.
     ///
     [Fact]
     public void Without_roles_nets_says_the_question_cannot_be_asked()
@@ -1528,9 +1599,8 @@ public class CliTests : IDisposable
 
         Assert.Contains("index   layer            points", Output);
 
-        //A row per shape, ordered by index - nine of them since the example gained its two licon1 contacts
-        //and the walk started reaching through diff into the other terminal. See Nets_walks_a_net_up_through
-        //_its_vias for what those two changed.
+        //A row per shape, ordered by index - the four of the source's wire, from its contact up to met1. See
+        //Nets_walks_a_net_up_through_its_vias.
         var listed = Output
             .Split('\n')
             .SkipWhile(row => !row.Contains("index   layer"))
@@ -1538,7 +1608,7 @@ public class CliTests : IDisposable
             .Where(row => row.Trim().Length > 0)
             .ToArray();
 
-        Assert.Equal(9, listed.Length);
+        Assert.Equal(4, listed.Length);
     }
 
     #endregion ***********************************************************************
@@ -2123,7 +2193,7 @@ public class CliTests : IDisposable
 
     ///<summary>
     ///The area of the top cap, adding each triangle's own area rather than their signed contributions - so
-    ///a triangle thrown outside the outline adds to the total instead of cancelling one that overlaps it.
+    ///a triangle thrown outside the outline adds to the total instead of canceling one that overlaps it.
     ///
     ///The cap is picked out by height: it is the triangles lying flat at the top of the extrusion, which
     ///is every triangle except the walls.
@@ -2160,6 +2230,95 @@ public class CliTests : IDisposable
     }
 
     #endregion ***********************************************************************
+
+    #endregion ***********************************************************************
+
+    #region What cannot be written, and what can now ************************************
+
+    ///<summary>A record over the format's ceiling is said, not thrown: a text whose library name is seventy thousand characters.</summary>
+    [Fact]
+    public void Build_says_what_cannot_be_written_rather_than_falling_over()
+    {
+        string text = new GDS(GdsTestData.ReadSample(GdsTestData.MosfetSample)).AsText();
+        string source = TemporaryPath(".txt");
+
+        File.WriteAllText(source, text.Replace("LIBNAME: ", "LIBNAME: " + new string('x', 70000)));
+
+        Assert.Equal(Cli.FileError, Run("build", source, "-o", TemporaryPath(".gds")));
+
+        Assert.Contains("cannot be written", Error);
+        Assert.DoesNotContain("   at ", Error);
+    }
+
+    ///<summary>A path of twice the points one record holds, split across two XY records as a writer at the ceiling splits it.</summary>
+    private static byte[] LongPathLibrary()
+    {
+        var coordinates = new int[8192 * 2];
+
+        for (int i = 0; i < 8192; i++)
+        {
+            coordinates[i * 2] = i * 10;
+            coordinates[(i * 2) + 1] = (i % 2) * 10;
+        }
+
+        byte[] stamps = GdsTestData.Timestamps();
+
+        return GdsTestData.Concat(
+            GdsTestData.Record(RecordType.HEADER, GdsTestData.Int2(600)),
+            GdsTestData.Record(RecordType.BGNLIB, stamps),
+            GdsTestData.Record(RecordType.LIBNAME, GdsTestData.Ascii("LP")),
+            GdsTestData.Record(RecordType.UNITS, GdsTestData.Concat(GdsTestData.Real8(0.001), GdsTestData.Real8(1e-9))),
+            GdsTestData.Record(RecordType.BGNSTR, stamps),
+            GdsTestData.Record(RecordType.STRNAME, GdsTestData.Ascii("TOP")),
+            GdsTestData.Record(RecordType.PATH),
+            GdsTestData.Record(RecordType.LAYER, GdsTestData.Int2(1)),
+            GdsTestData.Record(RecordType.DATATYPE, GdsTestData.Int2(0)),
+            GdsTestData.Record(RecordType.WIDTH, GdsTestData.Int4(10)),
+            GdsTestData.Record(RecordType.XY, GdsTestData.Int4(coordinates[..8000])),
+            GdsTestData.Record(RecordType.XY, GdsTestData.Int4(coordinates[8000..])),
+            GdsTestData.Record(RecordType.ENDEL),
+            GdsTestData.Record(RecordType.ENDSTR),
+            GdsTestData.Record(RecordType.ENDLIB));
+    }
+
+    ///<summary>And a path over the ceiling is written - as the run of XY records the reader joins - where convert fell over on it with a trace.</summary>
+    [Fact]
+    public void Convert_writes_a_path_of_more_points_than_one_record_holds()
+    {
+        string source = TemporaryPath(".gds");
+        string target = TemporaryPath(".gds");
+
+        File.WriteAllBytes(source, LongPathLibrary());
+
+        Assert.Equal(Cli.Ok, Run("convert", source, "-o", target));
+
+        var again = new GDS(File.ReadAllBytes(target));
+        var path = again.StreamFormat.Structures.Single().Elements.Single();
+
+        Assert.Equal(8192 * 2, ((Int4Data)path.Element.XY!.Data!).Values.Length);
+    }
+
+    ///<summary>An OASIS file that leans on the cell before is read, and what it got wrong is said on standard error - see OasisReader.</summary>
+    [Fact]
+    public void Validate_warns_about_an_oasis_file_that_leans_on_the_cell_before()
+    {
+        var file = new OasisBuilder();
+
+        file.Cell("ONE");
+        file.Rectangle(1, 0, 100, 60, 0, 0);
+        file.Cell("TWO");
+        file.RectangleAt(500, 0);
+
+        string source = TemporaryPath(".oas");
+
+        File.WriteAllBytes(source, file.Done());
+
+        Assert.Equal(Cli.Ok, Run("validate", source));
+
+        Assert.Contains("ok    ", Output);
+        Assert.Contains("warn  ", Error);
+        Assert.Contains("modal variable", Error);
+    }
 
     #endregion ***********************************************************************
 }

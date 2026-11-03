@@ -85,8 +85,8 @@ public class InteropTests
     }
 
     ///<summary>
-    ///Geometry KLayout wrote that our own writer would never produce: a three-point triangle, and a
-    ///rectangle it chose to emit as a BOX rather than a BOUNDARY.
+    ///Geometry KLayout wrote rather than this writer: a three-point triangle, and a rectangle, which it wrote
+    ///as an ordinary five-point BOUNDARY - not, as this once said, as a BOX; the fixture holds no BOX record.
     ///</summary>
     [Fact]
     public void Klayouts_own_shapes_are_read_and_flattened()
@@ -163,7 +163,7 @@ public class InteropTests
     ///GDSII *this* writes - was checked by opening a file and looking at it, so it never re-ran.
     ///
     ///It needs KLayout installed, which is why it is traited; that is the same bargain the OASIS tests
-    ///already make. What it is not is the corpus round trip: those 897 files come back byte for byte, so
+    ///already make. What it is not is the corpus round trip: those 1,220 files come back byte for byte, so
     ///handing one to KLayout would only ask whether KLayout reads a file KLayout-compatible tools already
     ///made. The interesting bytes are the ones this project *chose*, which is a record list it built
     ///rather than one it echoed.

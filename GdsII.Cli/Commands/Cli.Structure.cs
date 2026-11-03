@@ -18,8 +18,8 @@ namespace GdsII.Cli
         ///
         ///The library's cells: what places what, and how much is in each.
         ///
-        ///Flat by default and indented under `--tree`, which is the same pair of shapes the app's Cells
-        ///sidebar offers - <see cref="Hierarchy.Summarize"/> and <see cref="Hierarchy.Tree"/>, so the two
+        ///Flat by default and indented under `--tree`. Both come from <see cref="Hierarchy.Summarize"/> - the
+        ///tree through <see cref="Hierarchy.Tree"/> - which the app's Cells tree is built on too, so the two
         ///cannot come to disagree about what places what.
         ///
         ///In the file's own order rather than sorted. That is the order the cells were written, which in a
@@ -68,8 +68,24 @@ namespace GdsII.Cli
 
             output.WriteLine();
             output.WriteLine($"{summaries.Count} cell(s), {tops} of them placed by nothing.");
+            contextLine(gds!, output);
 
             return Ok;
+        }
+
+        ///
+        ///A line under the cells when the file holds KLayout's context, which they leave out.
+        ///
+        ///**Because a reader that does not know it lists it** as a cell nothing places, as this one did until
+        ///2026-11-03, and somebody comparing the two lists deserves to be told which one this left out and why rather
+        ///than to find a count one short. See GDS.StreamFormatModel.Context.
+        ///
+        private static void contextLine(GDS gds, TextWriter output)
+        {
+            if (gds.StreamFormat.Context is not GDS.StructureModel context)
+                return;
+
+            output.WriteLine($"{GDS.StreamFormatModel.ContextName} is not among them: it is KLayout's record of what {describedBy(context)} cell(s) were made from, and draws nothing.");
         }
 
         ///
@@ -99,6 +115,7 @@ namespace GdsII.Cli
 
             output.WriteLine();
             output.WriteLine($"{summaries.Count} cell(s) in {rows.Count} row(s). A cell placed twice is listed twice, and marked the second time.");
+            contextLine(gds, output);
 
             return Ok;
         }
@@ -119,9 +136,9 @@ namespace GdsII.Cli
         ///app grays its own button out for the same reason.
         ///
         ///One net, from one point, rather than every net in the file. That is what
-        ///<see cref="Nets.Reaching"/> does and it is deliberate on the library's side: a full extraction over
-        ///a large layout is the expensive thing it does not do, and one net is what somebody asking about a
-        ///wire wants.
+        ///<see cref="Nets.Reaching"/> does: the library can extract every net - <see cref="Nets.All"/>, which
+        ///the antenna rule needs - but over a large layout that is the expensive thing, and one net is what
+        ///somebody asking about a wire wants.
         ///
         private static int nets(string[] args, TextWriter output, TextWriter error)
         {
@@ -132,7 +149,7 @@ namespace GdsII.Cli
 
             if (at is null)
             {
-                error.WriteLine("nets needs --at <x,y>, a point in database units on the shape to trace from. `gds layers <file> --area` prints each layer's bounds to aim inside.");
+                error.WriteLine("nets needs --at <x,y>, a point in database units on the shape to trace from. `gds info <file>` prints the extent of what is drawn, and `gds dump` each shape's coordinates, to aim inside.");
 
                 return UsageError;
             }
@@ -145,7 +162,7 @@ namespace GdsII.Cli
 
             //Before flattening, since a role lives on the Layer each flattened element points at.
             if (!applyLayerMap(args, gds!, output, error))
-                return UsageError;
+                return FileError;
 
             if (!Nets.AnyRolesSet(gds!.AdditionalInformation.Layers.Values))
             {
@@ -155,13 +172,14 @@ namespace GdsII.Cli
                 return UsageError;
             }
 
-            var layout = GdsFlattener.Flatten(gds);
+            if (flatten(gds, args, error) is not FlattenedLayout layout)
+                return UsageError;
 
             int from = Picking.At(layout, point);
 
             if (from < 0)
             {
-                error.WriteLine($"Nothing is drawn at {point.X},{point.Y}.");
+                error.WriteLine(FormattableString.Invariant($"Nothing is drawn at {point.X},{point.Y}."));
 
                 return FileError;
             }
@@ -176,12 +194,12 @@ namespace GdsII.Cli
             {
                 //DisplayName rather than the bare pair, the same as the traced message below: if a mapping
                 //named the layer, saying `nsdm (93/44)` answers "which layer did I hit" in one line.
-                output.WriteLine($"The shape at {point.X},{point.Y} is on {started.Layer.DisplayName}, which has no role, so it carries no net.");
+                output.WriteLine(FormattableString.Invariant($"The shape at {point.X},{point.Y} is on {started.Layer.DisplayName}, which has no role, so it carries no net."));
 
                 return Ok;
             }
 
-            output.WriteLine($"Traced from {started.Layer.DisplayName} at {point.X},{point.Y}.");
+            output.WriteLine(FormattableString.Invariant($"Traced from {started.Layer.DisplayName} at {point.X},{point.Y}."));
             output.WriteLine();
 
             //Per layer, because "forty shapes" says less than which layers they are on - a net that reaches
@@ -301,7 +319,7 @@ namespace GdsII.Cli
             //Two decimals on the units because the endpoints are whole and the diagonal between them is not;
             //four on the microns because a unit is usually a nanometer, and three would round a single-unit
             //measurement away to nothing. Both are the 2D view's own, so the two agree.
-            if (micronsPerUnit(gds!) is not double microns)
+            if (gds!.MicronsPerDatabaseUnit is not double microns)
             {
                 output.WriteLine(FormattableString.Invariant($"{distance:0.00} units"));
                 output.WriteLine($"{describe(path)} does not say what a database unit is, so there is no micron figure. Its UNITS record is missing or unusable.");
@@ -312,26 +330,6 @@ namespace GdsII.Cli
             output.WriteLine(FormattableString.Invariant($"{distance:0.00} units  ({distance * microns:0.0000} µm)"));
 
             return Ok;
-        }
-
-        ///
-        ///How many microns one database unit is, or null when the file does not say.
-        ///
-        ///The second half of UNITS is meters per database unit, so this is that times a million. Null rather
-        ///than a guess for a missing, zero or nonsense value: a file that does not say is a real thing to be
-        ///handed, and inventing a nanometer for it would put a wrong number where a missing one belongs.
-        ///
-        private static double? micronsPerUnit(GDS gds)
-        {
-            if (gds.StreamFormat.UNITS?.Data is not Real8Data units || units.Values.Length < 2)
-                return null;
-
-            double metersPerUnit = units.Values[1];
-
-            if (metersPerUnit <= 0 || double.IsNaN(metersPerUnit) || double.IsInfinity(metersPerUnit))
-                return null;
-
-            return metersPerUnit * 1e6;
         }
 
         #endregion **************************************************************************

@@ -1,0 +1,73 @@
+@using GDSViewer.Ai
+@implements IDisposable
+
+@*
+    That a live link is up, while AI settings, where its card is, are shut: a tab Claude can change should say so
+    wherever the person is looking, and this is the one thing on the page that says it once they are put away.
+
+    Its own component so that a call coming down the link redraws this and nothing else - the page around it holds the
+    views, and a redraw of those per call would cost more than the call.
+*@
+@if (Link is not null && !Hidden && (Link.State == LiveLinkState.Waiting || Link.State == LiveLinkState.Linked))
+{
+    <button id="liveLinkChip" class="liveLinkChip @(Link.State == LiveLinkState.Linked ? "liveLinkChipLinked" : "")"
+            @onclick="OnOpen" title="@title()">
+        <span class="liveLinkDot" aria-hidden="true"></span>
+        @said()
+    </button>
+}
+
+@code {
+    [Parameter]
+    public LiveLink? Link { get; set; }
+
+    ///<summary>Whether AI settings are up, whose MCP server card says it all already.</summary>
+    [Parameter]
+    public bool Hidden { get; set; }
+
+    [Parameter]
+    public EventCallback OnOpen { get; set; }
+
+    private LiveLink? watching;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Link, watching))
+            return;
+
+        if (watching is not null)
+            watching.Changed -= redraw;
+
+        watching = Link;
+
+        if (watching is not null)
+            watching.Changed += redraw;
+    }
+
+    public void Dispose()
+    {
+        if (watching is not null)
+            watching.Changed -= redraw;
+    }
+
+    private async Task redraw()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string said()
+    {
+        if (Link?.State == LiveLinkState.Linked)
+            return "Linked to Claude";
+
+        return "MCP server waiting";
+    }
+
+    private string title()
+    {
+        if (Link?.State == LiveLinkState.Linked)
+            return "Claude can change this layout through gds mcp. Open AI settings to see what it did, or to stop it";
+
+        return $"Waiting for gds mcp, with the code {Link?.Code}. Open AI settings to see it";
+    }
+}

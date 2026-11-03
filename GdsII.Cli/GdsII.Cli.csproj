@@ -2,12 +2,13 @@
 
   <!--
     A command-line front end for the GdsII library: read a file, say what is in it, dump its records,
-    read them back, validate, list layers, export SVG, extrude a 3D model.
+    read them back, validate, list layers, export SVG, extrude a 3D model - and `gds mcp`, which serves the
+    library's layout tools to an AI model over the Model Context Protocol.
 
     Cross-platform without doing anything special - it is a portable .NET console app with no native
     dependency and nothing platform-specific in it. `dotnet tool install` works the same on Windows,
-    macOS and Linux, and `dotnet run` works anywhere the SDK does. The two packages below are managed
-    code as well, so that stays true.
+    macOS and Linux, and `dotnet run` works anywhere the SDK does. The packages below are managed code
+    as well, so that stays true.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -30,18 +31,22 @@
     <IsPackable>true</IsPackable>
     <PackageId>GdsII.Cli</PackageId>
     <Title>gds</Title>
-    <Description>Command-line tool for GDSII, OASIS and DXF layout files: inspect, dump, validate, convert between any two, run booleans, check against a design rule deck, trace nets, measure, and export SVG or a 3D model (STL, OBJ, GLTF, GLB) with each layer at its own height from a layermap.</Description>
-    <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;cli;dotnet-tool</PackageTags>
+    <Description>Command-line tool for GDSII, OASIS and DXF layout files: inspect, dump, validate, convert between any two, run booleans, check against a design rule deck, trace nets, measure, and export SVG or a 3D model (STL, OBJ, GLTF, GLB) with each layer at its own height from a layermap. `gds mcp` lets an AI model such as Claude open, draw on, edit, check and save the layouts in one folder, through the Model Context Protocol.</Description>
+    <PackageTags>gdsii;gds;oasis;dxf;layout;eda;vlsi;semiconductor;cad;cli;dotnet-tool;mcp;ai</PackageTags>
 
     <!--
-      Four licenses, because `dotnet tool install` ships a bundle rather than a reference: the tool's
-      package carries GdsII.dll - which has Clipper2 compiled into it - alongside the two package
+      Five licenses, because `dotnet tool install` ships a bundle rather than a reference: the tool's
+      package carries GdsII.dll - which has Clipper2 compiled into it - alongside its package
       dependencies' own assemblies. Everything physically in the .nupkg is named here, which is not what
       an expression usually has to do and is what packing as a tool makes true.
 
+      Apache-2.0 is the MCP SDK's. Its project is moving from MIT to Apache-2.0, and code nobody has
+      relicensed yet stays MIT - which this expression already names, for SharpGLTF and for Microsoft's
+      packages the SDK brings with it.
+
       The version, author and repository links come from Directory.Build.props.
     -->
-    <PackageLicenseExpression>Unlicense AND BSL-1.0 AND SGI-B-2.0 AND MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>Unlicense AND BSL-1.0 AND SGI-B-2.0 AND MIT AND Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!--The same icon the library and the app carry, so all three are one thing on a search page.-->
@@ -58,6 +63,12 @@
     <None Include="..\wwwroot\icon-192.png" Pack="true" PackagePath="\icon.png" Link="Resources\icon.png" />
     <None Include="..\UNLICENSE" Pack="true" PackagePath="\" />
     <None Include="..\docs\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <!--
+      The MCP SDK's own license file, as its repository has it at the commit 2.2.0 was built from. Apache-2.0
+      asks for the license itself to travel with the code, and the SDK's package carries no copy of it - so
+      this one does. Into a folder that names it, as the library does with Clipper2's.
+    -->
+    <None Include="licenses\modelcontextprotocol\LICENSE" Pack="true" PackagePath="licenses\modelcontextprotocol\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -81,6 +92,21 @@
   <ItemGroup>
     <PackageReference Include="LibTessDotNet" Version="1.1.15" />
     <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.6" />
+  </ItemGroup>
+
+  <!--
+    For `gds mcp`: the official C# SDK for the Model Context Protocol, which is how Claude Desktop, Claude
+    Code and the other MCP clients start a tool and talk to it. The protocol is JSON-RPC with an
+    initialization handshake, capability negotiation, cancellation and a version that moves; the SDK keeps
+    up with all of that, and a hand-rolled copy would be one more thing to keep current.
+
+    The Core package rather than ModelContextProtocol, which adds hosting and dependency injection on top:
+    a server on standard input and output needs neither, and Core brings two small Microsoft packages with
+    it where the other brings a host. The layout tools themselves are the library's - GdsII/Agent - so this
+    is transport, and nothing about a layout is decided here.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
   </ItemGroup>
 
 </Project>

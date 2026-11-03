@@ -170,7 +170,8 @@ test.describe('a pattern over a layer', () => {
         //A bare address opens with nothing until the restore replaces it, so this waits for the file.
         await expect.poll(async () => openFile(page), { timeout: 60000 }).toBe('Mosfet.gds');
 
-        await expect.poll(async () => (await fills(page)).filter(one => one.includes('url(')).length,
+        await expect.poll(
+            async () => (await fills(page)).filter(one => one.includes('url(')).length,
             { timeout: 30000 }).toBe(1);
 
         await openLayerSettings(page, 0);
@@ -403,6 +404,10 @@ test.describe('a pattern over a layer', () => {
     ///thumbnail's 0.85, and moving the pointer away put it back. Patterns would have handed it the
     ///thumbnail's tile as well, which is a different pitch because a cell is smaller than the file.
     ///
+    ///**Since 2026-10-17 a thumbnail is an image** - a PNG, or a small layout's SVG as a document of its own - which has
+    ///no styles or patterns on the page to hoist - see PreviewPictures.
+    ///Kept anyway, since it says what a thumbnail must never do however it is drawn.
+    ///
     test('a cell preview does not repaint the layout behind it', async ({ page }) => {
         await gotoExample(page, MOSFET, '2d', true);
 
@@ -416,7 +421,7 @@ test.describe('a pattern over a layer', () => {
 
         await page.locator('#cellTree .cellRow').first().hover();
 
-        await expect(page.locator('#cellTreePreview svg.cellPreview')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('#cellTreePreview img.cellPreview')).toBeVisible({ timeout: 15000 });
 
         const after = await page.evaluate(() => {
             const one = document.querySelector('#gdsSVG path');

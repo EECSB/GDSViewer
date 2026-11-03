@@ -471,5 +471,26 @@ namespace GDSViewer.Tests
             Assert.Equal("1 2 3 4", session.View2DBox);
             Assert.Equal("1 2 3 4 5 6", session.View3DCamera);
         }
+
+        ///
+        ///**Full screen unless somebody turned it off** (2026-11-03): a session from before, which held "fs" false for
+        ///anybody who never pressed the button, reads as on - and one that turned it off under the new key stays off,
+        ///as does an embed that says full=false over either.
+        ///
+        [Fact]
+        public void Full_screen_is_on_unless_a_session_or_an_embed_turned_it_off()
+        {
+            Assert.True(new SavedSession().FullScreen);
+
+            var older = SavedSession.Deserialize($"{{\"v\":{SavedSession.CurrentVersion},\"fs\":false}}")!;
+
+            Assert.True(older.FullScreen);
+
+            var off = SavedSession.Deserialize(SavedSession.Serialize(new SavedSession { FullScreen = false }))!;
+
+            Assert.False(off.FullScreen);
+
+            Assert.False(Read("full=false").Over(new SavedSession()).FullScreen);
+        }
     }
 }

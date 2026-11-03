@@ -141,7 +141,12 @@ test('dragging a corner previews the new shape', async ({ page }) => {
     await expect.poll(async () => page.locator('.vertexHandle').count(), { timeout: 15000 })
         .toBeGreaterThan(0);
 
-    const handle = await page.locator('.vertexHandle').first().boundingBox();
+    const element = Number(await page.locator('#gdsSVG .shapeSelected').getAttribute('data-element'));
+    const before = (await elementPoints(page, element)).split(' ');
+
+    const pulled = page.locator('.vertexHandle').first();
+    const corner = Number(await pulled.getAttribute('data-corner'));
+    const handle = await pulled.boundingBox();
     const at = { x: handle.x + (handle.width / 2), y: handle.y + (handle.height / 2) };
 
     await page.mouse.move(at.x, at.y);
@@ -157,12 +162,43 @@ test('dragging a corner previews the new shape', async ({ page }) => {
         return { width: Math.round(box.width), height: Math.round(box.height) };
     }, LIFTED);
 
+    //The lifted copy's corners, read the way everything reads the picture.
+    const during = await page.evaluate((selector) => {
+        const [run] = window.viewGeometry.subpaths(document.querySelector(selector + ' > path').getAttribute('d'));
+        const corners = [];
+
+        for (let i = 0; i + 1 < run.corners.length; i += 2)
+            corners.push(`${run.corners[i]},${run.corners[i + 1]}`);
+
+        return corners;
+    }, LIFTED);
+
     await page.mouse.up();
 
     await expect(page.locator(LIFTED)).toHaveCount(0);
 
     expect(stretched.width).toBeGreaterThan(0);
     expect(stretched.height).toBeGreaterThan(0);
+
+    //
+    //**And the corner pulled is the one that moved, and no other.** The picture writes a shape as steps between
+    //its corners, so a preview that moved the text rather than the corner it stands for would take every corner
+    //after it along - a translation that still has a size, which is all the check above can see. A ring's first
+    //corner is also its last, so pulling either moves both.
+    //
+    const last = before.length - 1;
+    const twinned = before[0] === before[last] && (corner === 0 || corner === last);
+
+    expect(during).toHaveLength(before.length);
+
+    for (let i = 0; i < before.length; i++) {
+        let moved = i === corner;
+
+        if (twinned && (i === 0 || i === last))
+            moved = true;
+
+        expect(during[i] !== before[i], `corner ${i}: ${before.join(' ')} became ${during.join(' ')}`).toBe(moved);
+    }
 });
 
 ///

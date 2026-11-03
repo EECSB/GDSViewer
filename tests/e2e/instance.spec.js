@@ -8,7 +8,7 @@
 //cell below is. Nothing in C# can see which of those happened, because both are the same edit on a different
 //element.
 const { test, expect } = require('@playwright/test');
-const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn, leaveCell, uploadFile } = require('./helpers');
+const { gotoApp, shapeCount, shapeBox, allPoints, openedOnItsOwn, leaveCell, uploadFile, stackOnScreen, cameraPosition } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
     //With the cell tree open, since one of these reads the library - see gotoApp.
@@ -60,7 +60,8 @@ async function editTop(page) {
 
         if (!said.includes('LEAF')) {
 
-            await expect.poll(async () => (await page.locator('.contextCrumbOn').textContent()).trim(),
+            await expect.poll(
+                async () => (await page.locator('.contextCrumbOn').textContent()).trim(),
                 { timeout: 15000 }).toBe('TOP');
 
             return;
@@ -472,6 +473,56 @@ test.describe('carrying one in', () => {
     });
 
     ///
+    ///**Choosing a tool puts it back too** (2026-10-21, asked for). What is carried takes every press before any
+    ///tool does, so choosing the pencil with a cell in hand left it in hand, and the drag meant for a rectangle put
+    ///another cell down instead. See emptyHand.
+    ///
+    test('choosing a tool puts a carried cell back, and the next press is the tool\'s', async ({ page }) => {
+        await intoTheTop(page);
+
+        await page.locator('.cellRowPlace[data-place="LEAF"]').click();
+
+        await expect(page.locator('#carryingCell')).toBeVisible();
+
+        await page.locator('#drawTool').click();
+
+        await expect(page.locator('#carryingCell')).toHaveCount(0);
+        await expect(page.locator('#carriedCell')).toHaveCount(0);
+
+        //The pencil's crosshair, not the arrow the carried cell left behind.
+        expect(await page.locator('#gdsSVG').evaluate(svg => svg.style.cursor)).toBe('crosshair');
+
+        const view = await page.locator('#gdsSVG').boundingBox();
+
+        await page.mouse.move(view.x + (view.width * 0.7), view.y + (view.height * 0.3));
+        await page.mouse.down();
+        await page.mouse.move(view.x + (view.width * 0.8), view.y + (view.height * 0.45), { steps: 5 });
+        await page.mouse.up();
+
+        await expect.poll(async () => shapeCount(page), { timeout: 15000 }).toBe(5);
+        await expect(page.locator('#undoEdit')).toHaveAttribute('title', /^Undo Draw \(/);
+    });
+
+    ///
+    ///**Esc puts a carried cell back with the pencil still out, and the pointer is the pencil's crosshair again**, not
+    ///the arrow the cell left - toolCursor in the interop, which nothing tested until the 2026-10-21 audit broke it on
+    ///purpose and every spec stayed green.
+    ///
+    test('Esc puts a carried cell back with the tool\'s own cursor', async ({ page }) => {
+        await intoTheTop(page);
+
+        await page.locator('#drawTool').click();
+        await page.locator('.cellRowPlace[data-place="LEAF"]').click();
+
+        await expect(page.locator('#carryingCell')).toBeVisible();
+
+        await page.keyboard.press('Escape');
+
+        await expect(page.locator('#carryingCell')).toHaveCount(0);
+        await expect.poll(async () => page.locator('#gdsSVG').evaluate(svg => svg.style.cursor)).toBe('crosshair');
+    });
+
+    ///
     ///**A carried cell lands as one more instance.**
     ///
     ///The square in this fixture is symmetric, so what is checked here is that a fifth shape arrives at all
@@ -817,7 +868,8 @@ test.describe('a band over another top cell', () => {
         await page.mouse.up();
 
         //Into the cell it caught, which the breadcrumb says out loud.
-        await expect.poll(async () => (await page.locator('.contextCrumbOn').textContent()).trim(),
+        await expect.poll(
+            async () => (await page.locator('.contextCrumbOn').textContent()).trim(),
             { timeout: 15000 }).toBe('LEAF');
 
         //And the shapes are the cell's own now, so the whole row of actions is offered rather than Copy.
@@ -875,5 +927,142 @@ test.describe('a band over another top cell', () => {
         await expect(page.locator('#selectionPanel')).toBeVisible();
 
         expect((await page.locator('.contextCrumbOn').textContent()).trim()).toBe('TOP');
+    });
+});
+
+///
+///**The cell tree says where each instance is, and a press on one reaches that one.**
+///
+///A placed cell's row opens to its placements in the cell placing it, as the text view's list does; a placement
+///opens to what it draws, said where it draws it; and a press on either lands on that instance rather than on
+///whichever is drawn first - which is the whole point, since LEAF's three are one cell drawn three times.
+///
+test.describe('from the cell tree', () => {
+    ///Rows of one kind in the tree.
+    function ofKind(page, kind) {
+        return page.locator(`#cellTree .cellRowPair[data-kind="${kind}"]`);
+    }
+
+    ///Opens LEAF's row, which starts shut, and gives back its placements' rows.
+    async function leafPlacements(page) {
+        const leaf = ofKind(page, 'cell').filter({ hasText: 'LEAF' });
+
+        await expect(leaf.locator('.cellRowFold')).toHaveAttribute('aria-expanded', 'false');
+        await expect(ofKind(page, 'placement')).toHaveCount(0);
+
+        await leaf.locator('.cellRowFold').click();
+
+        await expect(ofKind(page, 'placement')).toHaveCount(3);
+
+        return ofKind(page, 'placement');
+    }
+
+    ///The middle of what the view shows, in the layout's units, from the drawing's viewBox.
+    async function viewMiddle(page) {
+        return page.evaluate(() => {
+            const [x, y, width, height] = document.getElementById('gdsSVG').getAttribute('viewBox').trim().split(/\s+/).map(Number);
+
+            return { x: x + (width / 2), y: y + (height / 2) };
+        });
+    }
+
+    ///Where the chosen shape starts, as the selection panel says: the left and bottom of its extent.
+    async function chosenFrom(page) {
+        const said = await page.locator('#selectionPanel').textContent();
+        const found = said.match(/\((-?\d+), (-?\d+)\) to \(/);
+
+        return [Number(found[1]), Number(found[2])];
+    }
+
+    test('LEAF opens to its three placements in TOP, each said where it is', async ({ page }) => {
+        const placements = await leafPlacements(page);
+
+        await expect(placements.locator('.cellRowName')).toHaveText(['(600, 0)', '(1200, 0)', '(1800, 0)']);
+    });
+
+    test('pressing one takes hold of that instance, from TOP, and puts the view on it', async ({ page }) => {
+        const placements = await leafPlacements(page);
+
+        await placements.nth(0).locator('.cellRow').click();
+
+        await expect(page.locator('#instanceNote')).toBeVisible({ timeout: 15000 });
+        await expect.poll(async () => (await page.locator('.contextCrumbOn').textContent()).trim(), { timeout: 15000 }).toBe('TOP');
+
+        const first = await viewMiddle(page);
+
+        await placements.nth(1).locator('.cellRow').click();
+
+        //The second is 600 along from the first, and so is the view put on it.
+        await expect.poll(async () => Math.round((await viewMiddle(page)).x - first.x), { timeout: 15000 }).toBe(600);
+        await expect(page.locator('#instanceNote')).toBeVisible();
+    });
+
+    test('a placement opens to LEAF\'s shapes, said where it draws them, and a press chooses the one drawn there', async ({ page }) => {
+        const placements = await leafPlacements(page);
+
+        //The first and the third, each opened to what it draws, and that to its shapes.
+        await placements.nth(0).locator('.cellRowFold').click();
+        await placements.nth(2).locator('.cellRowFold').click();
+
+        const layers = page.locator('#cellTree .cellRowPair[data-kind="layer"][data-depth="3"]');
+
+        await expect(layers).toHaveCount(2);
+
+        await layers.nth(0).locator('.cellRowFold').click();
+        await layers.nth(1).locator('.cellRowFold').click();
+
+        const shapes = ofKind(page, 'shape');
+
+        await expect(shapes).toHaveCount(2);
+
+        //One shape of LEAF, said where each placement draws it - 1200 apart, as the two placements are.
+        const says = await shapes.locator('.cellRowName').allTextContents();
+        const at = says.map(text => text.match(/at (-?\d+), (-?\d+)/).slice(1).map(Number));
+
+        expect(at[1][0] - at[0][0]).toBe(1200);
+        expect(at[1][1]).toBe(at[0][1]);
+
+        //And a press chooses the one drawn there, entering LEAF through that instance.
+        await shapes.nth(0).locator('.cellRow').click();
+
+        await expect(page.locator('#selectionPanel')).toContainText('LEAF', { timeout: 15000 });
+
+        const fromFirst = await chosenFrom(page);
+
+        await shapes.nth(1).locator('.cellRow').click();
+
+        await expect.poll(async () => (await chosenFrom(page))[0] - fromFirst[0], { timeout: 15000 }).toBe(1200);
+    });
+
+    ///
+    ///**Beside the 3D view as well, where a press puts the camera on the placement** - nothing is chosen in 3D, so the
+    ///row goes to what it names. LEAF's first and third placements are 1200 apart, and so is the camera, which frames
+    ///each the same way from the same angle.
+    ///
+    test('in 3D, pressing one puts the camera on it', async ({ page }) => {
+        await page.locator('[data-view="View3D"]').click();
+
+        await expect(page.locator('#threeWrapper #cellTree')).toBeVisible({ timeout: 30000 });
+
+        //The scene, found the way the 3D specs find it, so the camera can be read.
+        await expect.poll(async () => (await stackOnScreen(page)).meshes, { timeout: 60000 }).toBeGreaterThan(0);
+
+        const before = await cameraPosition(page);
+        const placements = await leafPlacements(page);
+
+        await placements.nth(0).locator('.cellRow').click();
+
+        await expect.poll(async () => (await cameraPosition(page)).x, { timeout: 15000 }).not.toBe(before.x);
+
+        const first = await cameraPosition(page);
+
+        await placements.nth(2).locator('.cellRow').click();
+
+        await expect.poll(async () => Math.round((await cameraPosition(page)).x - first.x), { timeout: 15000 }).toBe(1200);
+
+        const third = await cameraPosition(page);
+
+        expect(third.y).toBeCloseTo(first.y, 3);
+        expect(third.z).toBeCloseTo(first.z, 3);
     });
 });

@@ -31,6 +31,13 @@ namespace GdsII
     ///comes out covers the same ground as what went in - not nearly, exactly. What is lost is that the
     ///shape was one object, which is a thing GDSII has no way to say about a polygon this size anyway.
     ///
+    ///**A path is the other way round: several XY records, one element.** Cutting a path into several paths
+    ///changes what is drawn - two flush ends meeting where there was a bend lose the corner, and two round
+    ///ones overlap - where a run of XY records is the same centerline, read back as one by takeXy. That is
+    ///the form that cannot be exact as separate elements, so it takes the form the reader joins. The same
+    ///goes for the one other element with a point list of any length, a NODE. A path of 8,192 points opened
+    ///and then could not be saved, and `gds convert` fell over on it.
+    ///
     public static class Fracture
     {
         ///
@@ -295,7 +302,12 @@ namespace GdsII
             {
                 if (records[i].Type != RecordType.BOUNDARY)
                 {
-                    fractured.Add(records[i]);
+                    //A path's or a node's point list over the limit, as the several XY records the reader joins
+                    //back into one - see the class summary for why those are not cut the way a boundary is.
+                    if (records[i].Type == RecordType.XY && records[i].SerializedLength > MostBytes)
+                        fractured.AddRange(splitXy(records[i]));
+                    else
+                        fractured.Add(records[i]);
 
                     continue;
                 }
@@ -379,6 +391,26 @@ namespace GdsII
 
                 into.Add(records[end]);
             }
+        }
+
+        ///<summary>One XY record as several that each fit, holding the same coordinates in the same order.</summary>
+        private static List<Record> splitXy(Record xy)
+        {
+            var values = ((Int4Data)xy.Data!).Values;
+
+            //Whole points per record: the most a record's payload holds, at two four-byte coordinates each.
+            int perRecord = ((MostBytes - 4) / 8) * 2;
+
+            var pieces = new List<Record>();
+
+            for (int at = 0; at < values.Length; at += perRecord)
+            {
+                int count = Math.Min(perRecord, values.Length - at);
+
+                pieces.Add(new Record((short)RecordType.XY, new Int4Data(values[at..(at + count)]).Encode()));
+            }
+
+            return pieces;
         }
 
         ///<summary>An XY payload as corners, with the repeated closing one dropped.</summary>
