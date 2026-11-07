@@ -255,6 +255,34 @@ public class AiChatTests
         Assert.StartsWith(LlmProviderFactory.RoundsStuck, chat.Turns[^1].Text);
     }
 
+    ///
+    ///A run whose every call the person declines is going nowhere too, and is stopped as stuck after as many rounds as a
+    ///refused one, with nothing drawn. A declined call is answered as a result rather than an error, on purpose, so until
+    ///2026-11-07 (from GraphDBViewer) the run took each new one for progress and the model could ask until its cap.
+    ///
+    [Fact]
+    public async Task A_run_whose_every_call_is_declined_is_stopped_as_stuck()
+    {
+        var session = Session();
+        int calls = 0;
+
+        //A different rectangle every round, so it is the declining and not a repeat that gets nowhere.
+        var standIn = new AiStandIn((_, _) =>
+        {
+            int n = calls++;
+
+            return AiStandIn.Json(AiStandIn.AnthropicCall("toolu_" + n, "draw_rectangle", $$"""{"layer":"met1","from":[{{n}},0],"to":[{{n + 1}},1]}"""));
+        });
+        var declining = new ApprovingToolRunner(new LayoutToolRunner(session), (_, _) => Task.FromResult(false), null, ToolApprovalMode.Ask);
+
+        var result = await new AnthropicProvider(standIn.Client(), Claude()).CompleteWithToolsAsync("system", new List<LlmMessage> { LlmMessage.FromUser("Draw squares") }, declining, CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Equal(LlmProviderFactory.RoundsStuck, result.Error);
+        Assert.Equal(LlmProviderFactory.MaxStuckRounds, standIn.Requests.Count);
+        Assert.Equal(0, ShapesIn(session));
+    }
+
     ///<summary>A model asking the same thing over and over, and told the same each time, is stopped as stuck - the first ask was progress.</summary>
     [Fact]
     public async Task A_model_repeating_the_same_read_is_stopped_as_stuck()

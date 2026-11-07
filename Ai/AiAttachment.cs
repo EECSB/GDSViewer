@@ -76,6 +76,9 @@ namespace GDSViewer.Ai
         ///<summary>About what a page of a PDF costs: its text, and a picture of the page.</summary>
         public const int PdfPageTokens = 2000;
 
+        ///<summary>About what a page of a PDF costs as its words alone, until they are read - see <see cref="AsText"/>.</summary>
+        public const int PdfPageTextTokens = 500;
+
         private static readonly string[] imageExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
         private static readonly string[] imageTypes = { "image/png", "image/jpeg", "image/gif", "image/webp" };
@@ -113,6 +116,8 @@ namespace GDSViewer.Ai
         private string? unreadable;
         private bool goesOn;
         private int pages = -1;
+        private string? pdfText;
+        private string? pdfUnreadable;
 
         public AiAttachment(string name, string mediaType, byte[] data)
         {
@@ -146,10 +151,49 @@ namespace GDSViewer.Ai
         ///
         public AiAttachment Unticked()
         {
-            return new AiAttachment(Name, MediaType, Data) { Excluded = true };
+            return new AiAttachment(Name, MediaType, Data) { Excluded = true, pdfText = pdfText, pdfUnreadable = pdfUnreadable };
         }
 
         public AttachmentKind Kind => KindOf(Name, MediaType);
+
+        ///
+        ///A PDF sent as the words read out of it here (<see cref="ReadPdf"/>) rather than as the file, as the model picked
+        ///says (<see cref="LlmConnection.PdfAsText"/>). Set by the chat at every question, as <see cref="Excluded"/> is by
+        ///the files panel, so another model picked sends the same file its own way. 2026-11-07, from GraphDBViewer.
+        ///
+        public bool AsText { get; set; }
+
+        ///<summary>What the file goes to the model as: a PDF sent as its words is text.</summary>
+        public AttachmentKind SentKind
+        {
+            get
+            {
+                if (Kind == AttachmentKind.Pdf && AsText)
+                    return AttachmentKind.Text;
+
+                return Kind;
+            }
+        }
+
+        ///<summary>Whether a PDF's words have been read out of it, whether or not there were any.</summary>
+        public bool PdfRead => pdfText is not null;
+
+        ///
+        ///Reads a PDF's words out of it, once, with PdfPig (<see cref="PdfText"/>). Afterwards they are its <see cref="Text"/>, and why there were none - a scan's
+        ///pictures of pages, or a file PdfPig cannot open - its <see cref="Unreadable"/>.
+        ///
+        public void ReadPdf()
+        {
+            if (Kind != AttachmentKind.Pdf || PdfRead)
+                return;
+
+            var (words, problem) = PdfText.Read(Name, Data);
+
+            pdfText = words ?? "";
+
+            if (problem is not null)
+                pdfUnreadable = $"{problem} A scanned PDF has pictures of its pages and no words: send it as the file, to a model that reads one.";
+        }
 
         ///<summary>The words a file is sent as: a workbook's or a document's read out of it, and any other file's decoded.</summary>
         private string read()
@@ -186,6 +230,10 @@ namespace GDSViewer.Ai
         {
             get
             {
+                //A PDF's words are only what ReadPdf found, never its bytes decoded.
+                if (Kind == AttachmentKind.Pdf)
+                    return pdfText ?? "";
+
                 if (text is null)
                     text = read();
 
@@ -202,6 +250,9 @@ namespace GDSViewer.Ai
         {
             get
             {
+                if (Kind == AttachmentKind.Pdf)
+                    return pdfUnreadable;
+
                 if (text is null)
                     text = read();
 
@@ -229,8 +280,12 @@ namespace GDSViewer.Ai
                 if (Kind == AttachmentKind.Image)
                     return ImageTokens;
 
-                if (Kind == AttachmentKind.Pdf)
+                if (Kind == AttachmentKind.Pdf && !AsText)
                     return (long)Pages * PdfPageTokens;
+
+                //As its words, weighed at a guess until they are read, and by what they are once they are.
+                if (Kind == AttachmentKind.Pdf && !PdfRead)
+                    return (long)Pages * PdfPageTextTokens;
 
                 return AiEstimate.TokensIn(Math.Min(Text.Length, MostTextCharacters));
             }
@@ -301,8 +356,12 @@ namespace GDSViewer.Ai
         ///Why a file cannot go with a question, from its name, its type and its size alone - so a file far too big is
         ///turned away before the page reads a byte of it. Null when nothing so far says no.
         ///
-        public static string? Refusal(string name, string? mediaType, long size)
+        public static string? Refusal(string? name, string? mediaType, long size)
         {
+            //A file with no name goes by its type, as one with no extension does, rather than throwing (2026-11-07, from
+            //GraphDBViewer): a browser always names one, but this is also what another host's files come through.
+            name ??= "";
+
             string extension = Path.GetExtension(name).ToLowerInvariant();
             var kind = KindOf(name, mediaType);
 
@@ -333,8 +392,10 @@ namespace GDSViewer.Ai
         }
 
         ///<summary>Why a file cannot go with a question, said so the person can do something about it - or null when it can.</summary>
-        public static string? Problem(string name, string? mediaType, byte[] data)
+        public static string? Problem(string? name, string? mediaType, byte[] data)
         {
+            name ??= "";
+
             if (Refusal(name, mediaType, data.Length) is string refused)
                 return refused;
 
@@ -395,15 +456,15 @@ namespace GDSViewer.Ai
         }
 
         ///<summary>Why a file waiting in the box cannot go to the model picked, for the line that says why Send waits - or null when it can.</summary>
-        public static string? NotSentTo(string providerType, AiAttachment file)
+        public static string? NotSentTo(string providerType, AiAttachment file, bool pdfAsText = false)
         {
-            if (SentTo(providerType, file.Kind))
+            if (SentTo(providerType, file.Kind) || (file.Kind == AttachmentKind.Pdf && pdfAsText))
                 return null;
 
             if (providerType == LlmConnection.Gemini)
-                return $"{file.Name} cannot go to a Gemini model: Google's OpenAI-compatible endpoint, which this app reaches it through, takes pictures and text but not PDFs. Take it off, or pick an Anthropic or OpenAI model.";
+                return $"{file.Name} cannot go to a Gemini model: Google's OpenAI-compatible endpoint, which this app reaches it through, takes pictures and text but not PDFs. Tick Send PDFs as their text on this model under AI settings, take it off, or pick an Anthropic or OpenAI model.";
 
-            return $"{file.Name} cannot go to a server of your own, which may not read PDFs. Take it off, or pick an Anthropic or OpenAI model.";
+            return $"{file.Name} cannot go to a server of your own, which may not read PDFs. Tick Send PDFs as their text on this model under AI settings, take it off, or pick an Anthropic or OpenAI model.";
         }
 
         ///
@@ -430,7 +491,7 @@ namespace GDSViewer.Ai
                     continue;
                 }
 
-                if (!SentTo(providerType, file.Kind))
+                if (!SentTo(providerType, file.SentKind))
                 {
                     parts.Add(new AttachmentPart(AttachmentKind.Text, $"[The person attached {file.Name}, which this model cannot be sent. If the question needs it, say so.]"));
 
@@ -445,7 +506,7 @@ namespace GDSViewer.Ai
                     parts.Add(new AttachmentPart(AttachmentKind.Text, $"Attached file: {file.Name}"));
                     parts.Add(new AttachmentPart(AttachmentKind.Image, "", type, Convert.ToBase64String(file.Data), file.Name));
                 }
-                else if (file.Kind == AttachmentKind.Pdf)
+                else if (file.SentKind == AttachmentKind.Pdf)
                 {
                     parts.Add(new AttachmentPart(AttachmentKind.Text, $"Attached file: {file.Name}"));
                     parts.Add(new AttachmentPart(AttachmentKind.Pdf, "", "application/pdf", Convert.ToBase64String(file.Data), file.Name));

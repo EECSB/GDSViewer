@@ -134,14 +134,14 @@ namespace GDSViewer.Ai
             //No approver is a misconfiguration, not permission. Refusing is the safe reading of it - in the auto modes
             //too, where the approver is also how what ran gets shown.
             if (approve is null)
-                return new LlmToolOutput { Text = DeclinedMessage };
+                return LlmToolOutput.Declined(DeclinedMessage);
 
             if (!await approve(request, ct))
             {
                 if (completed is not null)
                     await completed(request, null);
 
-                return new LlmToolOutput { Text = DeclinedMessage };
+                return LlmToolOutput.Declined(DeclinedMessage);
             }
 
             var output = await inner.RunToolAsync(name, argumentsJson, ct);

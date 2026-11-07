@@ -203,8 +203,9 @@ test.describe('the window', () => {
         await expect(page.locator('#aiSettingsWindow')).toBeVisible();
         await expect(page.locator('#aiKeysKept')).toContainText('Keys are kept in this browser');
 
-        await page.locator('#aiModelAdd').click();
-        await page.locator('#aiModelName').fill('Mine');
+        //With none saved, the form is the one for the first, its name typed into the picker's head.
+        await page.locator('#aiModelPickerName').fill('Mine');
+        await page.locator('#aiModelPickerName').press('Enter');
         await page.locator('#aiProviderGemini').click();
         await page.locator('#aiModelId').fill('gemini-test');
 
@@ -213,7 +214,7 @@ test.describe('the window', () => {
         await page.locator('#aiModelKey').fill('test-key');
         await page.locator('#aiModelSave').click();
 
-        await expect(page.locator('#aiModelPicker')).toHaveValue('Mine');
+        await expect(page.locator('#aiModelPickerFace')).toHaveText('Mine');
 
         //Put away, as somebody done with it would: it is a window, and it sits over whatever is under it.
         await page.locator('#aiSettingsWindow .closeButton').click();
@@ -226,13 +227,72 @@ test.describe('the window', () => {
         await expect(page.locator('#aiNoModel')).toHaveCount(0);
     });
 
+    ///
+    ///**The models' picker manages them in place** (2026-11-07, from GraphDBViewer): the chosen model's name heads it and
+    ///is renamed there, each row has Rename, Duplicate and Delete, and Save joined to its end is orange only while the form
+    ///holds something not saved.
+    ///
+    test('the models are renamed, duplicated and deleted in the picker, and Save says when there is something to save', async ({ page }) => {
+        await withModel(page, GEMINI, CLAUDE);
+        await gotoExample(page, MOSFET, '2d');
+
+        await page.locator('#settingsMenu').click();
+        await page.locator('#aiSettingsItem').click();
+
+        await expect(page.locator('#aiModelPickerFace')).toHaveText('Gemini');
+        await expect(page.locator('#aiModelSave')).not.toHaveClass(/savedPickerUnsaved/);
+
+        //A change makes Save orange, and undoing it takes the orange away.
+        await page.locator('#aiModelPdfAsText').check();
+        await expect(page.locator('#aiModelSave')).toHaveClass(/savedPickerUnsaved/);
+        await page.locator('#aiModelPdfAsText').uncheck();
+        await expect(page.locator('#aiModelSave')).not.toHaveClass(/savedPickerUnsaved/);
+
+        //Renamed in the head, where it is in the list.
+        await page.locator('#aiModelPickerRename').click();
+        await page.locator('#aiModelPickerName').fill('Flash');
+        await page.locator('#aiModelPickerName').press('Enter');
+
+        await expect(page.locator('#aiModelPickerFace')).toHaveText('Flash');
+
+        await page.locator('#aiModelPickerChevron').click();
+
+        const rows = page.locator('#aiModelPickerMenu .savedPickerRow');
+
+        await expect(rows).toHaveText(['Flash', 'Claude']);
+
+        //Duplicated right after itself, and chosen.
+        await rows.first().hover();
+        await rows.first().locator('[data-act="duplicate"]').click();
+
+        await expect(page.locator('#aiModelPickerFace')).toHaveText('Flash (copy)');
+        await expect(page.locator('#aiModelId')).toHaveValue('gemini-test');
+
+        await page.locator('#aiModelPickerChevron').click();
+        await expect(rows).toHaveText(['Flash', 'Flash (copy)', 'Claude']);
+
+        //Deleted from its row: the chosen one goes, and the first left is chosen.
+        await rows.nth(1).hover();
+        await rows.nth(1).locator('[data-act="delete"]').click();
+
+        await expect(rows).toHaveText(['Flash', 'Claude']);
+
+        //A name taken is refused, and the head says why.
+        await rows.nth(1).hover();
+        await rows.nth(1).locator('[data-act="rename"]').click();
+        await page.locator('#aiModelPickerName').fill('Flash');
+        await page.locator('#aiModelPickerName').press('Enter');
+
+        await expect(page.locator('#aiModelPickerError')).toHaveText('A model with that name already exists.');
+    });
+
     test('a model is refused without the things it needs', async ({ page }) => {
         await gotoExample(page, MOSFET, '2d');
 
         await page.locator('#settingsMenu').click();
         await page.locator('#aiSettingsItem').click();
-        await page.locator('#aiModelAdd').click();
-        await page.locator('#aiModelName').fill('Local');
+        await page.locator('#aiModelPickerName').fill('Local');
+        await page.locator('#aiModelPickerName').press('Enter');
         await page.locator('#aiProviderCustom').click();
         await page.locator('#aiModelId').fill('llama');
         await page.locator('#aiModelSave').click();
@@ -266,7 +326,7 @@ test.describe('the window', () => {
         await expect(words).toContainText('Add a model to turn the assistant on');
 
         //Away from it, the words go; a press was never what showed them.
-        await page.locator('#aiModelAdd').hover();
+        await page.locator('#aiModelPickerChevron').hover();
 
         await expect(words).toBeHidden();
     });
@@ -317,14 +377,16 @@ test.describe('the window', () => {
         await page.locator('#settingsMenu').click();
         await page.locator('#aiSettingsItem').click();
 
-        const options = page.locator('#aiModelPicker option');
+        await page.locator('#aiModelPickerChevron').click();
 
-        await expect(options).toHaveCount(2);
-        await expect(options.filter({ hasText: 'From file (Gemini)' })).toHaveCount(1);
-        await expect(options.filter({ hasText: 'Mine (Gemini)' })).toHaveCount(1);
+        const rows = page.locator('#aiModelPickerMenu .savedPickerRow');
+
+        await expect(rows).toHaveCount(2);
+        await expect(rows.filter({ hasText: 'From file' })).toHaveCount(1);
+        await expect(rows.filter({ hasText: 'Mine' })).toHaveCount(1);
 
         //The saved one kept what it had, rather than taking the file's.
-        await page.locator('#aiModelPicker').selectOption('Mine');
+        await page.locator('#aiModelPickerMenu .savedPickerRow[data-key="Mine"]').click();
 
         await expect(page.locator('#aiModelId')).toHaveValue('gemini-mine');
     });
@@ -397,11 +459,11 @@ test.describe('the window', () => {
         expect(send.y).toBeGreaterThan(words.y + words.height - 1);
         expect(send.y + send.height).toBeLessThanOrEqual(frame.y + frame.height);
 
-        //And nothing in the title bar but the cross: the tool picker's switch is in this row, the panels' arrows on their
-        //dividers, New chat in the chats (2026-10-31), and Export and Clear on the chats' rows.
+        //And nothing in the title bar but the cross: the tool picker's switch is in this row, the panels' crosses in the
+        //panels, New chat in the chats (2026-10-31), and Export and Clear on the chats' rows.
         await expect(page.locator('#askAiWindow .aiBox #aiToolPickerToggle')).toBeVisible();
-        await expect(page.locator('#askAiWindow #aiChatsToggle')).toBeVisible();
-        await expect(page.locator('#askAiWindow #aiFilesToggle')).toBeVisible();
+        await expect(page.locator('#askAiWindow #aiChats #aiChatsClose')).toBeVisible();
+        await expect(page.locator('#askAiWindow #aiFiles #aiFilesClose')).toBeVisible();
         await expect(page.locator('#askAiWindow .aiWindowHead button')).toHaveCount(1);
         await expect(page.locator('#aiNewChat')).toHaveCount(0);
         await expect(page.locator('#aiClear')).toHaveCount(0);
@@ -1381,6 +1443,37 @@ test.describe('Gemini', () => {
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const PDF = Buffer.from('%PDF-1.7\n<< /Type /Page >>\n%%EOF');
 
+///A real one-page PDF that says what it is given, in Helvetica, with its cross-reference table where it says it is.
+function onePagePdf(words) {
+    const stream = `BT /F1 12 Tf 72 720 Td (${words}) Tj ET`;
+    const objects = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+    ];
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [];
+
+    objects.forEach((object, i) => {
+        offsets.push(pdf.length);
+        pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
+    });
+
+    const xref = pdf.length;
+
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+
+    for (const offset of offsets)
+        pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+
+    return Buffer.from(pdf, 'latin1');
+}
+
 //
 //A zip of the parts given, each packed with deflate as Office packs them - which is all an .xlsx or a .docx is, and
 //makes the page unpack them the way it unpacks a real one.
@@ -1517,9 +1610,9 @@ test.describe('files, and what it costs', () => {
 
         await expect(page.locator('#aiPending .aiChip')).toHaveCount(2);
 
-        //Open to begin with, so the count is on its divider only once the panel is collapsed.
+        //Open to begin with, so the count is on its arrow only once the panel is closed.
         await expect(page.locator('#aiFilesCount')).toHaveCount(0);
-        await page.locator('#aiFilesToggle').click();
+        await page.locator('#aiFilesClose').click();
         await expect(page.locator('#aiFiles')).toHaveCount(0);
         await expect(page.locator('#aiFilesCount')).toHaveText('2');
         await page.locator('#aiFilesToggle').click();
@@ -1613,6 +1706,52 @@ test.describe('files, and what it costs', () => {
 
         await expect(page.locator('#aiCannotSend')).toHaveCount(0);
         await expect(page.locator('#aiSend')).toBeEnabled();
+    });
+
+    ///
+    ///**A model set to take PDFs as their text is sent their words** (2026-11-07, from GraphDBViewer): ticked under AI
+    ///settings, the PDF Gemini cannot be sent as a file goes as the words PdfPig reads out of it in the page, inside its
+    ///name's tags.
+    ///
+    test('a PDF goes to a model set to take PDFs as text as its words', async ({ page }) => {
+        await withModel(page, { ...GEMINI, PdfAsText: true });
+
+        const sent = await fakeProvider(page, GOOGLE, [geminiSays('0.14 µm.')]);
+
+        await gotoExample(page, MOSFET, '2d');
+        await openAssistant(page);
+
+        await attach(page, { name: 'rules.pdf', mimeType: 'application/pdf', buffer: onePagePdf('met1 width is 0.14 um') });
+
+        await expect(page.locator('#aiCannotSend')).toHaveCount(0);
+        await expect(page.locator('#aiPending .aiChipBlocked')).toHaveCount(0);
+
+        await send(page, 'How wide is met1?');
+
+        await expect(transcript(page)).toContainText('0.14 µm.');
+
+        const question = JSON.stringify(sent[0].body.messages.find(message => message.role === 'user'));
+
+        expect(question).toContain('<attachment name=\\"rules.pdf\\">');
+        expect(question).toContain('met1 width is 0.14 um');
+        expect(question).not.toContain('application/pdf');
+    });
+
+    ///And one with no words, as a scan has none, keeps the question in the box and says why.
+    test('a PDF with no words to read is not sent as text, and the window says why', async ({ page }) => {
+        await withModel(page, { ...GEMINI, PdfAsText: true });
+
+        const sent = await fakeProvider(page, GOOGLE, [geminiSays('Nothing.')]);
+
+        await gotoExample(page, MOSFET, '2d');
+        await openAssistant(page);
+
+        await attach(page, { name: 'scan.pdf', mimeType: 'application/pdf', buffer: PDF });
+        await send(page, 'What does it say?');
+
+        await expect(page.locator('#aiAttachProblem')).toContainText('scanned PDF');
+        await expect(page.locator('#aiPrompt')).toHaveValue('What does it say?');
+        expect(sent).toHaveLength(0);
     });
 
     ///
@@ -2069,40 +2208,54 @@ test.describe('the panels', () => {
     });
 
     ///
-    ///**The chats and the files are open to begin with, each collapsed and opened again by the arrow on its divider**, and
-    ///sized by dragging that divider, the size kept for the next visit (2026-10-31, asked for, in place of two switches in
-    ///the title bar).
+    ///**The chats and the files are open to begin with, each closed by the cross at its top right and opened again by the
+    ///arrow in the window's margin**, there only while it is closed (2026-11-07, from GraphDBViewer), and sized by dragging
+    ///its divider, the size kept for the next visit (2026-10-31, asked for, in place of two switches in the title bar).
     ///
-    test('the panels open to begin with, collapse by their arrows, and are sized by their dividers, the size kept', async ({ page }) => {
+    test('the panels open to begin with, close by their crosses, open by their arrows, and are sized by their dividers, the size kept', async ({ page }) => {
         await gotoExample(page, MOSFET, '2d');
         await openAssistant(page);
 
         await expect(page.locator('#aiChats')).toBeVisible();
         await expect(page.locator('#aiFiles')).toBeVisible();
 
-        //Each arrow in the window's margin on its side, outside the conversation and its panel.
+        //No arrow while its panel is open: the cross at the panel's top right closes it.
+        await expect(page.locator('#aiChatsToggle')).toHaveCount(0);
+        await expect(page.locator('#aiFilesToggle')).toHaveCount(0);
+
+        const chats = await page.locator('#aiChats').boundingBox();
+        const cross = await page.locator('#aiChatsClose').boundingBox();
+        const files = await page.locator('#aiFiles').boundingBox();
+        const filesCross = await page.locator('#aiFilesClose').boundingBox();
+
+        expect(cross.x + cross.width).toBeGreaterThan(chats.x + (chats.width / 2));
+        expect(cross.y).toBeLessThan(chats.y + 40);
+        expect(filesCross.x + filesCross.width).toBeGreaterThan(files.x + (files.width / 2));
+        expect(filesCross.y).toBeLessThan(files.y + 40);
+
+        await page.locator('#aiChatsClose').click();
+        await page.locator('#aiFilesClose').click();
+
+        await expect(page.locator('#aiChats')).toHaveCount(0);
+        await expect(page.locator('#aiFiles')).toHaveCount(0);
+
+        //Each arrow in the window's margin on its side, outside the conversation.
         const window = await page.locator('#askAiWindow').boundingBox();
         const arrow = await page.locator('#aiChatsToggle').boundingBox();
         const filesArrow = await page.locator('#aiFilesToggle').boundingBox();
-        const chats = await page.locator('#aiChats').boundingBox();
-        const files = await page.locator('#aiFiles').boundingBox();
+        const conversation = await page.locator('#askAiWindow .aiBox').boundingBox();
 
+        await expect(page.locator('#aiChatsToggle')).toHaveAttribute('aria-expanded', 'false');
         expect(arrow.x).toBeGreaterThan(window.x);
-        expect(arrow.x + arrow.width).toBeLessThan(chats.x);
-        expect(filesArrow.x).toBeGreaterThan(files.x + files.width);
+        expect(arrow.x + arrow.width).toBeLessThan(conversation.x);
+        expect(filesArrow.x).toBeGreaterThan(conversation.x + conversation.width);
         expect(filesArrow.x + filesArrow.width).toBeLessThan(window.x + window.width);
 
         await page.locator('#aiChatsToggle').click();
-
-        await expect(page.locator('#aiChats')).toHaveCount(0);
-        await expect(page.locator('#aiChatsToggle')).toHaveAttribute('aria-expanded', 'false');
-
-        //And where it was: it does not follow the panel's edge.
-        expect(await page.locator('#aiChatsToggle').boundingBox()).toEqual(arrow);
-
-        await page.locator('#aiChatsToggle').click();
+        await page.locator('#aiFilesToggle').click();
 
         await expect(page.locator('#aiChats')).toBeVisible();
+        await expect(page.locator('#aiFiles')).toBeVisible();
 
         //Dragged by the divider, away from its arrow: 80 pixels wider.
         const before = (await page.locator('#aiChats').boundingBox()).width;

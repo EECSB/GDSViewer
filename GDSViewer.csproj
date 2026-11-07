@@ -61,7 +61,15 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" PrivateAssets="all" />
     <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="2.0.6" />
+
+    <!--Reads the words out of a PDF for a model set to take them as text - see Ai/PdfText.cs (2026-11-07, from
+        GraphDBViewer, which pins the same version). Part of the download from the start, about 810 KB compressed of
+        some 10 MB: GraphDBViewer fetches it on first use with BlazorWebAssemblyLazyLoad, and here, compiled ahead of
+        time, an app with it set aside dies on boot with a mono interpreter assertion (measured 2026-11-07). The AOT
+        code for it is in dotnet.native.wasm either way, so setting it aside saved only its metadata.-->
+    <PackageReference Include="PdfPig" Version="0.1.15" />
   </ItemGroup>
+
 
   <ItemGroup>
     <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />

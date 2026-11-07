@@ -12,8 +12,28 @@ let workers = 12;
 if (process.env.CI)
     workers = 4;
 
+//
+//GDS_E2E_PART splits the suite for CI, which runs it in two steps: `rest` is everything but the chip game, and
+//`game` is the chip game alone, one at a time. Unset, it is the whole suite, as here.
+//
+//The game waits by the wall clock and moves its own clock at most a twentieth of a second a frame. On a runner,
+//where WebGL is drawn on the processor, it got a few frames a second beside three other browsers and three of its
+//tests failed twice (2026-11-03) - the car still parked after twenty seconds of driving. See ci.yml.
+//
+let testIgnore = [];
+let testMatch = undefined;
+
+if (process.env.GDS_E2E_PART === 'rest')
+    testIgnore = ['**/chip-game.spec.js'];
+else if (process.env.GDS_E2E_PART === 'game') {
+    testMatch = ['**/chip-game.spec.js'];
+    workers = 1;
+}
+
 module.exports = defineConfig({
     testDir: './e2e',
+    testIgnore: testIgnore,
+    ...(testMatch && { testMatch: testMatch }),
     timeout: 90000,
     expect: { timeout: 15000 },
     fullyParallel: true,

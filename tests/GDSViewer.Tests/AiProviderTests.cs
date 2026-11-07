@@ -594,6 +594,30 @@ public class AiProviderTests
         return new AiAttachment("rules.pdf", "application/pdf", System.Text.Encoding.Latin1.GetBytes("%PDF-1.7\n<< /Type /Page >>\n%%EOF"));
     }
 
+    ///
+    ///A system prompt with nothing in it is no prompt: Anthropic's body carries no system field and the chat-completions
+    ///array leads with no system turn, rather than a null or an empty one the APIs refuse (2026-11-07, from GraphDBViewer).
+    ///
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_system_prompt_with_nothing_in_it_is_left_out(string? system)
+    {
+        var body = JsonNode.Parse(AnthropicProvider.BuildRequestBody("claude-haiku-4-5", 512, system!, AnthropicProvider.ToWireMessages(Asked("Hi")), null))!.AsObject();
+
+        Assert.False(body.ContainsKey("system"));
+
+        var messages = OpenAiProvider.ToWireMessages(system!, Asked("Hi"));
+
+        Assert.Equal("user", (string?)Assert.Single(messages)!.AsObject()["role"]);
+
+        var withPrompt = JsonNode.Parse(AnthropicProvider.BuildRequestBody("claude-haiku-4-5", 512, "Be brief.", AnthropicProvider.ToWireMessages(Asked("Hi")), null))!.AsObject();
+
+        Assert.Equal("Be brief.", (string?)withPrompt["system"]);
+        Assert.Equal(2, OpenAiProvider.ToWireMessages("Be brief.", Asked("Hi")).Count);
+    }
+
     ///<summary>A runner of one tool that looks, for a loop to have something to call.</summary>
     private sealed class OneTool : ILlmToolRunner
     {

@@ -44,7 +44,7 @@ if (builder.HostEnvironment.IsDevelopment())
 //window and the chat window hear about each other's changes. This app's own keeps the models and the
 //chats in this browser, over the same store. **Built into another app, GDS Viewer's own registration there registers
 //another** - a Treeality plugin's module, from that app's models and the signed-in account's storage; this file does
-//not run there at all. See IAiService and docs/TREEALITY-PLUGIN.md.
+//not run there at all. See IAiService.
 //
 builder.Services.AddScoped<GDSViewer.Ai.IAiService>(sp =>
 {

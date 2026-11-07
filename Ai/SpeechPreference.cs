@@ -13,6 +13,7 @@ namespace GDSViewer.Ai
 
         private readonly AppStorage storage;
         private bool loaded;
+        private Task<SpeechMode>? loading;
         private SpeechMode mode = SpeechMode.Browser;
 
         public SpeechPreference(AppStorage storage)
@@ -23,14 +24,45 @@ namespace GDSViewer.Ai
         ///<summary>Raised after the mode changes, so the chat's microphone says what it does now.</summary>
         public event Func<Task>? Changed;
 
-        ///<summary>The mode, read once from where it is kept. The browser's until something else was chosen.</summary>
-        public async Task<SpeechMode> GetAsync()
+        ///
+        ///The mode, read once from where it is kept. The browser's until something else was chosen.
+        ///
+        ///One read, shared by everybody who asks before it answers: AI settings and the chat can both ask as a page comes
+        ///up, and until 2026-11-07 (from GraphDBViewer) the first was told what was kept and the second the default,
+        ///since the first ask marked it loaded before the storage had answered.
+        ///
+        public Task<SpeechMode> GetAsync()
         {
             if (loaded)
-                return mode;
+                return Task.FromResult(mode);
 
-            loaded = true;
-            mode = Read(await storage.GetAsync(StorageKey));
+            loading ??= LoadAsync();
+
+            return loading;
+        }
+
+        private async Task<SpeechMode> LoadAsync()
+        {
+            string? text;
+
+            try
+            {
+                text = await storage.GetAsync(StorageKey);
+            }
+            catch
+            {
+                //A read that failed is not kept as the answer: the next ask reads again.
+                loading = null;
+
+                throw;
+            }
+
+            //A choice made while the read was out is newer than what was read.
+            if (!loaded)
+            {
+                loaded = true;
+                mode = Read(text);
+            }
 
             return mode;
         }

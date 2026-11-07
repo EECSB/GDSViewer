@@ -189,7 +189,7 @@ namespace GDSViewer.Ai
         }
 
         ///
-        ///A request: the model, the cap, the system prompt, the conversation so far and, when there are any, the tools -
+        ///A request: the model, the cap, the system prompt when there is one, the conversation so far and, when there are any, the tools -
         ///marked where Anthropic should cache when asked. An effort goes in output_config and fast mode as the speed,
         ///both only when chosen, so a request that chose neither is the one it always was.
         ///
@@ -207,9 +207,12 @@ namespace GDSViewer.Ai
             {
                 ["model"] = model,
                 ["max_tokens"] = maxTokens,
-                ["system"] = system,
                 ["messages"] = messages.DeepClone()
             };
+
+            //A prompt with nothing in it is no prompt: the field is left out, since the API refuses a null or an empty one.
+            if (!string.IsNullOrWhiteSpace(system))
+                body["system"] = system;
 
             if (tools is not null && tools.Count > 0)
                 body["tools"] = tools.DeepClone();

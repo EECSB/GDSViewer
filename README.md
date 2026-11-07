@@ -88,9 +88,8 @@ layer settings, the PDK manager and the AI assistant.
   from.
   **Bring your own key**: Anthropic, OpenAI, Google's Gemini or any OpenAI-compatible server, added under
   **Settings → AI settings** and kept in your browser - or, with GDS Viewer built into another app, the models and
-  chats of the account signed in there, through one service
-  ([how](docs/ADDING-AN-AI-ASSISTANT.md#bringing-your-own-ai-service); as a Treeality plugin,
-  [planned](docs/TREEALITY-PLUGIN.md)). Opened by the spark in the toolbar, in every view. The same tools work outside
+  chats of the account signed in there, through one service (as a Treeality plugin, planned). Opened by the spark
+  in the toolbar, in every view. The same tools work outside
   the browser too: [`gds mcp`](docs/CLI.md#gds-mcp) lets Claude Desktop or Claude Code open, edit, check and
   save the layouts in a folder — or, through **MCP server** in Settings, AI settings, work on the layout open in the
   app while you watch, by a code the app shows you.
@@ -603,8 +602,6 @@ the web app is one consumer of it, and the command line is another.
 | **[DRC.md](docs/DRC.md)** | Design rule checking: the deck format, the checks, and what they were measured against |
 | **[WRITING-A-DECK.md](wwwroot/resources/WRITING-A-DECK.md)** | How to write a rule deck for your own PDK — a grammar you can hand to an AI |
 | **[NUGET.md](docs/NUGET.md)** | Using the format library from your own code |
-| **[ADDING-AN-AI-ASSISTANT.md](docs/ADDING-AN-AI-ASSISTANT.md)** | How the AI assistant was built, layer by layer, for adding an assistant like it to another app |
-| **[TREEALITY-PLUGIN.md](docs/TREEALITY-PLUGIN.md)** | GDS Viewer as a Treeality plugin: planned, with what was found and the two ways in |
 
 
 

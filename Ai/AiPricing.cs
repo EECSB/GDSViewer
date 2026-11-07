@@ -368,7 +368,7 @@ namespace GDSViewer.Ai
         ///<summary>What a file adds to every request it goes with: nothing much once it is unticked, or where the model is not sent it - the line saying so.</summary>
         public static long Attachment(AiAttachment file, string providerType)
         {
-            if (file.Excluded || !AiAttachment.SentTo(providerType, file.Kind))
+            if (file.Excluded || !AiAttachment.SentTo(providerType, file.SentKind))
                 return 25;
 
             return file.Tokens + 15;

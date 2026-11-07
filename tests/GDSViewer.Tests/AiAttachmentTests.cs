@@ -274,5 +274,14 @@ public class AiAttachmentTests
         Assert.Equal(25, AiEstimate.Attachment(shot, LlmConnection.Anthropic));
     }
 
+    ///<summary>A file with no name is taken by its type, as one with no extension is, rather than throwing (2026-11-07, from GraphDBViewer).</summary>
+    [Fact]
+    public void A_file_with_no_name_is_taken_by_its_type()
+    {
+        Assert.Null(AiAttachment.Refusal(null, "image/png", 10));
+        Assert.Contains("not a file the assistant can read", AiAttachment.Refusal(null, "application/octet-stream", 10));
+        Assert.Null(AiAttachment.Problem(null, "image/png", Png));
+    }
+
     #endregion ********************************************************************
 }

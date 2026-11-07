@@ -8064,12 +8064,14 @@ body.sidebarResizingAcross .previewGrabber {
     display: block;
     width: 100%;
     height: 6.5em;
+    margin-top: 0.8em;
     background: #f1f3f5;
-    border-bottom: 1px solid #dee2e6;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
 }
 
 .tourQuestionBody {
-    padding: 0.9em 1em 0.4em;
+    padding: 0.9em 1em 1em;
 }
 
 .tourQuestionTitle {
@@ -8091,7 +8093,8 @@ body.sidebarResizingAcross .previewGrabber {
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5em;
-    padding: 0.5em 1em 0.85em;
+    padding: 0.75em 1em 0.85em;
+    border-top: 1px solid #dee2e6;
 }
 
 .tourQuestionNever {
@@ -9341,6 +9344,39 @@ body.sidebarResizingAcross .previewGrabber {
 }
 
 /*The panel's headings in the chats' heading's gray and size (2026-10-31, asked for), so the two panels' read alike.*/
+/*A side panel's first row, its cross at the right end of it: the chats' New chat, the files' heading (2026-11-07, from GraphDBViewer).*/
+.aiPanelTop {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.aiPanelClose {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: #6c757d;
+    cursor: pointer;
+}
+
+.aiPanelClose > svg {
+    width: 12px;
+    height: 12px;
+}
+
+.aiPanelClose:hover {
+    background: #dee2e6;
+    color: #212529;
+}
+
 .aiFilesHead {
     margin: 0.15em 0 0.3em 0;
     color: #6c757d;
@@ -10996,6 +11032,215 @@ label.buttonStyle2.actionIcon {
 }
 
 /*
+    A saved list that manages its own entries - see SavedPicker.razor (2026-11-07, from GraphDBViewer): the chosen entry's
+    name heads it, renamed in place, with a button joined to its end, and a menu of the entries under it with Rename,
+    Duplicate and Delete on each and New at the foot.
+*/
+.savedPicker {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    max-width: 24em;
+}
+
+.savedPickerHeadRow {
+    display: flex;
+}
+
+.savedPickerHead {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 0.3em;
+    padding: 1px 3px 1px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 3px;
+    background: #fff;
+    font-size: 0.9em;
+}
+
+.savedPickerHead:not(:last-child) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.savedPickerHead:focus-within:has(.savedPickerNameBox) {
+    border-color: #4781ff;
+}
+
+.savedPickerHead.savedPickerInvalid {
+    border-color: #b32121;
+}
+
+.savedPickerFace {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+.savedPickerName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.savedPickerNameBox {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 0;
+    border: none;
+    outline: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+}
+
+.savedPickerAct {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: #6c757d;
+    cursor: pointer;
+}
+
+.savedPickerAct > svg {
+    width: 14px;
+    height: 14px;
+}
+
+.savedPickerAct:hover {
+    background: #e9ecef;
+    color: #212529;
+}
+
+.savedPickerDelete:hover {
+    background: #b32121;
+    color: #fff;
+}
+
+/*The button joined to the head's end: Save, blue, and orange while there is something to save.*/
+.savedPickerHeadRow > .savedPickerSave {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.35em;
+    border-radius: 0 3px 3px 0;
+    font-size: 0.9em;
+}
+
+.savedPickerSave > svg {
+    width: 13px;
+    height: 13px;
+}
+
+.buttonStyle2.savedPickerUnsaved {
+    background-color: #c2570c;
+}
+
+.buttonStyle2.savedPickerUnsaved:hover {
+    background-color: #a8490a;
+}
+
+.savedPickerSheet {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+}
+
+.savedPickerMenu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    z-index: 21;
+    max-height: 22em;
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+    font-size: 0.9em;
+}
+
+.savedPickerRow {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 3px 4px 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.savedPickerRow.savedPickerRowOn {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+/*Plainly shaded, and nothing moves: the row's buttons are there all along, only out of sight.*/
+.savedPickerRow:hover {
+    background: rgba(0, 0, 0, 0.11);
+}
+
+.savedPickerRowActs {
+    display: flex;
+    flex: none;
+    visibility: hidden;
+}
+
+.savedPickerRow:hover .savedPickerRowActs,
+.savedPickerRow:focus-within .savedPickerRowActs {
+    visibility: visible;
+}
+
+.savedPickerEmpty {
+    padding: 6px 8px;
+    color: #6c757d;
+}
+
+.savedPickerAdd {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    width: 100%;
+    margin-top: 4px;
+    padding: 6px 8px;
+    border: none;
+    border-top: 1px solid #e9ecef;
+    background: none;
+    color: #1b6ec2;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.savedPickerAdd > svg {
+    width: 13px;
+    height: 13px;
+}
+
+.savedPickerAdd:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+/*
     The (i) at the end of the models' row and the words it shows under itself on hover or focus (2026-11-01, asked for) -
     see aiModelsInfo. Over what is below rather than pushing it down, so the form does not jump when they show.
 */
@@ -11084,6 +11329,20 @@ label.buttonStyle2.actionIcon {
 
 .aiFormRow > .aiNumber {
     flex: 0 0 7em;
+}
+
+/*A tick on the model form, its words after it: Send PDFs as their text.*/
+.aiFormCheck {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.aiFormCheck > .form-check-input {
+    margin: 0;
 }
 
 .aiFormLabel {
@@ -11874,7 +12133,11 @@ label.buttonStyle2.actionIcon {
 
 :root[data-theme="dark"] .tourQuestionArt {
     background: var(--dark-surface);
-    border-bottom-color: var(--dark-line);
+    border-color: var(--dark-line);
+}
+
+:root[data-theme="dark"] .tourQuestionFoot {
+    border-top-color: var(--dark-line);
 }
 
 :root[data-theme="dark"] .tourQuestionNever,
@@ -12645,6 +12908,34 @@ label.buttonStyle2.actionIcon {
     color: var(--dark-ink);
 }
 
+:root[data-theme="dark"] .savedPickerHead,
+:root[data-theme="dark"] .savedPickerMenu {
+    background: var(--dark-field);
+    border-color: var(--dark-line-strong);
+    color: var(--dark-ink);
+}
+
+:root[data-theme="dark"] .savedPickerAct,
+:root[data-theme="dark"] .savedPickerEmpty {
+    color: var(--dark-ink-muted);
+}
+
+:root[data-theme="dark"] .savedPickerAct:hover,
+:root[data-theme="dark"] .savedPickerRow:hover,
+:root[data-theme="dark"] .savedPickerAdd:hover {
+    background: var(--dark-hover);
+    color: var(--dark-ink);
+}
+
+:root[data-theme="dark"] .savedPickerRow.savedPickerRowOn {
+    background: var(--dark-raised);
+}
+
+:root[data-theme="dark"] .savedPickerAdd {
+    border-top-color: var(--dark-line);
+    color: #8fb4ff;
+}
+
 /*The box's frame on the dark ground, its pickers and pictures lifting under the pointer.*/
 :root[data-theme="dark"] .aiBox {
     border-color: var(--dark-line-strong);
@@ -12712,6 +13003,7 @@ label.buttonStyle2.actionIcon {
 :root[data-theme="dark"] .aiChatsNew:hover:not(:disabled),
 :root[data-theme="dark"] .aiChatItem:hover,
 :root[data-theme="dark"] .aiChatItem:focus-visible,
+:root[data-theme="dark"] .aiPanelClose:hover,
 :root[data-theme="dark"] .aiChatButton:hover:not(:disabled) {
     background: var(--dark-hover);
     color: var(--dark-ink);
@@ -12723,6 +13015,7 @@ label.buttonStyle2.actionIcon {
 
 :root[data-theme="dark"] .aiChatsNew,
 :root[data-theme="dark"] .aiChatsHead,
+:root[data-theme="dark"] .aiPanelClose,
 :root[data-theme="dark"] .aiFilesHead,
 :root[data-theme="dark"] .aiChatWhen,
 :root[data-theme="dark"] .aiChatButton,

@@ -103,6 +103,31 @@ public class AiSpeechTests
         Assert.Single(standIn.Requests);
     }
 
+    ///
+    ///A Gemini model behind an address of its own is not asked to write out speech, as an OpenAI one behind a proxy is
+    ///not: its key was saved for the gateway, and goes nowhere else. Google's own address written out in full still
+    ///counts as Google's (2026-11-07, from GraphDBViewer).
+    ///
+    [Fact]
+    public async Task A_gemini_model_at_an_address_of_its_own_is_not_asked_to_write_out_speech()
+    {
+        var standIn = new AiStandIn("""{"candidates":[{"content":{"parts":[{"text":"draw a square"}]}}]}""");
+        var gateway = Model("Gemini through a gateway", LlmConnection.Gemini, "https://llm-gateway.example/v1");
+        var spelledOut = Model("Spelled out", LlmConnection.Gemini, OpenAiProvider.GeminiBaseUrl + "/");
+        var openAiSpelledOut = Model("OpenAI spelled out", LlmConnection.OpenAI, OpenAiProvider.DefaultBaseUrl);
+
+        Assert.False(SpeechTranscriber.CanTranscribe(gateway));
+        Assert.True(SpeechTranscriber.CanTranscribe(spelledOut));
+        Assert.True(SpeechTranscriber.CanTranscribe(openAiSpelledOut));
+        Assert.Same(spelledOut, SpeechTranscriber.Pick(gateway, new[] { gateway, spelledOut }));
+
+        var (text, problem) = await SpeechTranscriber.TranscribeAsync(standIn.Client(), gateway, Wav, "", CancellationToken.None);
+
+        Assert.Null(text);
+        Assert.Contains("takes an OpenAI or Gemini model", problem);
+        Assert.Empty(standIn.Requests);
+    }
+
     [Fact]
     public void Each_providers_answer_is_read_for_its_words_and_one_with_none_is_null()
     {

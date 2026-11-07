@@ -19,6 +19,7 @@ These are part of what a browser downloads.
 | [Open Iconic](https://github.com/iconic/open-iconic) | 1.1.1 | [SIL Open Font License 1.1](../wwwroot/css/open-iconic/FONT-LICENSE) for the font, [MIT](../wwwroot/css/open-iconic/ICON-LICENSE) for the icons | [`wwwroot/css/open-iconic/`](../wwwroot/css/open-iconic) |
 | [Roboto](https://github.com/googlefonts/roboto-2) | 2.137 | [Apache License 2.0](../wwwroot/css/fonts/Roboto/LICENSE.txt) | [`wwwroot/css/fonts/Roboto/`](../wwwroot/css/fonts/Roboto) |
 | [QrCodeGenerator](https://github.com/manuelbl/QrCodeGenerator) | 2.0.6 | MIT | `Net.Codecrete.QrCodeGenerator`, a package reference |
+| [PdfPig](https://github.com/UglyToad/PdfPig) | 0.1.15 | Apache License 2.0 | `PdfPig`, a package reference, for a PDF sent to an AI model as its text |
 | [ASP.NET Core Blazor WebAssembly](https://asp.net/) | 10.0.10 | MIT | `Microsoft.AspNetCore.Components.WebAssembly`, a package reference |
 
 The first six are **vendored** — checked in as plain files rather than pulled by a package manager — so
@@ -27,10 +28,10 @@ that `dotnet build` is the whole build and the app keeps working offline as a PW
 [`GdsII/Clipper2/README.md`](../GdsII/Clipper2/README.md) for the first three; the stylesheet, the icons and the
 font are under [`wwwroot/css/`](../wwwroot/css), each with its notice in its header or beside it.
 
-The last two are ordinary NuGet references, because the no-package-manager rule is about **JavaScript** —
+The last three are ordinary NuGet references, because the no-package-manager rule is about **JavaScript** —
 what a bundler would otherwise pull into `wwwroot`. A .NET package is compiled by the same `dotnet build`
 that compiles the app, needs no second toolchain, and is restored offline from the cache after the first
-time. Both licenses were read out of the packages' own `.nuspec` rather than off nuget.org's page, for the
+time. The licenses were read out of the packages' own `.nuspec` rather than off nuget.org's page, for the
 reason [LibTessDotNet](#used-by-the-command-line-tool-only) gives below: the two can disagree.
 
 ## Used by the command-line tool only

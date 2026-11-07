@@ -57,13 +57,22 @@
             @if (chatsOpen)
             {
                 <aside id="aiChats" class="aiChats" aria-label="Chats">
-                    <button id="aiChatsNew" type="button" class="aiChatsNew" title="@newChatTitle()"
-                            disabled="@(!canLeaveChat() || chat.Turns.Count == 0)" @onclick="newChatAsync">
-                        <svg viewBox="0 0 16 16" aria-hidden="true">
-                            <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        </svg>
-                        New chat
-                    </button>
+                    @*Closed by its own cross, at its top right (2026-11-07, from GraphDBViewer); the margin's arrow only opens it.*@
+                    <div class="aiPanelTop">
+                        <button id="aiChatsNew" type="button" class="aiChatsNew" title="@newChatTitle()"
+                                disabled="@(!canLeaveChat() || chat.Turns.Count == 0)" @onclick="newChatAsync">
+                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                            New chat
+                        </button>
+
+                        <button id="aiChatsClose" type="button" class="aiPanelClose" aria-label="Close the chats" title="Close the chats" @onclick="toggleChats">
+                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
 
                     <div class="aiChatsHead">Chats</div>
 
@@ -130,16 +139,20 @@
             }
 
             @*
-                The chats' arrow, in the window's margin on the left, where it stays whether the panel is open or not (asked for
-                2026-10-31: it moved with the panel's edge). The divider is for sizing alone, and only there while the panel is.
+                The chats' arrow, in the window's margin on the left (asked for 2026-10-31: it moved with the panel's edge) - only
+                while the panel is closed, to open it, the panel's own cross closing it (2026-11-07, from GraphDBViewer). The
+                divider is for sizing alone, and only there while the panel is.
             *@
-            <button id="aiChatsToggle" type="button" class="aiSplitToggle aiSplitToggleLeft" aria-expanded="@(chatsOpen ? "true" : "false")"
-                    aria-label="@(chatsOpen ? "Collapse the chats" : "Open the chats")" title="@chatsTitle()" @onclick="toggleChats">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="@(chatsOpen ? "M10.25 3.5 5.75 8l4.5 4.5" : "M5.75 3.5 10.25 8l-4.5 4.5")" fill="none" stroke="currentColor" stroke-width="2.2"
-                          stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </button>
+            @if (!chatsOpen)
+            {
+                <button id="aiChatsToggle" type="button" class="aiSplitToggle aiSplitToggleLeft" aria-expanded="false"
+                        aria-label="Open the chats" title="@chatsTitle()" @onclick="toggleChats">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M5.75 3.5 10.25 8l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2"
+                              stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+            }
 
             @if (chatsOpen)
             {
@@ -541,20 +554,23 @@
                 the remedy for a conversation that can take no more, and for one whose old screenshot is paid for again with every
                 question. Beside the conversation, or over its right side in a window too narrow for both.
             *@
-            @*The files' arrow, in the window's margin on the right, as the chats' is on the left.*@
-            <button id="aiFilesToggle" type="button" class="aiSplitToggle aiSplitToggleRight" aria-expanded="@(filesOpen ? "true" : "false")"
-                    aria-label="@(filesOpen ? "Collapse the files" : "Open the files")" title="@filesTitle()" @onclick="toggleFiles">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="@(filesOpen ? "M5.75 3.5 10.25 8l-4.5 4.5" : "M10.25 3.5 5.75 8l4.5 4.5")" fill="none" stroke="currentColor" stroke-width="2.2"
-                          stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
+            @*The files' arrow, in the window's margin on the right, as the chats' is on the left: only while the panel is closed.*@
+            @if (!filesOpen)
+            {
+                <button id="aiFilesToggle" type="button" class="aiSplitToggle aiSplitToggleRight" aria-expanded="false"
+                        aria-label="Open the files" title="@filesTitle()" @onclick="toggleFiles">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M10.25 3.5 5.75 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2"
+                              stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
 
-                @*How many files the conversation holds, while the panel that lists them is collapsed.*@
-                @if (!filesOpen && fileCount() > 0)
-                {
-                    <span id="aiFilesCount" class="aiFilesCount">@fileCount()</span>
-                }
-            </button>
+                    @*How many files the conversation holds, while the panel that lists them is collapsed.*@
+                    @if (fileCount() > 0)
+                    {
+                        <span id="aiFilesCount" class="aiFilesCount">@fileCount()</span>
+                    }
+                </button>
+            }
 
             @if (filesOpen)
             {
@@ -564,7 +580,15 @@
             @if (filesOpen)
             {
                 <aside id="aiFiles" class="aiFiles" aria-label="Files in this conversation">
-                    <div class="aiFilesHead">In this conversation</div>
+                    <div class="aiPanelTop">
+                        <div class="aiFilesHead">In this conversation</div>
+
+                        <button id="aiFilesClose" type="button" class="aiPanelClose" aria-label="Close the files" title="Close the files" @onclick="toggleFiles">
+                            <svg viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
 
                     @if (sentWith(false).Count == 0 && sentWith(true).Count > 0)
                     {
@@ -2010,6 +2034,46 @@
 
         if (!LlmConnection.SupportsFast(selected))
             fast = false;
+
+        markPdfs();
+    }
+
+    ///
+    ///Every PDF in the box and the conversation marked to go as the model picked takes one: as its words where the
+    ///model's setting says so (<see cref="LlmConnection.PdfAsText"/>), and as the file otherwise. 2026-11-07, from
+    ///GraphDBViewer.
+    ///
+    private void markPdfs()
+    {
+        bool asText = selected is not null && selected.PdfAsText;
+
+        foreach (var file in chat.Pending.Concat(chat.SentFiles().Select(sent => sent.File)))
+        {
+            if (file.Kind == AttachmentKind.Pdf)
+                file.AsText = asText;
+        }
+    }
+
+    ///
+    ///The PDFs going as their words read. Why the next question cannot go, or null: a PDF in the box has no words to read.
+    ///
+    private string? readPdfs()
+    {
+        markPdfs();
+
+        foreach (var file in chat.Pending.Concat(chat.SentFiles().Select(sent => sent.File)))
+        {
+            if (file.AsText && !file.PdfRead)
+                file.ReadPdf();
+        }
+
+        foreach (var file in chat.Pending)
+        {
+            if (file.AsText && file.Unreadable is string why)
+                return why;
+        }
+
+        return null;
     }
 
     ///<summary>The model picked as the next question asks it: a copy, with the effort and fast mode chosen here.</summary>
@@ -2549,9 +2613,6 @@
 
     private string chatsTitle()
     {
-        if (chatsOpen)
-            return "Collapse the chats";
-
         return $"Open the chats, kept {ai.KeptWhere}: open one to carry it on, save it as text, or delete it";
     }
 
@@ -2818,9 +2879,6 @@
 
     private string filesTitle()
     {
-        if (filesOpen)
-            return "Collapse the files";
-
         return "Open the files in this conversation, and which of them go with every question";
     }
 
@@ -2872,6 +2930,8 @@
         }
 
         attachProblem = string.Join(" ", problems);
+
+        markPdfs();
     }
 
     private void unattach(AiAttachment file)
@@ -2902,7 +2962,7 @@
         if (selected is null)
             return null;
 
-        return AiAttachment.NotSentTo(selected.ProviderType, file);
+        return AiAttachment.NotSentTo(selected.ProviderType, file, selected.PdfAsText);
     }
 
     ///<summary>The first file in the box the model picked cannot be sent, said as why Send waits: sent anyway, it would reach the model as a line saying it could not.</summary>
@@ -3170,6 +3230,14 @@
         if (BeforeSend is not null && !await BeforeSend())
         {
             chat.Refuse("Nothing was sent: the text in the editor could not be read as GDSII, so the file is not what it shows. The message under the editor says which line - fix it and send again.");
+
+            return;
+        }
+
+        //A PDF going as its words is read before the box is emptied, so one with no words leaves the question where it was.
+        if (readPdfs() is string unread)
+        {
+            attachProblem = unread;
 
             return;
         }

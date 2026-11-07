@@ -7,8 +7,8 @@
     **A question, not the tour itself.** The tour's own rule still holds - nothing is sprung over the page - so it is
     one small card that a key or a click puts away, and the page underneath is already open and usable.
 
-    A row of standard cells drawn across the top, the way GraphDBViewer draws a small graph there, so the question
-    is about a chip at a glance: rails in met1, diffusion between them, poly gates across it.
+    A row of standard cells drawn in a frame under the text, the way GraphDBViewer draws a small graph there, so the
+    question is about a chip at a glance: rails in met1, diffusion between them, poly gates across it.
 *@
 @inject IJSRuntime js
 
@@ -18,19 +18,6 @@
 
     <div id="tourQuestion" class="tourQuestion" role="dialog" aria-modal="true" aria-labelledby="tourQuestionTitle"
          tabindex="-1" @onkeydown="onKey">
-        <svg class="tourQuestionArt" viewBox="0 0 448 110" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-            @foreach (var x in Cells)
-            {
-                <rect class="tourDiff" x="@(x + 6)" y="22" width="44" height="26" />
-                <rect class="tourDiff" x="@(x + 6)" y="62" width="44" height="26" />
-                <rect class="tourPoly" x="@(x + 16)" y="14" width="6" height="82" />
-                <rect class="tourPoly" x="@(x + 34)" y="14" width="6" height="82" />
-            }
-
-            <rect class="tourMet1" x="-4" y="2" width="456" height="12" />
-            <rect class="tourMet1" x="-4" y="96" width="456" height="12" />
-        </svg>
-
         <div class="tourQuestionBody">
             <div id="tourQuestionTitle" class="tourQuestionTitle">
                 <img src="resources/Images/Logo/icon2.png" alt="" class="tourQuestionLogo" />
@@ -38,6 +25,19 @@
             </div>
 
             <div class="tourText">A short walk round GDS Viewer: where things are and what they are for. It is in Settings too, whenever you want it.</div>
+
+            <svg class="tourQuestionArt" viewBox="0 0 448 110" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                @foreach (var x in Cells)
+                {
+                    <rect class="tourDiff" x="@(x + 6)" y="22" width="44" height="26" />
+                    <rect class="tourDiff" x="@(x + 6)" y="62" width="44" height="26" />
+                    <rect class="tourPoly" x="@(x + 16)" y="14" width="6" height="82" />
+                    <rect class="tourPoly" x="@(x + 34)" y="14" width="6" height="82" />
+                }
+
+                <rect class="tourMet1" x="-4" y="2" width="456" height="12" />
+                <rect class="tourMet1" x="-4" y="96" width="456" height="12" />
+            </svg>
         </div>
 
         <div class="tourQuestionFoot">

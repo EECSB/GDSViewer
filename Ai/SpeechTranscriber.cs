@@ -39,14 +39,19 @@ namespace GDSViewer.Ai
         ///<summary>The words a layout conversation is full of, said to the provider so it writes them as the editor does.</summary>
         public const string LayoutWords = "GDSII, OASIS, layout, cell, layer, polygon, rectangle, path, via, met1, met2, met3, met4, met5, li1, poly, diff, nwell, licon, mcon, sky130, PDK, DRC, µm, nm";
 
-        ///<summary>Whether a saved model's provider can write out a recording: OpenAI's own, and Gemini.</summary>
+        ///<summary>Whether a saved model's provider can write out a recording: OpenAI's own, and Gemini's own.</summary>
         public static bool CanTranscribe(LlmConnection connection)
         {
-            if (connection.ProviderType == LlmConnection.Gemini)
-                return true;
+            if (connection.ProviderType != LlmConnection.OpenAI && connection.ProviderType != LlmConnection.Gemini)
+                return false;
 
-            //OpenAI's own address only: a server of one's own that speaks chat completions may have no transcription.
-            return connection.ProviderType == LlmConnection.OpenAI && string.IsNullOrWhiteSpace(connection.BaseUrl);
+            //The provider's own address only, blank or written out in full: a server in between that speaks chat
+            //completions may have no transcription, and the key saved for it is that server's, not the provider's to be
+            //sent. Gemini was taken as its own whatever its address until 2026-11-07 (from GraphDBViewer), so a gateway's
+            //key went to Google with the recording.
+            string address = (connection.BaseUrl ?? "").Trim().TrimEnd('/');
+
+            return address.Length == 0 || string.Equals(address, OpenAiProvider.DefaultBaseUrlFor(connection.ProviderType), StringComparison.OrdinalIgnoreCase);
         }
 
         ///<summary>The model a recording goes to: the one picked in the chat when it can, or else the first saved one that can, or null.</summary>

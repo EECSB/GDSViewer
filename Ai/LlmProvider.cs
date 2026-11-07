@@ -266,7 +266,8 @@ namespace GDSViewer.Ai
 
             foreach (var (call, output) in round)
             {
-                if (output.IsError)
+                //A declined call is a result to the model but did not run, so it is no more progress than a refusal.
+                if (output.IsError || output.IsDeclined)
                     continue;
 
                 string picture = "";

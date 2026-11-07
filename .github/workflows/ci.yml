@@ -110,9 +110,30 @@ jobs:
       # Starts the app itself, per the webServer block in tests/playwright.config.js - which sets its
       # working directory back to the repository root, where GDSViewer.csproj is. The first run compiles
       # the app, which is why that timeout is generous.
+      #
+      # Everything but the chip game, four at a time as the config says; GDS_E2E_PART picks the half.
+      #
+      # The game is left to a step of its own: it waits for things by the wall clock, and its own clock moves at
+      # most a twentieth of a second a frame - see longestStep in chipGame.js. On a runner WebGL is drawn on the
+      # processor, so beside three other browsers it got a few frames a second: the car still parked after twenty
+      # seconds of driving, a page not yet in the game when the test's ninety were up. Three of its tests failed
+      # twice on 2026-11-03, the first run with the game in it, and all of them pass on a machine with room; the
+      # same failure came back here with WebGL in software and twelve at once.
+      #
       - name: End-to-end tests
         run: npm run test:e2e
         working-directory: tests
+        env:
+          GDS_E2E_PART: rest
+
+      # One at a time, so the game has the processor to itself. Run whether or not the step above passed, so
+      # one red run says about both; its own output folder, since each run clears the one it writes to.
+      - name: End-to-end tests, the chip game
+        if: success() || failure()
+        run: npm run test:e2e -- --output test-results-game
+        working-directory: tests
+        env:
+          GDS_E2E_PART: game
 
       - uses: actions/upload-artifact@v7
         if: failure()
@@ -121,4 +142,5 @@ jobs:
           path: |
             tests/playwright-report/
             tests/test-results/
+            tests/test-results-game/
           retention-days: 7

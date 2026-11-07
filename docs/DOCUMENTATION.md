@@ -215,6 +215,7 @@ GDSViewer/
     ShareDialog.razor           # The Share popup: a link, or the iframe that embeds one
     AskAi.razor                 # The AI assistant window: the conversation, its cards and its controls
     AiModels.razor, AiSettings.razor  # The saved AI models: the picker, the form, and their window
+    SavedPicker.razor(Item.cs)  # A saved list that manages its own entries: renamed in its head, duplicated and deleted from its rows
     LiveLinkCard.razor, LiveLinkChip.razor    # AI settings, MCP server: the tab linked to gds mcp, and the chip while it is put away
     FloatingWindow.razor        # A window rather than a popup: dragged, sized, remembered
     CommandPalette.razor        # Ctrl+K: the page's own commands, found by name
@@ -372,8 +373,6 @@ GDSViewer/
     FEATURES-DEMO.md            # Every feature, in pictures
     CLI.md, NUGET.md            # The command-line tool, and the package
     DRC.md                      # Design rule checking: the engine and what it cannot do
-    ADDING-AN-AI-ASSISTANT.md   # How the AI assistant was built, layer by layer, to build another
-    TREEALITY-PLUGIN.md         # GDS Viewer as a Treeality plugin: what was found, and the two ways in
     (the two authoring guides live in wwwroot/resources, so the app can hand them out)
     THIRD-PARTY-NOTICES.md      # Everyone else's terms, carried along
     images/                     # The screenshots the two above are built from
@@ -1936,7 +1935,10 @@ The second step: those tools in a chat window, where somebody describes a change
 **port of GraphDBViewer's Ask AI** - its providers, its saved models, its approval ladder and its window - over
 this app's tools, in [`Ai/`](../Ai), with the window in [`Components/AskAi.razor`](../Components/AskAi.razor),
 the models in [`AiModels.razor`](../Components/AiModels.razor) and
-[`AiSettings.razor`](../Components/AiSettings.razor), and the window itself in
+[`AiSettings.razor`](../Components/AiSettings.razor) - picked, renamed, duplicated and deleted in
+[`SavedPicker.razor`](../Components/SavedPicker.razor), whose head names the model chosen and has Save joined to its
+end, orange while the form holds something not saved (2026-11-07, from GraphDBViewer, where its connections share the
+control) - and the window itself in
 [`FloatingWindow.razor`](../Components/FloatingWindow.razor) and
 [`floatingWindow.js`](../wwwroot/js/floatingWindow.js).
 
@@ -2034,11 +2036,10 @@ connections, perhaps with no key in the page at all and every request sent throu
 makes, and the chats kept with the account. `ModelsEditable` false gives the settings window the picker alone, with a
 line saying whose models they are; `KeptWhere` is what the chats panel and that line say about where things are kept.
 **It is GDS Viewer that registers it there, not the host**: Treeality, the app it is meant to go into as a plugin, runs
-a plugin's own module and replaces none of a plugin's services, and has no AI service of its own to hand one - so the
-plugin's module registers an `IAiService` written over Treeality's model store and the account's storage, and
-`Program.cs` does not run at all. What was found in Treeality's code, and the two ways in, are in
-[TREEALITY-PLUGIN.md](TREEALITY-PLUGIN.md); the general shape is in
-[ADDING-AN-AI-ASSISTANT.md](ADDING-AN-AI-ASSISTANT.md#bringing-your-own-ai-service).
+a plugin's own module and replaces none of a plugin's services - so the plugin's module registers an `IAiService`
+written over Treeality's model store and the account's storage, and `Program.cs` does not run at all. Since 2026-11-02
+Treeality also has one chat window for every plugin's AI, `AiChatWindow`, configured by parameters; in Treeality GDS
+Viewer could give it its layout tools in place of bringing this window.
 
 [`SavedSecretRule`](../Ai/SavedSecretRule.cs) is GraphDBViewer's rule of 2026-10-03: a key saved for an https
 address leaves the form when the address is changed to http, and comes back if it is changed back before another
@@ -2134,11 +2135,13 @@ for the same day, in place of a switch for each in the title bar and New chat be
 and the conversation is a strip that shows a line under the pointer and sizes the panel when dragged, kept on this
 computer under `gdsviewer.aiPanel.chats` and `.files` (`attachSplits` in `floatingWindow.js`, as custom properties on
 the row, which outlives the panels Blazor takes away and puts back). **The AI assistant's sides are as wide as the room under its
-box**, and in the middle of each is the panel's arrow (`#aiChatsToggle` on the left, `#aiFilesToggle` on the right),
-which collapses it and, pointing the other way, opens it again - **in the same place either way**: it sat on the
-divider first, and went where the panel's edge went. A collapsed panel leaves no strip, so the conversation keeps its
+box**. **Each panel is closed by the cross at its top right** (`#aiChatsClose` beside New chat, `#aiFilesClose` beside
+the files' heading), and while it is closed an arrow in the middle of the window's margin on its side opens it again
+(`#aiChatsToggle` on the left, `#aiFilesToggle` on the right) - one control for each direction since 2026-11-07, from
+GraphDBViewer, where the one arrow had done both. The arrow stays in the margin rather than at the panel's edge: it sat
+on the divider first, and went where the edge went. A closed panel leaves no strip, so the conversation keeps its
 edge in line with the box, and the files' arrow carries how many files the conversation holds while its panel is
-collapsed. The conversation takes what the panels leave, so the window opens at 960 pixels rather than 720; too narrow for
+closed. The conversation takes what the panels leave, so the window opens at 960 pixels rather than 720; too narrow for
 all three, each panel lies over the conversation from its edge with its divider beside it. A chat is kept from its first question on, under an id of its own, and again after every
 answer and every compaction ([`SavedChat`](../Ai/SavedChat.cs)); one with nothing asked in it is not kept. Where is the
 [`IAiService`](#whose-ai-it-is)'s: this app's keeps them in this browser, in IndexedDB through the app's storage, so a
@@ -2372,9 +2375,19 @@ data URL, and OpenAI a PDF as a `file` part with its bytes in `file_data`.
 went to a server of one's own - and a PDF to Anthropic and OpenAI, which say they read one. Google's OpenAI-compatible
 endpoint, which is how this app reaches Gemini, documents pictures and audio and says nothing of a PDF, and a server of
 one's own may be anything, so neither is sent one: while a PDF waits in the box with such a model picked, its chip is
-red, Send waits, and a line over the box says which file and what to do. A file a model is not sent, or one unticked in
+red, Send waits, and a line over the box says which file and what to do - one of which is the model's own tick. A file a model is not sent, or one unticked in
 the files panel, still goes as a line saying it was there - left out without a word, it would read as a question about
 a file nobody sent.
+
+**Send PDFs as their text** (`LlmConnection.PdfAsText`, a tick on the model under AI settings, 2026-11-07, from
+GraphDBViewer) sends a PDF as the words read out of it in the page rather than as the file - so Gemini and a server of
+one's own take one, and any model takes one for less than a page's picture costs. The words are read with PdfPig
+([`PdfText`](../Ai/PdfText.cs)) as the question is sent, each PDF once (`AiAttachment.ReadPdf`), and go inside their
+name's tags as a text file's do (`AiAttachment.SentKind`); the estimate weighs an unread page at 500 tokens and a read
+one by its words. A PDF with no words, as a scan has none, keeps the question in the box and says so. **PdfPig comes
+with the app**, about 810 KB compressed of some 10 MB, where GraphDBViewer fetches it on first use: compiled ahead of
+time, an app with it set aside by `BlazorWebAssemblyLazyLoad` died on boot with a mono interpreter assertion, and its
+AOT code was in `dotnet.native.wasm` either way (measured 2026-11-07; see the project file).
 
 **A failed question gives its files back** (`AiChat.GaveFilesBack`). A file the provider refused - a PDF past its page
 limit, a picture it cannot read - would be refused again with every later question, since each sends the conversation

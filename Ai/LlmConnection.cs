@@ -45,6 +45,30 @@ namespace GDSViewer.Ai
             InputPrice = copy.InputPrice;
             CachedPrice = copy.CachedPrice;
             OutputPrice = copy.OutputPrice;
+            PdfAsText = copy.PdfAsText;
+        }
+
+        ///
+        ///Whether this holds the same saved settings as <paramref name="other"/> - everything but the name, and but the
+        ///effort and fast mode, which are chosen per request and never saved. What the models' Save asks to say whether it
+        ///has anything to do (2026-11-07, from GraphDBViewer). A text left blank is the same as one never set.
+        ///
+        public bool SameSettings(LlmConnection other)
+        {
+            return sameText(ProviderType, other.ProviderType)
+                && sameText(BaseUrl, other.BaseUrl)
+                && sameText(ApiKey, other.ApiKey)
+                && sameText(Model, other.Model)
+                && MaxTokens == other.MaxTokens
+                && InputPrice == other.InputPrice
+                && CachedPrice == other.CachedPrice
+                && OutputPrice == other.OutputPrice
+                && PdfAsText == other.PdfAsText;
+        }
+
+        private static bool sameText(string? left, string? right)
+        {
+            return string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
         }
 
         [JsonPropertyName("Name")]
@@ -101,6 +125,14 @@ namespace GDSViewer.Ai
         ///<summary>A million output tokens, thinking included, in US dollars, or null for the published rate.</summary>
         [JsonPropertyName("OutputPrice")]
         public decimal? OutputPrice { get; set; }
+
+        ///
+        ///Whether a PDF goes to this model as the words read out of it in the page (<see cref="PdfText"/>) rather than as
+        ///the file: for a model that cannot read one - Gemini, or a server of one's own - or to spend less than a page's
+        ///picture costs (2026-11-07, from GraphDBViewer). Off until ticked; a scan, which has no words to read, needs it off.
+        ///
+        [JsonPropertyName("PdfAsText")]
+        public bool PdfAsText { get; set; }
 
         ///
         ///Whether this connection's requests go over TLS: Anthropic's always, since its address is fixed; the others'

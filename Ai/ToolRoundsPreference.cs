@@ -20,6 +20,7 @@ namespace GDSViewer.Ai
 
         private readonly AppStorage storage;
         private bool loaded;
+        private Task<int>? loading;
         private int rounds = LlmProviderFactory.DefaultToolRounds;
 
         public ToolRoundsPreference(AppStorage storage)
@@ -27,14 +28,44 @@ namespace GDSViewer.Ai
             this.storage = storage;
         }
 
-        ///<summary>The rounds, read once from where they are kept.</summary>
-        public async Task<int> GetAsync()
+        ///
+        ///The rounds, read once from where they are kept - one read, shared by everybody who asks before it answers, as
+        ///<see cref="SpeechPreference.GetAsync"/> is and for the same reason (2026-11-07, from GraphDBViewer): the first
+        ///ask used to mark them loaded before the storage had answered, so a second reader was told the default and a
+        ///number set meanwhile was overwritten by the read.
+        ///
+        public Task<int> GetAsync()
         {
             if (loaded)
-                return rounds;
+                return Task.FromResult(rounds);
 
-            loaded = true;
-            rounds = Read(await storage.GetAsync(StorageKey));
+            loading ??= LoadAsync();
+
+            return loading;
+        }
+
+        private async Task<int> LoadAsync()
+        {
+            string? text;
+
+            try
+            {
+                text = await storage.GetAsync(StorageKey);
+            }
+            catch
+            {
+                //A read that failed is not kept as the answer: the next ask reads again.
+                loading = null;
+
+                throw;
+            }
+
+            //A number set while the read was out is newer than what was read.
+            if (!loaded)
+            {
+                loaded = true;
+                rounds = Read(text);
+            }
 
             return rounds;
         }

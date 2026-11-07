@@ -91,7 +91,9 @@ namespace GDSViewer.Ai
         }
 
         ///
-        ///The conversation in the chat-completions shape, led by the system turn.
+        ///The conversation in the chat-completions shape, led by the system turn when there is a prompt for it: a prompt
+        ///with nothing in it, whitespace alone included, is no prompt, and no turn is sent for it rather than one whose
+        ///content is null, which the API refuses.
         ///
         ///Empty turns are dropped: one is what a stopped or failed answer leaves behind, and some servers refuse an
         ///empty content outright.
@@ -101,14 +103,16 @@ namespace GDSViewer.Ai
         ///
         public static JsonArray ToWireMessages(string system, IReadOnlyList<LlmMessage> conversation, string providerType = LlmConnection.OpenAI)
         {
-            var messages = new JsonArray
+            var messages = new JsonArray();
+
+            if (!string.IsNullOrWhiteSpace(system))
             {
-                new JsonObject
+                messages.Add(new JsonObject
                 {
                     ["role"] = "system",
                     ["content"] = system
-                }
-            };
+                });
+            }
 
             foreach (var turn in conversation)
             {

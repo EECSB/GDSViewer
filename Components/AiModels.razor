@@ -16,32 +16,55 @@
     an http one until it is typed again (SavedSecretRule).
 *@
 <div class="aiModelRow">
-    <select id="aiModelPicker" class="aiField aiPicker" value="@selectedKey" @onchange="selectionChanged"
-            aria-label="AI model"
-            title="Which saved model answers. Models are added and changed under Settings, AI settings">
-        @if (connections.Count == 0)
-        {
-            <option value="">No models yet - add one</option>
-        }
-
-        @foreach (var (name, connection) in connections)
-        {
-            <option value="@name">@name (@providerName(connection.ProviderType))</option>
-        }
-    </select>
-
-    @*Squares, as the PDK manager's are (2026-11-01, asked for - they were words).*@
     @if (ai.ModelsEditable)
     {
-        <button id="aiModelAdd" class="buttonStyle2 smallButton actionIcon" @onclick="startAdd" aria-label="Add a model" title="Add a model">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2.6v10.8M2.6 8h10.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-            </svg>
-        </button>
-        <button id="aiModelDelete" class="buttonStyle2 smallButton actionIcon selectionDelete" @onclick="deleteAsync"
-                disabled="@(selected() is null)" aria-label="Delete the model picked" title="Delete the model picked">
-            <svg viewBox="0 0 16 16" aria-hidden="true">@((MarkupString)SvgWriter.IconFor(SvgWriter.ShapeIcon.Delete))</svg>
-        </button>
+        @*
+            The chosen model's name heads the picker and is renamed there; its menu lists the models with Rename, Duplicate
+            and Delete on each and New at the end, and Save is joined to its end, orange while there is something to save
+            (2026-11-07, from GraphDBViewer, whose connections and models share the control). Picking the model again
+            puts back what is saved, in place of Cancel.
+        *@
+        <SavedPicker @ref="picker"
+                     Id="aiModelPicker"
+                     AddId="aiModelAdd"
+                     Items="pickerItems()"
+                     SelectedKey="@pickerKey()"
+                     Noun="model"
+                     UnsavedName="@formName"
+                     NamePlaceholder="Name it, e.g. Claude"
+                     AddTitle="Add a model"
+                     Error="@nameError"
+                     OnPick="pickAsync"
+                     OnRename="renameAsync"
+                     OnDuplicate="duplicateAsync"
+                     OnDelete="deleteAsync"
+                     OnAdd="startAdd">
+            <HeadEnd>
+                <button id="aiModelSave" type="button" class="buttonStyle2 smallButton savedPickerSave @(hasSomethingToSave() ? "savedPickerUnsaved" : "")"
+                        @onclick="saveAsync" title="@saveTitle()" aria-label="@saveLabel()">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M3 8.4l3.2 3.2L13 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    Save
+                </button>
+            </HeadEnd>
+        </SavedPicker>
+    }
+    else
+    {
+        @*A host app's models are its own to give, so they are only picked from here.*@
+        <select id="aiModelPicker" class="aiField aiPicker" value="@selectedKey" @onchange="selectionChanged"
+                aria-label="AI model" title="Which saved model answers">
+            @if (connections.Count == 0)
+            {
+                <option value="">No models yet</option>
+            }
+
+            @foreach (var (name, connection) in connections)
+            {
+                <option value="@name">@name (@providerName(connection.ProviderType))</option>
+            }
+        </select>
     }
 
     @*
@@ -64,11 +87,6 @@
 @if (ai.ModelsEditable && showForm)
 {
     <div class="aiModelForm">
-        <label class="aiFormRow">
-            <span class="aiFormLabel">Name</span>
-            <input id="aiModelName" class="aiField" placeholder="e.g. Claude" @bind="formName" />
-        </label>
-
         <div class="aiFormRow">
             <span class="aiFormLabel">Provider</span>
 
@@ -151,6 +169,16 @@
 
         <div id="aiPriceNote" class="aiFormNote">@priceNote()</div>
 
+        @*
+            A PDF read into words in the page before it is sent (2026-11-07, from GraphDBViewer): for a model that cannot read
+            the file, Gemini or a server of one's own, or to spend less. Off until ticked, as the file is what reads best
+            where it can go.
+        *@
+        <label class="aiFormCheck" title="Read a PDF's words out of it in this page, with PdfPig, and send those in place of the file. For a model that cannot read a PDF, or to spend less. A scan has no words to read, so it needs this off and a model that reads PDFs">
+            <input id="aiModelPdfAsText" class="form-check-input" type="checkbox" @bind="form.PdfAsText" />
+            Send PDFs as their text
+        </label>
+
         @if (savedKey.Says(form.ApiKey))
         {
             <div id="aiKeyHeldBack" class="aiFormWarning">
@@ -164,22 +192,6 @@
             <div id="aiModelError" class="aiFormError">@formError</div>
         }
 
-        @*A tick and a turn back at the form's end (2026-11-01, asked for - they were Save and Cancel in words).*@
-        <div class="aiFormButtons">
-            <button id="aiModelCancel" class="buttonStyle2 smallButton actionIcon aiQuiet" @onclick="cancelForm"
-                    aria-label="Cancel" title="Cancel: put back what is saved">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M3 6.5h7a3.5 3.5 0 0 1 0 7H6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                    <path d="M5.6 3.6L2.8 6.5l2.8 2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </button>
-            <button id="aiModelSave" class="buttonStyle2 smallButton actionIcon" @onclick="saveAsync"
-                    aria-label="@saveLabel()" title="@saveLabel()">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M3 8.4l3.2 3.2L13 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </button>
-        </div>
     </div>
 }
 
@@ -206,6 +218,10 @@
 
     private Dictionary<string, LlmConnection> connections = new Dictionary<string, LlmConnection>();
     private string selectedKey = "";
+    private SavedPicker? picker;
+
+    ///<summary>Why the name in the picker's head was not taken, under it until the next name or Save.</summary>
+    private string? nameError;
 
     private bool showForm;
     private bool isEditing;
@@ -253,8 +269,8 @@
         if (!connections.ContainsKey(selectedKey))
             selectedKey = connections.Keys.FirstOrDefault() ?? "";
 
-        //Not while somebody is typing into the form: a save in another window is no reason to throw that away.
-        if (!showForm)
+        //Not while the form holds something not saved: a save in another window is no reason to throw that away.
+        if (!hasSomethingToSave())
             showSelected();
 
         await SelectedChanged.InvokeAsync(selected());
@@ -276,7 +292,7 @@
     {
         if (selected() is not LlmConnection chosen)
         {
-            showForm = false;
+            startAdd();
 
             return;
         }
@@ -287,9 +303,11 @@
         formName = chosen.Name;
         originalName = chosen.Name;
         formError = "";
+        nameError = null;
         showForm = true;
     }
 
+    ///<summary>New: a blank form, its name typed in the picker's head.</summary>
     private void startAdd()
     {
         isEditing = false;
@@ -298,7 +316,107 @@
         formName = "";
         originalName = null;
         formError = "";
+        nameError = null;
         showForm = true;
+    }
+
+    ///<summary>The saved models as the picker lists them, by name.</summary>
+    private IReadOnlyList<SavedPickerItem> pickerItems()
+    {
+        return connections.Keys.Select(key => new SavedPickerItem(key, key)).ToList();
+    }
+
+    ///<summary>The model the picker's head names: the one in the form, or none while a new one is being added.</summary>
+    private string? pickerKey()
+    {
+        if (isEditing)
+            return selectedKey;
+
+        return null;
+    }
+
+    ///
+    ///Whether Save has anything to do, which it shows in orange: the form differs from the model chosen or, with none
+    ///chosen, a name was typed or the form differs from a blank one. Undoing a change takes it away.
+    ///
+    private bool hasSomethingToSave()
+    {
+        if (isEditing)
+            return selected() is LlmConnection saved && !form.SameSettings(saved);
+
+        return !string.IsNullOrWhiteSpace(formName) || !form.SameSettings(new LlmConnection());
+    }
+
+    private async Task pickAsync(string key)
+    {
+        selectedKey = key;
+
+        showSelected();
+
+        await SelectedChanged.InvokeAsync(selected());
+    }
+
+    ///
+    ///A name typed in the picker's head, answered with why it was refused or null. For the model being added the name is
+    ///only its name until Save; a saved one is renamed at once, where it is in the list, keeping any edits in the form.
+    ///
+    private async Task<string?> renameAsync(string? key, string name)
+    {
+        nameError = null;
+
+        if (key is null)
+        {
+            formName = name;
+            StateHasChanged();
+
+            return null;
+        }
+
+        if (connections.ContainsKey(name))
+        {
+            nameError = "A model with that name already exists.";
+            StateHasChanged();
+
+            return nameError;
+        }
+
+        connections = SavedPickerItem.Renamed(connections, key, name);
+        connections[name].Name = name;
+
+        if (selectedKey == key)
+            selectedKey = name;
+
+        //Only the form of the model renamed: one being added keeps the name typed for it.
+        if (isEditing && originalName == key)
+        {
+            formName = name;
+            originalName = name;
+            form.Name = name;
+        }
+
+        await ai.SaveModelsAsync(connections);
+        await SelectedChanged.InvokeAsync(selected());
+
+        StateHasChanged();
+
+        return null;
+    }
+
+    ///<summary>A copy of a saved model, right after it, and chosen: what to change for a second one like it.</summary>
+    private async Task duplicateAsync(string key)
+    {
+        if (!connections.TryGetValue(key, out var original))
+            return;
+
+        string name = SavedPickerItem.CopyName(key, connections.Keys);
+
+        connections = SavedPickerItem.InsertedAfter(connections, key, name, new LlmConnection(original) { Name = name });
+        selectedKey = name;
+
+        showSelected();
+
+        await ai.SaveModelsAsync(connections);
+        await SelectedChanged.InvokeAsync(selected());
     }
 
     private void keepTheSavedKeyToItsTransport()
@@ -318,16 +436,21 @@
     {
         string name = formName.Trim();
 
+        formError = "";
+        nameError = null;
+
         if (name.Length == 0)
         {
-            formError = "Give the model a name.";
+            nameError = "Name the model first.";
+            picker?.BeginRename();
 
             return;
         }
 
         if ((!isEditing || name != originalName) && connections.ContainsKey(name))
         {
-            formError = "A model with that name already exists.";
+            nameError = "A model with that name already exists.";
+            picker?.BeginRename();
 
             return;
         }
@@ -380,26 +503,29 @@
         await SelectedChanged.InvokeAsync(selected());
     }
 
-    ///<summary>The form always shows the model picked, so this puts back what is saved and drops the edits on screen.</summary>
-    private void cancelForm()
+    ///<summary>Deletes a saved model; when it was the chosen one, the first left is chosen, or the form for a new one.</summary>
+    private async Task deleteAsync(string key)
     {
-        formError = "";
-
-        showSelected();
-    }
-
-    private async Task deleteAsync()
-    {
-        if (selected() is null)
+        if (!connections.Remove(key))
             return;
 
-        connections.Remove(selectedKey);
-        selectedKey = connections.Keys.FirstOrDefault() ?? "";
+        if (selectedKey == key)
+        {
+            selectedKey = connections.Keys.FirstOrDefault() ?? "";
 
-        showSelected();
+            showSelected();
+        }
 
         await ai.SaveModelsAsync(connections);
         await SelectedChanged.InvokeAsync(selected());
+    }
+
+    private string saveTitle()
+    {
+        if (hasSomethingToSave())
+            return "These settings have changes that are not saved. Save them to the model named in the picker";
+
+        return "Save these settings to the model named in the picker";
     }
 
     private string saveLabel()

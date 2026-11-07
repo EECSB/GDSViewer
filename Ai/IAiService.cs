@@ -11,8 +11,7 @@ namespace GDSViewer.Ai
     ///all and every request sent through its server by the providers <see cref="CreateProvider"/> makes, and the chats
     ///kept with the account. **Who registers it is GDS Viewer, not the host**: a host like Treeality runs a plugin's own
     ///module (`IPluginModule.ConfigureServices`) and replaces nothing of a plugin's, so the plugin's module registers
-    ///one written over that host's services. Nothing else changes: see docs/TREEALITY-PLUGIN.md, and
-    ///docs/ADDING-AN-AI-ASSISTANT.md, "Bringing your own AI service".
+    ///one written over that host's services. Nothing else changes.
     ///
     public interface IAiService
     {

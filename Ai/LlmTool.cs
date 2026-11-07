@@ -45,11 +45,25 @@ namespace GDSViewer.Ai
         ///<summary>Whether the call was refused or failed, with <see cref="Text"/> saying why.</summary>
         public bool IsError { get; init; }
 
+        ///
+        ///Whether a person declined the call, so it was not run (<see cref="ApprovingToolRunner.DeclinedMessage"/>). Not an
+        ///error to the model, which is asked not to try another way; but no progress either, which <see cref="ToolProgress"/>
+        ///could not tell from the words alone until 2026-11-07 (from GraphDBViewer), so a run declined every round was never
+        ///stopped as stuck. The providers never read it: the model is told what it was, unmarked.
+        ///
+        public bool IsDeclined { get; init; }
+
         ///<summary>A PNG for the model to look at, as base64, or null for an answer in words alone.</summary>
         public string? Png { get; init; }
 
         ///<summary>What a change did to the file's text, for its card to show - never sent to the model. Null for anything else.</summary>
         public TextChange? TextChange { get; init; }
+
+        ///<summary>A call a person declined: a result to the model, and no progress to the run.</summary>
+        public static LlmToolOutput Declined(string text)
+        {
+            return new LlmToolOutput { Text = text ?? "", IsDeclined = true };
+        }
     }
 
     ///
